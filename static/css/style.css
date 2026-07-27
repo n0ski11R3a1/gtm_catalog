@@ -1,0 +1,777 @@
+/* =====================================================
+   GTM PRODUCT & PRICE CATALOG
+   "Market Tag" design system
+===================================================== */
+
+:root {
+    /* Palette */
+    --ocean: #2563EB;
+    --leaf: #22C55E;
+    --aqua: #06B6D4;
+    --mint: #34D399;
+
+    --ink: #10243E;
+    --canvas: #FAFCFB;
+
+    /* Roles */
+    --bg: var(--canvas);
+    --surface: #ffffff;
+    --text: var(--ink);
+    --muted: #64748B;
+    --primary: var(--ocean);
+    --border: #E2E8F0;
+    --success: var(--leaf);
+    --danger: #94A3B8;
+
+    /* Type */
+    --font-display: "Space Grotesk", sans-serif;
+    --font-body: "Plus Jakarta Sans", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+    overflow-x: hidden;
+}
+
+body {
+    max-width: 100%;
+    font-family: var(--font-body);
+    background-color: var(--bg);
+    padding: 16px;
+    color: var(--text);
+}
+
+.container { max-width: 1200px; margin: 0 auto; }
+
+/* ===============================
+   Glass Topbar
+================================ */
+
+/* ===============================
+   Glass Topbar - permanently sticky compact pill (search + filter
+   toggle). No scroll-driven collapse/expand animation at all: that's
+   the actual fix for the remaining jank. The previous version animated
+   grid-template-rows to hide/show the hero+category content, which
+   LOOKS like a compositor-only technique but isn't - grid-template-rows
+   still forces a layout recalculation every frame, same as height or
+   max-height would. Real fix: don't animate it at all. The hero title
+   below lives in normal document flow and just scrolls away for free,
+   natively - zero JS, zero per-frame cost, impossible to be janky.
+================================ */
+
+.glass-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    margin: -16px -16px 16px -16px;
+    padding: 12px 16px;
+    border-radius: 0 0 22px 22px;
+    background: rgba(250, 252, 251, .78);
+    backdrop-filter: blur(10px) saturate(140%);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    border-bottom: 1px solid rgba(255, 255, 255, .5);
+    box-shadow: 0 10px 28px rgba(16, 36, 62, .10);
+    contain: layout paint;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass-topbar, .glass-tabbar { background: var(--surface); }
+}
+
+@media (min-width: 768px) {
+    .glass-topbar {
+        margin: 14px auto 0 auto;
+        max-width: 900px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, .5);
+        border-bottom: 1px solid rgba(255, 255, 255, .5);
+    }
+}
+
+/* ===============================
+   Hero title - normal in-flow content above the sticky pill. Scrolls
+   away naturally on its own; no JS or CSS animation involved at all.
+================================ */
+
+.hero-block { padding-bottom: 14px; text-align: center; }
+
+.eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--leaf);
+    background: rgba(34, 197, 94, .08);
+    border: 1px solid rgba(34, 197, 94, .20);
+    border-radius: 20px;
+    padding: 4px 10px 4px 8px;
+    margin-bottom: 8px;
+}
+.eyebrow .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--leaf);
+    animation: pulse-dot 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    .eyebrow .live-dot { animation: none; }
+}
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .35; transform: scale(1.3); }
+}
+
+.hero-block h1 {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    color: var(--ink);
+    margin-bottom: 2px;
+}
+.hero-block p { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+
+.topbar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.topbar-row .search-wrap { flex: 1; min-width: 0; }
+
+.filter-toggle-btn {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+    transition: border-color .15s, transform .15s, background .15s, color .15s;
+}
+.filter-toggle-btn:hover { border-color: var(--ocean); transform: translateY(-1px); }
+.filter-toggle-btn:focus-visible { outline: 2px solid var(--ocean); outline-offset: 2px; }
+.filter-toggle-btn.active { background: var(--ocean); border-color: var(--ocean); color: #fff; }
+
+.filter-panel {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height .25s ease, opacity .2s ease, margin-top .25s ease;
+}
+.filter-panel.open {
+    max-height: 100px;
+    opacity: 1;
+    margin-top: 10px;
+}
+
+.search-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.search-icon {
+    position: absolute;
+    top: 50%;
+    left: 14px;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 15px;
+    pointer-events: none;
+}
+
+.search-box {
+    width: 100%;
+    padding: 12px 16px 12px 40px;
+    font-size: 15px;
+    font-family: var(--font-body);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+}
+.search-box:focus {
+    border-color: var(--ocean);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+}
+
+/* Toolbar row: sort + status. Every piece can shrink (min-width: 0)
+   and the status segmented control flexes to fill remaining space, so
+   this row can never become wider than its container - this is what
+   was forcing the whole page to render zoomed-out on narrow phones. */
+
+.toolbar-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.sort-wrap {
+    position: relative;
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+.sort-icon {
+    position: absolute;
+    top: 50%;
+    left: 10px;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 12px;
+    pointer-events: none;
+}
+
+.sort-select {
+    height: 40px;
+    max-width: 108px;
+    padding: 0 10px 0 28px;
+    font-size: 12.5px;
+    font-family: var(--font-body);
+    font-weight: 600;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+}
+.sort-select:focus-visible { border-color: var(--ocean); }
+
+.status-group {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    gap: 3px;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 3px;
+}
+
+.status-group .pill {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    padding: 6px 4px;
+    border: none;
+    border-radius: 9px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.status-group .pill:hover { border-color: transparent; }
+
+.category-bar {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+    scrollbar-width: none;
+    justify-content: flex-start;
+}
+.category-bar::-webkit-scrollbar { display: none; }
+
+.catalog-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding-top: 18px;
+    padding-bottom: 96px; /* clearance so cards don't hide behind the fixed glass tab bar */
+}
+
+@media (min-width: 768px) {
+    .catalog-container { padding-bottom: 28px; }
+}
+
+/* On wider screens there's usually room for every chip to fit without
+   scrolling, so wrapping reads as intentional instead of leaving a
+   handful of chips stranded on the left with empty space next to them.
+   Left-aligned (not centered) so a lone leftover chip on the last row
+   doesn't float by itself in the middle, orphaned-looking. Mobile keeps
+   the horizontal-scroll behavior, since wrapping a long chip list there
+   would take up too much vertical space. */
+@media (min-width: 768px) {
+    .category-bar {
+        flex-wrap: wrap;
+        overflow-x: visible;
+        justify-content: flex-start;
+    }
+}
+
+/* ===============================
+   Pills
+================================ */
+
+.pill {
+    background: var(--surface);
+    color: var(--muted);
+    padding: 7px 14px;
+    border-radius: 18px;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: var(--font-body);
+    white-space: nowrap;
+    cursor: pointer;
+    border: 2px solid var(--border);
+    user-select: none;
+    transition: transform .12s, box-shadow .12s, background .12s, color .12s, border-color .12s;
+}
+.pill:hover { border-color: var(--ocean); transform: translateY(-1px); }
+.pill:focus-visible { outline: 2px solid var(--ocean); outline-offset: 2px; }
+
+.pill.active {
+    background: var(--tag-color, var(--ink));
+    border-color: var(--tag-color, var(--ink));
+    color: var(--tag-text, #fff);
+    box-shadow: 0 6px 14px rgba(16, 36, 62, .18);
+}
+
+.pill.instock.active { background: var(--leaf); border-color: var(--leaf); color: #fff; }
+.pill.outofstock.active { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* the "All Items" / "All" pills stay neutral-dark regardless of cycle */
+.cat-pill.cat-all.active { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+/* ===============================
+   Product Grid / Tag Cards
+================================ */
+
+.product-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 650px) { .product-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .product-grid { grid-template-columns: repeat(3, 1fr); gap: 18px; } }
+
+.card {
+    background: var(--surface);
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 22px rgba(16, 36, 62, .05);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 30px rgba(16, 36, 62, .10);
+}
+
+.tag-band {
+    background: var(--tag-color, var(--ocean));
+    color: var(--tag-text, #ffffff);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
+.tag-hole {
+    width: 12px;
+    height: 12px;
+    min-width: 12px;
+    border-radius: 50%;
+    background: var(--bg);
+    box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .10);
+}
+
+.tag-band-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tag-body {
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+}
+
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+
+.sku {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+}
+
+.badge {
+    font-family: var(--font-body);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    white-space: nowrap;
+}
+.badge-instock { background: rgba(34, 197, 94, .10); color: #15803D; border: 1px solid rgba(34, 197, 94, .25); }
+.badge-oos { background: rgba(100, 116, 139, .10); color: var(--muted); border: 1px solid rgba(100, 116, 139, .25); }
+
+.item-title {
+    font-family: var(--font-display);
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.3;
+}
+.cat-tag { font-size: 12px; color: var(--muted); margin-top: -4px; }
+
+.tag-perf {
+    border-top: 2px dashed var(--border);
+    margin: 2px 0 4px;
+}
+
+.price-box {
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 10px 12px;
+    border: 1px dashed var(--border);
+}
+.price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+}
+.price-label { color: var(--muted); font-family: var(--font-body); font-weight: 600; }
+.retail-val { color: var(--ocean); font-weight: 700; }
+.wholesale-val { color: #15803D; font-weight: 700; }
+
+.copy-btn {
+    width: 100%;
+    padding: 9px;
+    background: var(--ink);
+    border: none;
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    letter-spacing: .02em;
+    color: #fff;
+    cursor: pointer;
+    transition: transform .12s, background .12s;
+}
+.copy-btn:hover { transform: translateY(-1px); }
+.copy-btn:focus-visible { outline: 2px solid var(--ocean); outline-offset: 2px; }
+.copy-btn.copied { background: var(--leaf); color: #fff; }
+
+/* ===============================
+   Order List ("Cart")
+================================ */
+
+.order-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.qty-stepper {
+    display: flex;
+    align-items: center;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.qty-btn {
+    width: 30px;
+    height: 34px;
+    border: none;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.qty-btn:hover { background: var(--border); }
+
+.qty-input {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    text-align: center;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--surface);
+}
+.qty-input:focus { outline: none; }
+
+.add-order-btn {
+    flex: 1;
+    padding: 0 10px;
+    height: 34px;
+    background: var(--ocean);
+    border: none;
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: transform .12s, background .12s;
+}
+.add-order-btn:hover { transform: translateY(-1px); }
+.add-order-btn.added { background: var(--leaf); }
+
+/* ===============================
+   Glass Tab Bar (bottom nav)
+================================ */
+
+.glass-tabbar {
+    position: fixed;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    width: calc(100% - 28px);
+    max-width: 420px;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    border-radius: 22px;
+    background: rgba(255, 255, 255, .68);
+    backdrop-filter: blur(10px) saturate(140%);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, .5);
+    box-shadow: 0 12px 34px rgba(16, 36, 62, .18);
+    z-index: 60;
+    transform-origin: center bottom;
+    transition: transform .25s cubic-bezier(.4, 0, .2, 1);
+    contain: layout paint;
+}
+
+.tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    color: var(--muted);
+    background: none;
+    border: none;
+    font-family: var(--font-body);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 14px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: color .15s, background .15s;
+}
+.tab-item i { font-size: 19px; }
+.tab-item.active { color: var(--ocean); background: rgba(37, 99, 235, .10); }
+.tab-item:hover { color: var(--ocean); }
+.tab-item:focus-visible { outline: 2px solid var(--ocean); outline-offset: 2px; }
+
+.tab-icon-wrap { position: relative; display: flex; }
+
+.tab-label {
+    transition: opacity .15s ease;
+    opacity: 1;
+}
+
+.cart-badge {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    background: var(--leaf);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 17px;
+    height: 17px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    border: 2px solid var(--surface);
+}
+
+/* Collapsed state: scrolling down shrinks the bar slightly, like iOS's
+   own tab bar. Pure transform only - no max-width/padding animation, no
+   opacity fade on labels - so this runs on the compositor instead of
+   forcing a layout recalc on every frame, and the labels (Catalog/Cart/
+   Admin) stay readable at all times, just slightly more compact. Mobile
+   only (see JS + the >=768px override below). */
+.glass-tabbar.tabbar-collapsed {
+    transform: translateX(-50%) scale(.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .glass-tabbar, .glass-tabbar.tabbar-collapsed { transition: none; }
+}
+
+@media (min-width: 768px) {
+    .glass-tabbar {
+        position: static;
+        transform: none;
+        width: 100%;
+        max-width: 900px;
+        margin: 14px auto 0 auto;
+        justify-content: flex-start;
+        gap: 6px;
+        border-radius: 16px;
+    }
+    .glass-tabbar .tab-item {
+        flex-direction: row;
+        gap: 8px;
+        font-size: 13px;
+        padding: 8px 16px;
+    }
+    .glass-tabbar.tabbar-collapsed {
+        transform: none;
+    }
+}
+
+.order-item-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.order-item-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ink);
+}
+.order-item-price {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.order-item-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.order-item-controls .qty-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+.order-item-qty {
+    min-width: 20px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 13px;
+}
+.order-item-remove {
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: #DC2626;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: 6px;
+}
+.order-item-remove:hover { background: #FEF2F2; }
+
+.order-item-line-total {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--ocean);
+    text-align: right;
+    min-width: 70px;
+}
+
+@media (max-width: 480px) {
+}
+
+/* ===============================
+   Order modal: native bottom sheet on mobile
+================================ */
+
+@media (max-width: 576px) {
+    #orderModal .modal-dialog {
+        margin: 0;
+        max-width: 100%;
+        min-height: 100%;
+        display: flex;
+        align-items: flex-end;
+    }
+
+    #orderModal .modal-content {
+        width: 100%;
+        border-radius: 20px 20px 0 0;
+        max-height: 88vh;
+        border: none;
+        box-shadow: 0 -10px 40px rgba(16, 36, 62, .25);
+    }
+
+    #orderModal .modal-content::before {
+        content: "";
+        display: block;
+        width: 40px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--border);
+        margin: 10px auto 0;
+    }
+
+    #orderModal.modal.fade .modal-dialog {
+        transform: translateY(30px);
+        transition: transform .25s ease-out;
+    }
+    #orderModal.modal.show .modal-dialog {
+        transform: translateY(0);
+    }
+}
+
+/* Slightly larger touch targets on small screens - easier thumb taps */
+@media (max-width: 480px) {
+    .qty-btn { width: 34px; height: 38px; }
+    .qty-input { width: 38px; height: 38px; }
+    .add-order-btn { height: 38px; }
+}

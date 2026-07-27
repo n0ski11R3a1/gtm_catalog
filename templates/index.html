@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block title %}GTM Product & Price Catalog{% endblock %}
+
+{% block content %}
+
+<div class="hero-block">
+    <span class="eyebrow"><span class="live-dot"></span> Live Price List</span>
+    <h1>Master Product Catalog</h1>
+    <p>Live inventory feed &amp; pricing lookup</p>
+
+    {% set palette = ['var(--ocean)', 'var(--leaf)', 'var(--aqua)', 'var(--mint)'] %}
+    {% set palette_text = ['#fff', '#fff', '#fff', 'var(--ink)'] %}
+
+    <div class="category-bar">
+        <button class="pill active cat-pill cat-all" onclick="setCategory('ALL', this)">All Items</button>
+        {% for cat in categories %}
+        <button class="pill cat-pill" style="--tag-color:{{ palette[loop.index0 % 4] }}; --tag-text:{{ palette_text[loop.index0 % 4] }};" onclick="setCategory('{{ cat }}', this)">{{ cat }}</button>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="glass-topbar" id="glassTopbar">
+    <div class="topbar-row">
+        <div class="search-wrap">
+            <i class="bi bi-search search-icon"></i>
+            <input type="text" id="searchBox" class="search-box" placeholder="Search item name, ID, category..." onkeyup="filterCatalog()">
+        </div>
+
+        <button class="filter-toggle-btn" type="button" onclick="toggleFilters()" aria-expanded="false" aria-controls="filterPanel" aria-label="Filters">
+            <i class="bi bi-sliders"></i>
+        </button>
+    </div>
+
+    <div class="filter-panel" id="filterPanel">
+        <div class="toolbar-row">
+            <div class="sort-wrap">
+                <i class="bi bi-arrow-down-up sort-icon"></i>
+                <select id="sortSelect" class="sort-select" onchange="filterCatalog()">
+                    <option value="default">Default</option>
+                    <option value="price_asc">Price ↑</option>
+                    <option value="price_desc">Price ↓</option>
+                    <option value="name_asc">A–Z</option>
+                </select>
+            </div>
+
+            <div class="status-group">
+                <button class="pill instock active status-pill" onclick="setStatus('In Stock', this)">In Stock</button>
+                <button class="pill outofstock status-pill" onclick="setStatus('Out Of Stock', this)">OOS</button>
+                <button class="pill status-pill" onclick="setStatus('ALL', this)">All</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="catalog-container">
+
+    <div class="product-grid" id="catalogGrid">
+        {% for p in items %}
+        {% set cat_idx = categories.index(p['Category']) if p['Category'] in categories else 0 %}
+        <div class="card product-card"
+             data-pk="{{ p['id'] }}"
+             data-name="{{ p['Product Name']|lower }} {{ p['Product ID']|lower }}"
+             data-cat="{{ p['Category'] }}"
+             data-status="{{ p['Status'] }}"
+             data-retail="{{ p['Retail'] }}"
+             data-fullname="{{ p['Product Name'] }}"
+             data-unit="{{ p['Unit'] }}"
+             data-wholesale="{{ p['Wholesale'] }}">
+
+            <div class="tag-band" style="--tag-color:{{ palette[cat_idx % 4] }}; --tag-text:{{ palette_text[cat_idx % 4] }};">
+                <span class="tag-hole"></span>
+                <span class="tag-band-label">{{ p['Category'] }}</span>
+            </div>
+
+            <div class="tag-body">
+                <div class="card-top">
+                    <span class="sku">{{ p['Product ID'] }}</span>
+                    <span class="badge {% if p['Status']|lower == 'out of stock' %}badge-oos{% else %}badge-instock{% endif %}">
+                        {{ p['Status'] }}
+                    </span>
+                </div>
+                <div class="item-title">{{ p['Product Name'] }}</div>
+                <div class="cat-tag">{{ p['Unit'] }} {% if p['UPC'] > 0 %}(Pack: {{ p['UPC'] }}){% endif %}</div>
+
+                <div class="tag-perf"></div>
+
+                <div class="price-box">
+                    <div class="price-row">
+                        <span class="price-label">Retail</span>
+                        <span class="retail-val">{% if p['Retail'] > 0 %}{{ "{:,.0f}".format(p['Retail']) }} Ks{% else %}-{% endif %}</span>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-label">Wholesale</span>
+                        <span class="wholesale-val">{% if p['Wholesale'] > 0 %}{{ "{:,.0f}".format(p['Wholesale']) }} Ks{% else %}-{% endif %}</span>
+                    </div>
+                </div>
+
+                <button class="copy-btn" onclick="copyPrice(this)">Copy Price</button>
+
+                <div class="order-row">
+                    <div class="qty-stepper">
+                        <button type="button" class="qty-btn" onclick="adjustQtyInput(this, -1)" aria-label="Decrease quantity">-</button>
+                        <input type="text" inputmode="numeric" class="qty-input" value="1" aria-label="Quantity">
+                        <button type="button" class="qty-btn" onclick="adjustQtyInput(this, 1)" aria-label="Increase quantity">+</button>
+                    </div>
+                    <button class="add-order-btn" onclick="addToOrder(this)">
+                        <i class="bi bi-cart-plus"></i>
+                        Add to Order
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<nav class="glass-tabbar" id="glassTabbar">
+    <a href="{{ url_for('home') }}" class="tab-item active" aria-label="Catalog">
+        <i class="bi bi-shop"></i>
+        <span class="tab-label">Catalog</span>
+    </a>
+
+    <button type="button" class="tab-item" onclick="openOrderPanel()" aria-label="Open order list">
+        <span class="tab-icon-wrap">
+            <i class="bi bi-cart3"></i>
+            <span id="cartBadge" class="cart-badge" style="display:none;">0</span>
+        </span>
+        <span class="tab-label">Cart</span>
+    </button>
+
+    {% if session.get('admin') %}
+    <a href="{{ url_for('admin') }}" class="tab-item" aria-label="Admin Dashboard">
+        <i class="bi bi-speedometer2"></i>
+        <span class="tab-label">Admin</span>
+    </a>
+    {% else %}
+    <a href="{{ url_for('login') }}" class="tab-item" aria-label="Admin Login">
+        <i class="bi bi-shield-lock"></i>
+        <span class="tab-label">Admin</span>
+    </a>
+    {% endif %}
+</nav>
+
+<div class="modal fade" id="orderModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Order List</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+
+                    <div id="orderItemsContainer"></div>
+
+                    <div id="orderEmptyMsg" class="text-muted text-center py-4" style="display:none;">
+                        No items yet. Add products from the catalog.
+                    </div>
+
+                    <hr>
+
+                    <div class="d-flex justify-content-between fw-bold">
+                        <span>Total Retail</span>
+                        <span id="orderTotalRetail">0 Ks</span>
+                    </div>
+                    <div class="d-flex justify-content-between text-muted small mb-3">
+                        <span>Total Wholesale</span>
+                        <span id="orderTotalWholesale">0 Ks</span>
+                    </div>
+
+                    <label class="form-label fw-semibold">Sales Rep *</label>
+                    <select id="repNameSelect" class="form-select mb-2">
+                        <option value="" selected disabled>-- Select your name --</option>
+                        {% for r in reps %}
+                        <option value="{{ r['code'] }} ({{ r['name'] }})">{{ r['code'] }} ({{ r['name'] }})</option>
+                        {% endfor %}
+                    </select>
+                    {% if not reps %}
+                    <div class="text-muted small mb-2">No sales reps configured yet - ask your admin to add some.</div>
+                    {% endif %}
+
+                    <label class="form-label fw-semibold">Outlet Name *</label>
+                    <input type="text" id="outletNameInput" class="form-control mb-2" placeholder="Enter outlet name">
+
+                    <div id="orderError" class="text-danger small mb-2" style="display:none;"></div>
+                    <div id="orderSuccess" class="text-success small mb-2" style="display:none;"></div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="clearOrder()">Clear</button>
+                    <button type="button" class="btn btn-primary" id="submitOrderBtn" onclick="submitOrder()">Submit Order</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/order.js') }}"></script>
+<script>
+    // Filter panel (sort + in-stock/OOS) collapses behind a toggle button
+    // so the top bar stays to a single row.
+    function toggleFilters() {
+        const panel = document.getElementById('filterPanel');
+        const btn = document.querySelector('.filter-toggle-btn');
+        if (!panel || !btn) return;
+
+        const isOpen = panel.classList.toggle('open');
+        btn.classList.toggle('active', isOpen);
+        btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    }
+
+    // Bottom tab bar shrinks slightly on scroll down, expands again on
+    // scroll up - mirrors iOS's own tab bar, reacts to direction so it's
+    // back the moment you reverse. Labels always stay visible (see CSS -
+    // only a small compositor-only scale, no opacity fade). Desktop
+    // (>=768px) never collapses; the bar is a normal static row there.
+    //
+    // The top bar no longer needs any scroll-driven JS at all: it's a
+    // permanently sticky compact pill from page load, and the hero title
+    // above it is normal in-flow content that scrolls away on its own -
+    // free, native browser behavior, zero animation cost. This replaces
+    // the old grid-template-rows collapse, which looked smooth but
+    // actually forced a layout recalculation every frame (grid-template-rows
+    // is not a compositor-only property, unlike transform/opacity) -
+    // that was the real source of the remaining scroll jank.
+    (function () {
+        const tabbar = document.getElementById('glassTabbar');
+        if (!tabbar) return;
+
+        const isMobile = () => window.matchMedia('(max-width: 767px)').matches;
+
+        let lastY = window.scrollY;
+        let ticking = false;
+
+        function onScroll() {
+            if (!isMobile()) {
+                tabbar.classList.remove('tabbar-collapsed');
+                ticking = false;
+                return;
+            }
+
+            const currentY = window.scrollY;
+            const delta = currentY - lastY;
+
+            if (currentY < 40) {
+                tabbar.classList.remove('tabbar-collapsed');
+            } else if (delta > 4) {
+                tabbar.classList.add('tabbar-collapsed');
+            } else if (delta < -4) {
+                tabbar.classList.remove('tabbar-collapsed');
+            }
+
+            lastY = currentY;
+            ticking = false;
+        }
+
+        window.addEventListener('scroll', function () {
+            if (!ticking) {
+                window.requestAnimationFrame(onScroll);
+                ticking = true;
+            }
+        }, { passive: true });
+    })();
+</script>
+{% endblock %}

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Orders{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+
+    <div>
+        <h2 class="fw-bold mb-1">Orders</h2>
+        <p class="text-muted mb-0">Every order submitted by sales reps from the catalog page.</p>
+    </div>
+
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-speedometer2"></i>
+        Dashboard
+    </a>
+
+</div>
+
+<form method="GET" class="d-flex gap-2 align-items-center mb-3 flex-wrap">
+    <input type="date" name="date" class="form-control" style="max-width:180px;" value="{{ selected_date or '' }}">
+    <button type="submit" class="btn btn-outline-primary btn-sm">Filter</button>
+    <a href="{{ url_for('admin_orders', date=today) }}" class="btn btn-outline-secondary btn-sm">Today</a>
+    {% if selected_date %}
+    <a href="{{ url_for('admin_orders') }}" class="btn btn-outline-secondary btn-sm">Show All Dates</a>
+    {% endif %}
+</form>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="dashboard-card text-center">
+            <div class="text-muted small">Orders</div>
+            <div class="fs-4 fw-bold">{{ summary.order_count }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="dashboard-card text-center">
+            <div class="text-muted small">Outlets</div>
+            <div class="fs-4 fw-bold">{{ summary.outlet_count }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="dashboard-card text-center">
+            <div class="text-muted small">Reps</div>
+            <div class="fs-4 fw-bold">{{ summary.rep_count }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="dashboard-card text-center">
+            <div class="text-muted small">Total Retail</div>
+            <div class="fs-5 fw-bold">{{ "{:,.0f}".format(summary.total_retail) }} Ks</div>
+        </div>
+    </div>
+</div>
+
+{% if rep_breakdown %}
+<div class="dashboard-card mb-3">
+    <div class="card-header-custom mb-2" style="font-size:16px;">
+        <i class="bi bi-people"></i>
+        By Sales Rep{% if selected_date %} - {{ selected_date }}{% endif %}
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle product-table mb-0">
+            <thead>
+                <tr>
+                    <th>Rep</th>
+                    <th class="text-end">Orders</th>
+                    <th class="text-end">Outlets</th>
+                    <th class="text-end">Total Retail</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rep_breakdown %}
+                <tr>
+                    <td class="fw-semibold">{{ r['rep_name'] }}</td>
+                    <td class="text-end">{{ r['order_count'] }}</td>
+                    <td class="text-end">{{ r['outlet_count'] }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(r['total_retail']) }} Ks</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="dashboard-card">
+
+    <div class="table-responsive">
+        <table class="table align-middle product-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Rep</th>
+                    <th>Outlet</th>
+                    <th>Date</th>
+                    <th class="text-end">Items</th>
+                    <th class="text-end">Total Retail</th>
+                    <th class="text-end">Total Wholesale</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for o in orders %}
+                <tr>
+                    <td class="text-muted">#{{ o['id'] }}</td>
+                    <td class="fw-semibold">{{ o['rep_name'] }}</td>
+                    <td>{{ o['outlet_name'] }}</td>
+                    <td class="text-muted">{{ o['created_at']|sqlitedatetime }}</td>
+                    <td class="text-end">{{ o['item_count'] }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(o['total_retail']) }} Ks</td>
+                    <td class="text-end">{{ "{:,.0f}".format(o['total_wholesale']) }} Ks</td>
+                    <td>
+                        <span class="badge {% if o['status'] == 'Fulfilled' %}badge-instock{% elif o['status'] == 'Cancelled' %}badge-oos{% else %}bg-primary{% endif %}">
+                            {{ o['status'] }}
+                        </span>
+                    </td>
+                    <td class="text-end">
+                        <a href="{{ url_for('admin_order_detail', order_id=o['id']) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye"></i>
+                            View
+                        </a>
+                        <form method="POST"
+                              action="{{ url_for('admin_order_delete', order_id=o['id']) }}"
+                              class="d-inline"
+                              onsubmit="return confirm('Delete order #{{ o['id'] }} from {{ o['rep_name'] }}? This cannot be undone.');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash"></i>
+                                Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted py-4">
+                        No orders submitted yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Order #{{ order['id'] }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+
+    <div class="d-flex align-items-center gap-2">
+        <a href="{{ url_for('admin_orders') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i>
+            Orders
+        </a>
+        <h2 class="fw-bold mb-0">Order #{{ order['id'] }}</h2>
+    </div>
+
+    <a href="{{ url_for('admin') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-speedometer2"></i>
+        Dashboard
+    </a>
+
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="dashboard-card">
+            <div class="text-muted small">Rep</div>
+            <div class="fs-5 fw-semibold">{{ order['rep_name'] }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="dashboard-card">
+            <div class="text-muted small">Outlet</div>
+            <div class="fs-5 fw-semibold">{{ order['outlet_name'] }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="dashboard-card">
+            <div class="text-muted small">Submitted</div>
+            <div class="fs-5 fw-semibold">{{ order['created_at']|sqlitedatetime }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="dashboard-card">
+            <div class="text-muted small mb-2">Status</div>
+            <form method="POST" action="{{ url_for('admin_order_status', order_id=order['id']) }}" class="d-flex gap-2">
+                <select name="status" class="form-select form-select-sm">
+                    <option value="New" {% if order['status'] == 'New' %}selected{% endif %}>New</option>
+                    <option value="Fulfilled" {% if order['status'] == 'Fulfilled' %}selected{% endif %}>Fulfilled</option>
+                    <option value="Cancelled" {% if order['status'] == 'Cancelled' %}selected{% endif %}>Cancelled</option>
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary">Update</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-card">
+
+    <div class="table-responsive">
+        <table class="table align-middle product-table">
+            <thead>
+                <tr>
+                    <th>Product</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Unit Retail</th>
+                    <th class="text-end">Line Retail</th>
+                    <th class="text-end">Unit Wholesale</th>
+                    <th class="text-end">Line Wholesale</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for i in items %}
+                <tr>
+                    <td>
+                        <div class="fw-semibold">{{ i['product_name'] }}</div>
+                        <div class="text-muted small">{{ i['product_id'] }}</div>
+                    </td>
+                    <td class="text-end">{{ i['quantity'] }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(i['unit_retail']) }} Ks</td>
+                    <td class="text-end">{{ "{:,.0f}".format(i['line_retail']) }} Ks</td>
+                    <td class="text-end">{{ "{:,.0f}".format(i['unit_wholesale']) }} Ks</td>
+                    <td class="text-end">{{ "{:,.0f}".format(i['line_wholesale']) }} Ks</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="fw-bold">
+                    <td colspan="3" class="text-end">Total</td>
+                    <td class="text-end">{{ "{:,.0f}".format(order['total_retail']) }} Ks</td>
+                    <td></td>
+                    <td class="text-end">{{ "{:,.0f}".format(order['total_wholesale']) }} Ks</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+</div>
+
+{% endblock %}

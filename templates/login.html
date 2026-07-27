@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Login{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center align-items-center" style="min-height:80vh;">
+
+    <div class="col-lg-4 col-md-6 col-sm-10">
+
+        <div class="card shadow-lg border-0 rounded-4">
+
+            <div class="card-body p-5">
+
+                <div class="text-center mb-4">
+
+                    <div class="login-icon mb-3">
+                        <i class="bi bi-shield-lock-fill"></i>
+                    </div>
+
+                    <h2 class="fw-bold mb-2">
+                        GTM Admin
+                    </h2>
+
+                    <p class="text-muted">
+                        Sign in to manage your catalog
+                    </p>
+
+                </div>
+
+                <form method="POST">
+
+                    <div class="mb-3">
+
+                        <label class="form-label fw-semibold">
+
+                            Username
+
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text">
+
+                                <i class="bi bi-person-fill"></i>
+
+                            </span>
+
+                            <input
+                                type="text"
+                                name="username"
+                                class="form-control"
+                                placeholder="Enter username"
+                                required
+                                autofocus>
+
+                        </div>
+
+                    </div>
+
+                    <div class="mb-4">
+
+                        <label class="form-label fw-semibold">
+
+                            Password
+
+                        </label>
+
+                        <div class="input-group">
+
+                            <span class="input-group-text">
+
+                                <i class="bi bi-lock-fill"></i>
+
+                            </span>
+
+                            <input
+                                type="password"
+                                name="password"
+                                id="password"
+                                class="form-control"
+                                placeholder="Enter password"
+                                required>
+
+                            <button
+                                class="btn btn-outline-secondary"
+                                type="button"
+                                onclick="togglePassword()">
+
+                                <i class="bi bi-eye" id="eyeIcon"></i>
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="btn btn-primary w-100 py-2 fw-bold login-btn">
+
+                        <i class="bi bi-box-arrow-in-right"></i>
+
+                        Login
+
+                    </button>
+
+                </form>
+
+            </div>
+
+        </div>
+
+        <div class="text-center mt-3 text-muted small">
+
+            GTM Product Catalog Admin Panel
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+
+<script>
+
+function togglePassword(){
+
+    const input = document.getElementById("password");
+
+    const icon = document.getElementById("eyeIcon");
+
+    if(input.type==="password"){
+
+        input.type="text";
+
+        icon.className="bi bi-eye-slash";
+
+    }else{
+
+        input.type="password";
+
+        icon.className="bi bi-eye";
+
+    }
+
+}
+
+</script>
+
+{% endblock %}
