@@ -394,10 +394,29 @@ body {
 }
 
 .tag-band-label {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+.tag-detail-btn {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, .22);
+    color: inherit;
+    text-decoration: none;
+    font-size: 12px;
+    transition: background .15s, transform .15s;
+}
+.tag-detail-btn:hover { background: rgba(255, 255, 255, .38); transform: scale(1.08); }
+.tag-detail-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 .tag-body {
     padding: 14px 16px 16px;
@@ -481,8 +500,114 @@ body {
 .copy-btn.copied { background: var(--leaf); color: #fff; }
 
 /* ===============================
-   Order List ("Cart")
+   Product Detail Page
 ================================ */
+
+.detail-back-row {
+    max-width: 640px;
+    margin: 0 auto 14px;
+    padding: 0 4px;
+}
+.detail-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--muted);
+    text-decoration: none;
+}
+.detail-back-link:hover { color: var(--ocean); }
+
+.detail-wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    padding-bottom: 96px; /* clearance for the fixed bottom tab bar */
+}
+@media (min-width: 768px) { .detail-wrap { padding-bottom: 28px; } }
+
+.detail-card { display: block; }
+
+.detail-image-wrap {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: var(--bg);
+    overflow: hidden;
+}
+.detail-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.detail-image-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--muted);
+}
+.detail-image-placeholder i { font-size: 40px; }
+.detail-image-placeholder span { font-size: 12.5px; font-weight: 600; }
+
+.detail-cat-chip {
+    display: inline-block;
+    align-self: flex-start;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ocean);
+    background: rgba(37, 99, 235, .08);
+    border: 1px solid rgba(37, 99, 235, .20);
+    border-radius: 8px;
+    padding: 3px 8px;
+}
+
+.detail-title { font-size: 19px; }
+
+.detail-description {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+}
+.detail-description-empty {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.not-found-wrap {
+    max-width: 420px;
+    margin: 60px auto;
+    text-align: center;
+    color: var(--muted);
+}
+.not-found-wrap i { font-size: 44px; margin-bottom: 12px; display: inline-block; }
+.not-found-wrap h2 {
+    font-family: var(--font-display);
+    color: var(--ink);
+    margin-bottom: 8px;
+}
+.not-found-wrap p { margin-bottom: 20px; }
+.btn-primary-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--ocean);
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    padding: 10px 20px;
+    border-radius: 12px;
+}
+
+
 
 .order-row {
     display: flex;
@@ -774,4 +899,53 @@ body {
     .qty-btn { width: 34px; height: 38px; }
     .qty-input { width: 38px; height: 38px; }
     .add-order-btn { height: 38px; }
+}
+
+/* ===============================
+   Offline Precache Progress Banner
+================================ */
+
+.precache-banner {
+    position: fixed;
+    left: 50%;
+    bottom: 88px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--ink);
+    color: #fff;
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: 20px;
+    box-shadow: 0 10px 28px rgba(16, 36, 62, .25);
+    z-index: 70;
+    opacity: 1;
+    transition: opacity .4s ease;
+    max-width: calc(100% - 32px);
+}
+.precache-banner.precache-fade { opacity: 0; }
+.precache-banner.precache-done { background: #15803D; }
+.precache-banner i { font-size: 14px; }
+
+.precache-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, .3);
+    border-top-color: #fff;
+    animation: precache-spin .7s linear infinite;
+    flex-shrink: 0;
+}
+@keyframes precache-spin {
+    to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .precache-spinner { animation: none; }
+}
+
+@media (min-width: 768px) {
+    .precache-banner { bottom: 24px; }
 }

@@ -71,6 +71,32 @@ def login_required():
     return session.get("admin") is True
 
 
+# Product images live in static/product-images/, named to match the
+# business Product ID with spaces stripped (e.g. "GTM - 0001" -> looks
+# for GTM-0001.jpg / .jpeg / .png / .webp). No upload UI, no database
+# column for the path - you just drop a correctly-named file in and it
+# appears; if none exists, the detail page shows a placeholder instead.
+PRODUCT_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
+
+
+def find_product_image(business_product_id):
+    """Returns the static-relative path to a product's image if one
+    exists on disk, e.g. 'product-images/GTM-0001.jpg' - or None."""
+
+    slug = (business_product_id or "").replace(" ", "").strip()
+    if not slug:
+        return None
+
+    images_dir = os.path.join(app.static_folder, "product-images")
+
+    for ext in PRODUCT_IMAGE_EXTENSIONS:
+        candidate = os.path.join(images_dir, slug + ext)
+        if os.path.isfile(candidate):
+            return f"product-images/{slug}{ext}"
+
+    return None
+
+
 def product_form_to_dict(form):
 
     def to_float(value):
@@ -94,6 +120,7 @@ def product_form_to_dict(form):
         "wholesale": to_float(form.get("wholesale", 0)),
         "category": form.get("category", "General").strip() or "General",
         "status": form.get("status", "In Stock").strip() or "In Stock",
+        "description": form.get("description", "").strip(),
     }
 
 
@@ -112,6 +139,29 @@ def home():
         "index.html",
         items=products,
         categories=categories,
+        reps=reps
+    )
+
+
+@app.route("/product/<product_id_slug>")
+def product_detail(product_id_slug):
+
+    # Public, no login required - same audience as the catalog itself.
+    product = db.get_product_by_business_id(product_id_slug)
+
+    if product is None:
+        # Not a flash+redirect like the admin 404s - a rep tapping a
+        # stale/offline-cached link should get a clear "not found" page,
+        # not silently bounced back to the catalog.
+        return render_template("product_not_found.html", slug=product_id_slug), 404
+
+    image_path = find_product_image(product["Product ID"])
+    reps = db.get_active_reps()
+
+    return render_template(
+        "product_detail.html",
+        p=product,
+        image_path=image_path,
         reps=reps
     )
 

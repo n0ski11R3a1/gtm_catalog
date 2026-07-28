@@ -16,7 +16,18 @@
 // relevant to iOS - a device can add this to the Home Screen while online
 // but not complete a full page navigation before going offline, in which
 // case nothing would be cached for '/' yet under v9 alone.
-const CACHE_NAME = 'gtm-catalog-v19';
+//
+// Bumped v19 -> v20: product detail pages (/product/<id>) can now be
+// cached for offline use too, same idea as '/' - but in a SEPARATE,
+// stable cache bucket (PRODUCT_PAGES_CACHE) rather than the main
+// versioned CACHE_NAME. Reasoning: CACHE_NAME gets fully wiped and
+// rebuilt on every version bump (routine CSS/JS deploys). With 225+
+// product pages potentially precached, re-downloading all of them on
+// every unrelated style tweak would be wasteful and slow, especially on
+// a rep's mobile data. PRODUCT_PAGES_CACHE persists across normal
+// version bumps and is only cleared if ITS OWN name changes.
+const CACHE_NAME = 'gtm-catalog-v20';
+const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 
 const STATIC_ASSETS = [
     '/static/css/style.css',
@@ -24,6 +35,7 @@ const STATIC_ASSETS = [
     '/static/js/app.js',
     '/static/js/admin.js',
     '/static/js/order.js',
+    '/static/js/precache.js',
     '/static/manifest.json'
 ];
 
@@ -42,13 +54,14 @@ self.addEventListener('install', (event) => {
     self.skipWaiting();
 });
 
-// Activate: clean up old caches
+// Activate: clean up old caches - but never the product-pages cache,
+// which is deliberately versioned separately (see note above CACHE_NAME).
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((keys) =>
             Promise.all(
                 keys
-                    .filter((key) => key !== CACHE_NAME)
+                    .filter((key) => key !== CACHE_NAME && key !== PRODUCT_PAGES_CACHE)
                     .map((key) => caches.delete(key))
             )
         )
@@ -69,43 +82,58 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Navigation requests = full page loads. Session/auth state changes
-    // per request, so admin/login pages must NEVER be served from cache -
-    // that's the original v1->v2 fix, preserved below.
-    //
-    // The public catalog page ('/' only) is the one exception: every
-    // successful online visit re-caches it, so there's a real fallback to
-    // serve when the device is genuinely offline (e.g. a rep out in the
-    // field with no signal). It'll be whatever was cached on the last
-    // successful load - not live data, but usable, which is the whole
-    // point of "offline mode" for this page.
-    if (request.mode === 'navigate') {
-        const url = new URL(request.url);
-        const isCatalogHome = url.pathname === '/';
+    const url = new URL(request.url);
 
+    // Product detail pages: cache-and-serve from PRODUCT_PAGES_CACHE.
+    // Checked by PATH here, not request.mode - the offline precache
+    // script (precache.js) downloads these with a plain fetch(), which
+    // is NOT navigate-mode (that only applies to real browser
+    // navigations), so a mode check alone would miss it and let it fall
+    // through to the generic static-asset handler below, caching it in
+    // the wrong (main, versioned) bucket instead.
+    if (url.pathname.startsWith('/product/')) {
         event.respondWith(
             fetch(request)
                 .then((response) => {
-                    if (isCatalogHome) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put('/', clone));
-                    }
+                    const clone = response.clone();
+                    caches.open(PRODUCT_PAGES_CACHE).then((cache) => cache.put(request.url, clone));
                     return response;
                 })
-                .catch(() => {
-                    if (isCatalogHome) {
-                        return caches.match('/');
-                    }
-                    // Admin/login/etc while offline: no cached fallback,
-                    // by design - better an honest network error than a
-                    // stale authenticated page.
-                    return caches.match(request);
-                })
+                .catch(() => caches.match(request.url))
         );
         return;
     }
 
-    const url = new URL(request.url);
+    // Navigation requests = full page loads. Session/auth state changes
+    // per request, so admin/login pages must NEVER be served from cache -
+    // that's the original v1->v2 fix, preserved below.
+    //
+    // The public catalog page ('/') is the one exception here: every
+    // successful online visit re-caches it, so there's a real fallback to
+    // serve when the device is genuinely offline.
+    if (request.mode === 'navigate') {
+        const isCatalogHome = url.pathname === '/';
+
+        if (isCatalogHome) {
+            event.respondWith(
+                fetch(request)
+                    .then((response) => {
+                        const clone = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => cache.put('/', clone));
+                        return response;
+                    })
+                    .catch(() => caches.match('/'))
+            );
+            return;
+        }
+
+        // Admin/login/etc while offline: no cached fallback, by design -
+        // better an honest network error than a stale authenticated page.
+        event.respondWith(
+            fetch(request).catch(() => caches.match(request))
+        );
+        return;
+    }
 
     if (url.pathname.startsWith('/api/')) {
         event.respondWith(

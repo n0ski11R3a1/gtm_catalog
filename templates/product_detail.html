@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}{{ p['Product Name'] }} - GTM Catalog{% endblock %}
+
+{% block content %}
+
+<div class="detail-back-row">
+    <a href="{{ url_for('home') }}" class="detail-back-link">
+        <i class="bi bi-arrow-left"></i>
+        Back to Catalog
+    </a>
+</div>
+
+<div class="detail-wrap">
+    <div class="card product-card detail-card"
+         data-pk="{{ p['id'] }}"
+         data-name="{{ p['Product Name']|lower }} {{ p['Product ID']|lower }}"
+         data-cat="{{ p['Category'] }}"
+         data-status="{{ p['Status'] }}"
+         data-retail="{{ p['Retail'] }}"
+         data-fullname="{{ p['Product Name'] }}"
+         data-unit="{{ p['Unit'] }}"
+         data-wholesale="{{ p['Wholesale'] }}">
+
+        <div class="detail-image-wrap">
+            {% if image_path %}
+            <img src="{{ url_for('static', filename=image_path) }}" alt="{{ p['Product Name'] }}" class="detail-image">
+            {% else %}
+            <div class="detail-image-placeholder">
+                <i class="bi bi-image"></i>
+                <span>No image yet</span>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="tag-body">
+
+            <div class="card-top">
+                <span class="sku">{{ p['Product ID'] }}</span>
+                <span class="badge {% if p['Status']|lower == 'out of stock' %}badge-oos{% else %}badge-instock{% endif %}">
+                    {{ p['Status'] }}
+                </span>
+            </div>
+
+            <div class="detail-cat-chip">{{ p['Category'] }}</div>
+
+            <div class="item-title detail-title">{{ p['Product Name'] }}</div>
+            <div class="cat-tag">{{ p['Unit'] }} {% if p['UPC'] > 0 %}(Pack: {{ p['UPC'] }}){% endif %}</div>
+
+            <div class="tag-perf"></div>
+
+            <div class="detail-description">
+                {% if p['Description'] %}
+                    {{ p['Description'] }}
+                {% else %}
+                    <span class="detail-description-empty">ဤကုန်ပစ္စည်းအတွက် အသေးစိတ်ဖော်ပြချက် မရှိသေးပါ။</span>
+                {% endif %}
+            </div>
+
+            <div class="tag-perf"></div>
+
+            <div class="price-box">
+                <div class="price-row">
+                    <span class="price-label">Retail</span>
+                    <span class="retail-val">{% if p['Retail'] > 0 %}{{ "{:,.0f}".format(p['Retail']) }} Ks{% else %}-{% endif %}</span>
+                </div>
+                <div class="price-row">
+                    <span class="price-label">Wholesale</span>
+                    <span class="wholesale-val">{% if p['Wholesale'] > 0 %}{{ "{:,.0f}".format(p['Wholesale']) }} Ks{% else %}-{% endif %}</span>
+                </div>
+            </div>
+
+            <button class="copy-btn" onclick="copyPrice(this)">Copy Price</button>
+
+            <div class="order-row">
+                <div class="qty-stepper">
+                    <button type="button" class="qty-btn" onclick="adjustQtyInput(this, -1)" aria-label="Decrease quantity">-</button>
+                    <input type="text" inputmode="numeric" class="qty-input" value="1" aria-label="Quantity">
+                    <button type="button" class="qty-btn" onclick="adjustQtyInput(this, 1)" aria-label="Increase quantity">+</button>
+                </div>
+                <button class="add-order-btn" onclick="addToOrder(this)">
+                    <i class="bi bi-cart-plus"></i>
+                    Add to Order
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+{% include "_glass_tabbar.html" %}
+
+{% include "_order_modal.html" %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/order.js') }}"></script>
+{% endblock %}

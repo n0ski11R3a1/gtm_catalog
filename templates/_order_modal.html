@@ -1,0 +1,51 @@
+<div class="modal fade" id="orderModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Order List</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+
+                    <div id="orderItemsContainer"></div>
+
+                    <div id="orderEmptyMsg" class="text-muted text-center py-4" style="display:none;">
+                        No items yet. Add products from the catalog.
+                    </div>
+
+                    <hr>
+
+                    <div class="d-flex justify-content-between fw-bold">
+                        <span>Total Retail</span>
+                        <span id="orderTotalRetail">0 Ks</span>
+                    </div>
+                    <div class="d-flex justify-content-between text-muted small mb-3">
+                        <span>Total Wholesale</span>
+                        <span id="orderTotalWholesale">0 Ks</span>
+                    </div>
+
+                    <label class="form-label fw-semibold">Sales Rep *</label>
+                    <select id="repNameSelect" class="form-select mb-2">
+                        <option value="" selected disabled>-- Select your name --</option>
+                        {% for r in reps %}
+                        <option value="{{ r['code'] }} ({{ r['name'] }})">{{ r['code'] }} ({{ r['name'] }})</option>
+                        {% endfor %}
+                    </select>
+                    {% if not reps %}
+                    <div class="text-muted small mb-2">No sales reps configured yet - ask your admin to add some.</div>
+                    {% endif %}
+
+                    <label class="form-label fw-semibold">Outlet Name *</label>
+                    <input type="text" id="outletNameInput" class="form-control mb-2" placeholder="Enter outlet name">
+
+                    <div id="orderError" class="text-danger small mb-2" style="display:none;"></div>
+                    <div id="orderSuccess" class="text-success small mb-2" style="display:none;"></div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" onclick="clearOrder()">Clear</button>
+                    <button type="button" class="btn btn-primary" id="submitOrderBtn" onclick="submitOrder()">Submit Order</button>
+                </div>
+            </div>
+        </div>
+    </div>

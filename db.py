@@ -146,6 +146,13 @@ def init_db():
         ON order_items(order_id)
     """)
 
+    # MIGRATION: description field for the product detail page. Free text,
+    # optional - blank by default. Burmese (or any Unicode text) needs no
+    # special handling in SQLite/Python, so this is just a plain TEXT column.
+    product_columns = [row["name"] for row in conn.execute("PRAGMA table_info(products)").fetchall()]
+    if "description" not in product_columns:
+        conn.execute("ALTER TABLE products ADD COLUMN description TEXT DEFAULT ''")
+
     conn.commit()
     conn.close()
 
@@ -168,6 +175,7 @@ def _row_to_dict(row):
         "Wholesale": row["wholesale"],
         "Category": row["category"],
         "Status": row["status"],
+        "Description": row["description"] if "description" in row.keys() else "",
     }
 
 
@@ -229,6 +237,24 @@ def get_categories():
 def get_product(product_pk):
     conn = get_db_connection()
     row = conn.execute("SELECT * FROM products WHERE id = ?", (product_pk,)).fetchone()
+    conn.close()
+    return _row_to_dict(row) if row else None
+
+
+def get_product_by_business_id(product_id_slug):
+    """Look up a product by its business Product ID, ignoring spaces on
+    both sides - so URL slugs like 'GTM-0001' correctly match DB values
+    stored in the canonical 'GTM - 0001' form. Used by the /product/<id>
+    detail page route."""
+    normalized = (product_id_slug or "").replace(" ", "").strip()
+    if not normalized:
+        return None
+
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT * FROM products WHERE REPLACE(product_id, ' ', '') = ? COLLATE NOCASE",
+        (normalized,),
+    ).fetchone()
     conn.close()
     return _row_to_dict(row) if row else None
 
@@ -650,8 +676,8 @@ def add_product(data):
     conn.execute(
         """
         INSERT INTO products
-            (product_id, product_name, upc, unit, retail, wholesale, category, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (product_id, product_name, upc, unit, retail, wholesale, category, status, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("product_id", ""),
@@ -662,6 +688,7 @@ def add_product(data):
             data.get("wholesale", 0),
             data.get("category", "General"),
             data.get("status", "In Stock"),
+            data.get("description", ""),
         ),
     )
     conn.commit()
@@ -688,7 +715,8 @@ def update_product(product_pk, data):
             retail = ?,
             wholesale = ?,
             category = ?,
-            status = ?
+            status = ?,
+            description = ?
         WHERE id = ?
         """,
         (
@@ -700,6 +728,7 @@ def update_product(product_pk, data):
             data.get("wholesale", 0),
             data.get("category", "General"),
             data.get("status", "In Stock"),
+            data.get("description", ""),
             product_pk,
         ),
     )
@@ -748,6 +777,10 @@ def import_excel_into_db(path, replace=True, source="excel_upload"):
       'Out Of Stock' rather than deleted, so it doesn't vanish from
       price history. Pass replace=False to skip this step entirely
       (pure "merge in whatever's in the file" import).
+    - "Description" is an OPTIONAL column. If the uploaded sheet doesn't
+      have it at all, existing descriptions are left completely untouched
+      (not wiped to blank) - only a sheet that actually includes the
+      column can update descriptions in bulk.
     """
 
     df = pd.read_excel(path, sheet_name="Product Catalog")
@@ -762,6 +795,10 @@ def import_excel_into_db(path, replace=True, source="excel_upload"):
     df["Status"] = (
         df["Status"].fillna("In Stock").astype(str).str.strip().str.title()
     )
+
+    has_description_col = "Description" in df.columns
+    if has_description_col:
+        df["Description"] = df["Description"].fillna("")
 
     conn = get_db_connection()
 
@@ -795,28 +832,47 @@ def import_excel_into_db(path, replace=True, source="excel_upload"):
                 source=source,
             )
 
-            conn.execute(
-                """
-                UPDATE products SET
-                    product_name = ?,
-                    upc = ?,
-                    unit = ?,
-                    retail = ?,
-                    wholesale = ?,
-                    category = ?,
-                    status = ?
-                WHERE product_id = ?
-                """,
-                (product_name, upc, unit, retail, wholesale, category, status, product_id),
-            )
+            if has_description_col:
+                conn.execute(
+                    """
+                    UPDATE products SET
+                        product_name = ?,
+                        upc = ?,
+                        unit = ?,
+                        retail = ?,
+                        wholesale = ?,
+                        category = ?,
+                        status = ?,
+                        description = ?
+                    WHERE product_id = ?
+                    """,
+                    (product_name, upc, unit, retail, wholesale, category, status,
+                     str(row["Description"]), product_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE products SET
+                        product_name = ?,
+                        upc = ?,
+                        unit = ?,
+                        retail = ?,
+                        wholesale = ?,
+                        category = ?,
+                        status = ?
+                    WHERE product_id = ?
+                    """,
+                    (product_name, upc, unit, retail, wholesale, category, status, product_id),
+                )
         else:
+            description = str(row["Description"]) if has_description_col else ""
             conn.execute(
                 """
                 INSERT INTO products
-                    (product_id, product_name, upc, unit, retail, wholesale, category, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (product_id, product_name, upc, unit, retail, wholesale, category, status, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (product_id, product_name, upc, unit, retail, wholesale, category, status),
+                (product_id, product_name, upc, unit, retail, wholesale, category, status, description),
             )
 
     if replace and seen_product_ids:

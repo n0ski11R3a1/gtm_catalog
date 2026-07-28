@@ -1,0 +1,26 @@
+<nav class="glass-tabbar" id="glassTabbar">
+    <a href="{{ url_for('home') }}" class="tab-item{% if request.endpoint == 'home' %} active{% endif %}" aria-label="Catalog">
+        <i class="bi bi-shop"></i>
+        <span class="tab-label">Catalog</span>
+    </a>
+
+    <button type="button" class="tab-item" onclick="openOrderPanel()" aria-label="Open order list">
+        <span class="tab-icon-wrap">
+            <i class="bi bi-cart3"></i>
+            <span id="cartBadge" class="cart-badge" style="display:none;">0</span>
+        </span>
+        <span class="tab-label">Cart</span>
+    </button>
+
+    {% if session.get('admin') %}
+    <a href="{{ url_for('admin') }}" class="tab-item" aria-label="Admin Dashboard">
+        <i class="bi bi-speedometer2"></i>
+        <span class="tab-label">Admin</span>
+    </a>
+    {% else %}
+    <a href="{{ url_for('login') }}" class="tab-item" aria-label="Admin Login">
+        <i class="bi bi-shield-lock"></i>
+        <span class="tab-label">Admin</span>
+    </a>
+    {% endif %}
+</nav>

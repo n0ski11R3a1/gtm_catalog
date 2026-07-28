@@ -118,6 +118,13 @@
                                value="{{ (values.get('Wholesale') if values.get('Wholesale') is not none else values.get('wholesale', ''))|cleannum }}">
                     </div>
 
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Description</label>
+                        <textarea name="description" class="form-control" rows="4"
+                                  placeholder="Packaging, flavor, what it is - shown on the product's public detail page. Burmese is fine.">{{ values.get('Description') if values.get('Description') is not none else values.get('description', '') }}</textarea>
+                        <div class="form-text">Shown on the customer-facing "See Details" page. Optional.</div>
+                    </div>
+
                 </div>
 
                 <div class="d-flex gap-2 mt-4">

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Product Not Found - GTM Catalog{% endblock %}
+
+{% block content %}
+
+<div class="not-found-wrap">
+    <i class="bi bi-search"></i>
+    <h2>Product Not Found</h2>
+    <p>No product matches "<strong>{{ slug }}</strong>". It may have been removed, or the link may be out of date.</p>
+    <a href="{{ url_for('home') }}" class="btn-primary-link">
+        <i class="bi bi-shop"></i>
+        Back to Catalog
+    </a>
+</div>
+
+{% endblock %}
