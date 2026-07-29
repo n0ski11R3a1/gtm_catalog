@@ -16,6 +16,20 @@
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRECACHE_CONCURRENCY = 5;
 
+// Read by status.js's Updates & Status panel to show "Last Offline Sync".
+// Written every time a check completes successfully - even a "nothing
+// was missing" run - since it represents "last time we confirmed
+// offline data is current," not "last time something new downloaded."
+const LAST_SYNC_KEY = 'gtm_last_sync_v1';
+
+function recordSyncTime() {
+    try {
+        localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
+    } catch (e) {
+        // storage unavailable - the status panel just shows "Never" instead
+    }
+}
+
 function slugify(productId) {
     return (productId || '').replace(/\s+/g, '');
 }
@@ -74,6 +88,7 @@ async function runProductPrecache() {
     }
 
     if (toFetch.length === 0) {
+        recordSyncTime();
         return;
     }
 
@@ -114,6 +129,7 @@ async function runProductPrecache() {
     await Promise.all(workers);
 
     showBannerDone(banner);
+    recordSyncTime();
 }
 
 if ('serviceWorker' in navigator) {

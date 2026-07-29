@@ -27,6 +27,11 @@
             <input type="text" id="searchBox" class="search-box" placeholder="Search item name, ID, category..." onkeyup="filterCatalog()">
         </div>
 
+        <button class="filter-toggle-btn bell-btn" type="button" onclick="openStatusPanel()" aria-label="Updates and status">
+            <i class="bi bi-bell"></i>
+            <span id="bellDot" class="bell-dot" style="display:none;"></span>
+        </button>
+
         <button class="filter-toggle-btn" type="button" onclick="toggleFilters()" aria-expanded="false" aria-controls="filterPanel" aria-label="Filters">
             <i class="bi bi-sliders"></i>
         </button>
@@ -122,11 +127,49 @@
 
 {% include "_order_modal.html" %}
 
+<div class="modal fade" id="statusModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-bell"></i> Updates &amp; Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+
+                <div class="status-info-row">
+                    <span class="status-label">App Version</span>
+                    <span id="statusVersion" class="status-value">—</span>
+                </div>
+                <div class="status-info-row">
+                    <span class="status-label">Last Offline Sync</span>
+                    <span id="statusLastSync" class="status-value">—</span>
+                </div>
+
+                <button type="button" id="hardRefreshBtn" class="btn-hard-refresh" onclick="hardRefresh()">
+                    <i class="bi bi-arrow-clockwise"></i>
+                    Force Refresh
+                </button>
+
+                <hr>
+
+                <h6 class="activity-heading">Recent Activity</h6>
+
+                <div id="activityList"></div>
+                <div id="activityEmpty" class="text-muted text-center py-4" style="display:none;">
+                    No recent activity yet.
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
 <script src="{{ url_for('static', filename='js/order.js') }}"></script>
 <script src="{{ url_for('static', filename='js/precache.js') }}"></script>
+<script src="{{ url_for('static', filename='js/status.js') }}"></script>
 <script>
     // Filter panel (sort + in-stock/OOS) collapses behind a toggle button
     // so the top bar stays to a single row.

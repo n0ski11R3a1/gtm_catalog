@@ -949,3 +949,111 @@ body {
 @media (min-width: 768px) {
     .precache-banner { bottom: 24px; }
 }
+
+/* ===============================
+   Bell button + Updates & Status panel
+================================ */
+
+.bell-btn { position: relative; }
+
+.bell-dot {
+    position: absolute;
+    top: 6px;
+    right: 7px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #FF4D6D;
+    border: 2px solid var(--surface);
+}
+
+.status-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+}
+.status-label { color: var(--muted); font-weight: 600; }
+.status-value {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.btn-hard-refresh {
+    width: 100%;
+    margin-top: 14px;
+    padding: 10px;
+    background: var(--ocean);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 13.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: transform .12s, background .12s;
+}
+.btn-hard-refresh:hover { transform: translateY(-1px); }
+.btn-hard-refresh:disabled { opacity: .7; cursor: default; transform: none; }
+
+.activity-heading {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 4px;
+}
+
+.activity-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+.activity-row:last-child { border-bottom: none; }
+
+.activity-icon {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    margin-top: 2px;
+}
+.activity-icon-product_added { background: rgba(34, 197, 94, .12); color: #15803D; }
+.activity-icon-price_changed { background: rgba(37, 99, 235, .12); color: var(--ocean); }
+
+.activity-text { flex: 1; min-width: 0; }
+.activity-title {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.activity-meta {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    margin-top: 1px;
+}
+
+.activity-time {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    padding-top: 3px;
+}
