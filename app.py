@@ -190,6 +190,23 @@ def api_price_history():
     return jsonify(db.get_recent_price_changes(limit=1000))
 
 
+@app.route("/api/activity")
+def api_activity():
+
+    # Backs the notification bell: new products + price changes, most
+    # recent first. "latest_id" is always the true highest id regardless
+    # of ?limit, so the client can cheaply check "is there anything new
+    # since I last looked" with a small ?limit=1 request instead of
+    # pulling the whole feed just to compare one number.
+    limit = request.args.get("limit", default=30, type=int)
+    limit = max(1, min(limit, 100))
+
+    events = db.get_recent_activity(limit=limit)
+    latest_id = events[0]["id"] if events else 0
+
+    return jsonify({"latest_id": latest_id, "events": events})
+
+
 @app.route("/order/submit", methods=["POST"])
 def order_submit():
 

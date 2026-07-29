@@ -77,6 +77,26 @@ def init_db():
         ON price_history(product_id)
     """)
 
+    # Activity feed for the notification bell: new products added + price
+    # changes, in one unified stream so the UI only has to query one
+    # table. product_id is the business key (like price_history), not the
+    # products.id pk, for the same "survives delete/re-add" reasoning.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            product_id TEXT NOT NULL,
+            product_name TEXT DEFAULT '',
+            details TEXT DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_activity_log_created_at
+        ON activity_log(created_at DESC)
+    """)
+
     # Sales-rep order list ("cart"). rep_name is required at submit time.
     # No customer name / login for now - kept intentionally simple.
     conn.execute("""
@@ -157,7 +177,12 @@ def init_db():
     conn.close()
 
     if product_count() == 0 and os.path.exists(EXCEL_FILE):
-        import_excel_into_db(EXCEL_FILE, replace=True)
+        # log_activity=False: this is the one-time bootstrap import on a
+        # brand new database, not a real "someone just uploaded this"
+        # event. Without this, a fresh install would flood the
+        # notification bell with 200+ "product added" entries on day one
+        # instead of starting with a clean feed.
+        import_excel_into_db(EXCEL_FILE, replace=True, log_activity=False)
 
 
 # ------------------------
@@ -179,11 +204,40 @@ def _row_to_dict(row):
     }
 
 
+def _log_activity(conn, event_type, product_id, product_name, details):
+    """Insert an activity_log row - the single source the notification
+    bell reads from. Caller is responsible for commit/close (shares a
+    transaction with whatever write triggered it)."""
+
+    conn.execute(
+        """
+        INSERT INTO activity_log (event_type, product_id, product_name, details)
+        VALUES (?, ?, ?, ?)
+        """,
+        (event_type, product_id, product_name, details),
+    )
+
+
+def _format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale):
+    """Builds a short human-readable summary like 'Retail: 96,000 -> 96,500 Ks'
+    - only mentions whichever of retail/wholesale actually changed."""
+
+    parts = []
+    if old_retail != new_retail:
+        parts.append(f"Retail: {old_retail:,.0f} \u2192 {new_retail:,.0f} Ks")
+    if old_wholesale != new_wholesale:
+        parts.append(f"Wholesale: {old_wholesale:,.0f} \u2192 {new_wholesale:,.0f} Ks")
+    return " \u2022 ".join(parts)
+
+
 def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
                        old_wholesale, new_wholesale, source):
     """Insert a price_history row, but only if retail or wholesale actually
-    changed. Caller is responsible for commit/close (runs on an open conn
-    so it shares a transaction with the products write)."""
+    changed. Also logs a matching activity_log entry for the notification
+    bell - same "did it actually change" check covers both, so there's
+    only one place that decides what counts as a real price change.
+    Caller is responsible for commit/close (runs on an open conn so it
+    shares a transaction with the products write)."""
 
     if old_retail == new_retail and old_wholesale == new_wholesale:
         return
@@ -204,6 +258,14 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
             new_wholesale,
             source,
         ),
+    )
+
+    _log_activity(
+        conn,
+        event_type="price_changed",
+        product_id=product_id,
+        product_name=product_name,
+        details=_format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale),
     )
 
 
@@ -284,6 +346,22 @@ def get_recent_price_changes(limit=50):
         """
         SELECT * FROM price_history
         ORDER BY changed_at DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_recent_activity(limit=30):
+    """Recent activity for the notification bell: new products + price
+    changes, most recent first. Backs GET /api/activity."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        """
+        SELECT * FROM activity_log
+        ORDER BY id DESC
         LIMIT ?
         """,
         (limit,),
@@ -691,8 +769,24 @@ def add_product(data):
             data.get("description", ""),
         ),
     )
-    conn.commit()
+
+    # Capture the new product's id RIGHT NOW, before any other INSERT on
+    # this connection (like the activity_log write below) can happen -
+    # last_insert_rowid() always reflects the MOST RECENT insert on the
+    # connection, so if it were queried after _log_activity() runs its own
+    # INSERT, it would silently return the activity_log row's id instead
+    # of the product's id.
     new_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+
+    _log_activity(
+        conn,
+        event_type="product_added",
+        product_id=data.get("product_id", ""),
+        product_name=data.get("product_name", ""),
+        details="New product added",
+    )
+
+    conn.commit()
     conn.close()
     return new_id
 
@@ -760,7 +854,7 @@ def delete_product(product_pk):
 # Bulk import (the existing "upload Excel" admin feature)
 # ------------------------
 
-def import_excel_into_db(path, replace=True, source="excel_upload"):
+def import_excel_into_db(path, replace=True, source="excel_upload", log_activity=True):
     """Read a validated Excel file and load it into the database.
 
     This is an UPSERT keyed on "Product ID" (the business key, e.g.
@@ -874,6 +968,15 @@ def import_excel_into_db(path, replace=True, source="excel_upload"):
                 """,
                 (product_id, product_name, upc, unit, retail, wholesale, category, status, description),
             )
+
+            if log_activity:
+                _log_activity(
+                    conn,
+                    event_type="product_added",
+                    product_id=product_id,
+                    product_name=product_name,
+                    details="New product added via catalog upload",
+                )
 
     if replace and seen_product_ids:
         placeholders = ",".join("?" for _ in seen_product_ids)
