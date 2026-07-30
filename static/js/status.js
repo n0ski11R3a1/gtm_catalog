@@ -105,6 +105,14 @@ function activityIconFor(eventType) {
     return eventType === 'product_added' ? 'bi-plus-circle-fill' : 'bi-graph-up-arrow';
 }
 
+// Matches the exact normalization app.py uses server-side (find_product_image
+// and the /product/<slug> lookup): strip spaces from the business product_id
+// ("GTM - 0042" -> "GTM-0042"). Keeping this in one place here means the
+// notification bell always builds the same URL the catalog's eye icon does.
+function slugifyProductId(productId) {
+    return (productId || '').replace(/\s+/g, '');
+}
+
 function renderActivityList(events) {
     const listEl = document.getElementById('activityList');
     const emptyEl = document.getElementById('activityEmpty');
@@ -124,6 +132,7 @@ function renderActivityList(events) {
         row.className = 'activity-row';
 
         const when = formatRelativeTime(parseSqliteUtc(ev.created_at));
+        const slug = slugifyProductId(ev.product_id);
 
         row.innerHTML =
             '<i class="bi ' + activityIconFor(ev.event_type) + ' activity-icon activity-icon-' + escapeHtml(ev.event_type) + '"></i>' +
@@ -131,7 +140,39 @@ function renderActivityList(events) {
                 '<div class="activity-title">' + escapeHtml(ev.product_name) + '</div>' +
                 '<div class="activity-meta">' + escapeHtml(ev.details) + '</div>' +
             '</div>' +
-            '<div class="activity-time">' + escapeHtml(when) + '</div>';
+            '<div class="activity-time">' + escapeHtml(when) + '</div>' +
+            (slug ? '<i class="bi bi-chevron-right activity-chevron" aria-hidden="true"></i>' : '');
+
+        // Only wire up navigation when there's actually a product_id to go
+        // to - a row without one (shouldn't happen per the current schema,
+        // but cheap to guard) just stays a plain read-only row instead of
+        // silently linking to "/product/".
+        if (slug) {
+            row.classList.add('activity-row-clickable');
+            row.style.cursor = 'pointer';
+            row.setAttribute('role', 'button');
+            row.setAttribute('tabindex', '0');
+            row.setAttribute('aria-label', 'View ' + ev.product_name);
+
+            const goToProduct = () => {
+                // Close the modal first so the click doesn't feel like it
+                // "hung" while the browser navigates.
+                const modalEl = document.getElementById('statusModal');
+                if (modalEl && typeof bootstrap !== 'undefined') {
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    if (modal) modal.hide();
+                }
+                window.location.href = '/product/' + encodeURIComponent(slug);
+            };
+
+            row.addEventListener('click', goToProduct);
+            row.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    goToProduct();
+                }
+            });
+        }
 
         listEl.appendChild(row);
     });

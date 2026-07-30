@@ -1057,3 +1057,33 @@ body {
     white-space: nowrap;
     padding-top: 3px;
 }
+
+.activity-row-clickable {
+    border-radius: 10px;
+    padding-left: 6px;
+    padding-right: 6px;
+    margin: 0 -6px;
+    transition: background .15s ease;
+}
+.activity-row-clickable:hover,
+.activity-row-clickable:focus-visible {
+    background: rgba(37, 99, 235, .06);
+    outline: none;
+}
+.activity-row-clickable:focus-visible {
+    outline: 2px solid var(--ocean);
+    outline-offset: -2px;
+}
+
+.activity-chevron {
+    flex-shrink: 0;
+    align-self: center;
+    font-size: 14px;
+    color: var(--muted);
+    transition: transform .15s ease;
+}
+.activity-row-clickable:hover .activity-chevron,
+.activity-row-clickable:focus-visible .activity-chevron {
+    color: var(--ocean);
+    transform: translateX(2px);
+}
