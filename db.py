@@ -173,6 +173,14 @@ def init_db():
     if "description" not in product_columns:
         conn.execute("ALTER TABLE products ADD COLUMN description TEXT DEFAULT ''")
 
+    # MIGRATION: supplier field. Internal-only (never shown on the public
+    # catalog or product detail page) - used to pull supplier alongside
+    # price data via /api/prices for inventory automation. Same
+    # "ALTER TABLE if missing" pattern as description above, so existing
+    # rows on the live DB get a safe '' default instead of breaking.
+    if "supplier" not in product_columns:
+        conn.execute("ALTER TABLE products ADD COLUMN supplier TEXT DEFAULT ''")
+
     conn.commit()
     conn.close()
 
@@ -201,6 +209,7 @@ def _row_to_dict(row):
         "Category": row["category"],
         "Status": row["status"],
         "Description": row["description"] if "description" in row.keys() else "",
+        "Supplier": row["supplier"] if "supplier" in row.keys() else "",
     }
 
 
@@ -754,8 +763,8 @@ def add_product(data):
     conn.execute(
         """
         INSERT INTO products
-            (product_id, product_name, upc, unit, retail, wholesale, category, status, description)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("product_id", ""),
@@ -767,6 +776,7 @@ def add_product(data):
             data.get("category", "General"),
             data.get("status", "In Stock"),
             data.get("description", ""),
+            data.get("supplier", ""),
         ),
     )
 
@@ -810,7 +820,8 @@ def update_product(product_pk, data):
             wholesale = ?,
             category = ?,
             status = ?,
-            description = ?
+            description = ?,
+            supplier = ?
         WHERE id = ?
         """,
         (
@@ -823,6 +834,7 @@ def update_product(product_pk, data):
             data.get("category", "General"),
             data.get("status", "In Stock"),
             data.get("description", ""),
+            data.get("supplier", ""),
             product_pk,
         ),
     )
@@ -894,6 +906,13 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
     if has_description_col:
         df["Description"] = df["Description"].fillna("")
 
+    # Supplier: same "optional column" treatment as Description - a sheet
+    # that doesn't include this column must never wipe existing supplier
+    # values in bulk, only a sheet that actually has the column updates it.
+    has_supplier_col = "Supplier" in df.columns
+    if has_supplier_col:
+        df["Supplier"] = df["Supplier"].fillna("")
+
     conn = get_db_connection()
 
     seen_product_ids = []
@@ -926,47 +945,42 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                 source=source,
             )
 
-            if has_description_col:
-                conn.execute(
-                    """
-                    UPDATE products SET
-                        product_name = ?,
-                        upc = ?,
-                        unit = ?,
-                        retail = ?,
-                        wholesale = ?,
-                        category = ?,
-                        status = ?,
-                        description = ?
-                    WHERE product_id = ?
-                    """,
-                    (product_name, upc, unit, retail, wholesale, category, status,
-                     str(row["Description"]), product_id),
-                )
-            else:
-                conn.execute(
-                    """
-                    UPDATE products SET
-                        product_name = ?,
-                        upc = ?,
-                        unit = ?,
-                        retail = ?,
-                        wholesale = ?,
-                        category = ?,
-                        status = ?
-                    WHERE product_id = ?
-                    """,
-                    (product_name, upc, unit, retail, wholesale, category, status, product_id),
-                )
+            # Optional columns (Description, Supplier): if this sheet
+            # doesn't include the column, keep whatever's already in the
+            # DB for that field rather than wiping it - only a sheet that
+            # actually has the column can bulk-update it.
+            description_val = str(row["Description"]) if has_description_col else existing["description"]
+            supplier_val = str(row["Supplier"]) if has_supplier_col else (
+                existing["supplier"] if "supplier" in existing.keys() else ""
+            )
+
+            conn.execute(
+                """
+                UPDATE products SET
+                    product_name = ?,
+                    upc = ?,
+                    unit = ?,
+                    retail = ?,
+                    wholesale = ?,
+                    category = ?,
+                    status = ?,
+                    description = ?,
+                    supplier = ?
+                WHERE product_id = ?
+                """,
+                (product_name, upc, unit, retail, wholesale, category, status,
+                 description_val, supplier_val, product_id),
+            )
         else:
             description = str(row["Description"]) if has_description_col else ""
+            supplier = str(row["Supplier"]) if has_supplier_col else ""
             conn.execute(
                 """
                 INSERT INTO products
-                    (product_id, product_name, upc, unit, retail, wholesale, category, status, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (product_id, product_name, upc, unit, retail, wholesale, category, status, description),
+                (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier),
             )
 
             if log_activity:

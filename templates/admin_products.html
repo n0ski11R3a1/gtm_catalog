@@ -45,6 +45,7 @@
                     <th>Product ID</th>
                     <th>Name</th>
                     <th>Category</th>
+                    <th>Supplier</th>
                     <th class="text-end">Retail</th>
                     <th class="text-end">Wholesale</th>
                     <th>Status</th>
@@ -53,10 +54,11 @@
             </thead>
             <tbody>
                 {% for p in products %}
-                <tr data-search="{{ (p['Product Name'] ~ ' ' ~ p['Product ID'] ~ ' ' ~ p['Category'])|lower }}">
+                <tr data-search="{{ (p['Product Name'] ~ ' ' ~ p['Product ID'] ~ ' ' ~ p['Category'] ~ ' ' ~ p['Supplier'])|lower }}">
                     <td class="text-muted">{{ p['Product ID'] }}</td>
                     <td class="fw-semibold">{{ p['Product Name'] }}</td>
                     <td>{{ p['Category'] }}</td>
+                    <td class="text-muted">{{ p['Supplier'] or '-' }}</td>
                     <td class="text-end">{{ "{:,.0f}".format(p['Retail']) }} Ks</td>
                     <td class="text-end">{{ "{:,.0f}".format(p['Wholesale']) }} Ks</td>
                     <td>
@@ -86,7 +88,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" class="text-center text-muted py-4">
+                    <td colspan="8" class="text-center text-muted py-4">
                         No products yet. Upload an Excel catalog or add one manually.
                     </td>
                 </tr>

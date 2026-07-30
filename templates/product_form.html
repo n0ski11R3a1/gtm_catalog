@@ -118,6 +118,14 @@
                                value="{{ (values.get('Wholesale') if values.get('Wholesale') is not none else values.get('wholesale', ''))|cleannum }}">
                     </div>
 
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Supplier</label>
+                        <input type="text" name="supplier" class="form-control"
+                               placeholder="e.g. MMA"
+                               value="{{ values.get('Supplier') if values.get('Supplier') is not none else values.get('supplier', '') }}">
+                        <div class="form-text">Internal only - never shown on the public catalog. Used for inventory automation via /api/prices.</div>
+                    </div>
+
                     <div class="col-12">
                         <label class="form-label fw-semibold">Description</label>
                         <textarea name="description" class="form-control" rows="4"

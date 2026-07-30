@@ -121,6 +121,7 @@ def product_form_to_dict(form):
         "category": form.get("category", "General").strip() or "General",
         "status": form.get("status", "In Stock").strip() or "In Stock",
         "description": form.get("description", "").strip(),
+        "supplier": form.get("supplier", "").strip(),
     }
 
 
