@@ -5,7 +5,7 @@
 {% block content %}
 
 <div class="detail-back-row">
-    <a href="{{ url_for('home') }}" class="detail-back-link">
+    <a href="{{ url_for('home') }}" class="detail-back-link" id="detailBackLink">
         <i class="bi bi-arrow-left"></i>
         Back to Catalog
     </a>
@@ -96,4 +96,20 @@
 
 {% block extra_js %}
 <script src="{{ url_for('static', filename='js/order.js') }}"></script>
+<script>
+    // Prefer a real browser "back" over the plain href navigation to "/".
+    // When there's history to go back into, this restores the catalog
+    // page instantly from the browser's own memory (bfcache) - no reload,
+    // no requests - and naturally keeps its scroll position and DOM state
+    // intact. Falls back to the normal link (a fresh "/" load) when there's
+    // nothing to go back to, e.g. this page was opened directly from a
+    // shared link or a new tab - app.js's sessionStorage restore still
+    // recovers filter/search/sort/scroll state either way.
+    document.getElementById('detailBackLink').addEventListener('click', function (e) {
+        if (window.history.length > 1) {
+            e.preventDefault();
+            window.history.back();
+        }
+    });
+</script>
 {% endblock %}

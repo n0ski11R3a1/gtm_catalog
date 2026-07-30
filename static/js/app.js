@@ -6,6 +6,77 @@
 let currentCategory = 'ALL';
 let currentStatus = 'In Stock';
 
+// Remembers search/sort/filter/scroll state across a trip to the product
+// detail page and back, so "Back to Catalog" restores where you were
+// instead of resetting to a fresh top-of-page catalog. sessionStorage
+// (not localStorage) is intentional - this is "where was I this
+// session," not a permanent preference, and it clears itself when the
+// tab/app is fully closed.
+const CATALOG_STATE_KEY = 'gtm_catalog_state_v1';
+
+function saveCatalogState() {
+    const searchBox = document.getElementById('searchBox');
+    const sortSelect = document.getElementById('sortSelect');
+    const grid = document.getElementById('catalogGrid');
+    if (!searchBox || !sortSelect || !grid) return; // not on the catalog page
+
+    try {
+        sessionStorage.setItem(CATALOG_STATE_KEY, JSON.stringify({
+            search: searchBox.value,
+            sort: sortSelect.value,
+            category: currentCategory,
+            status: currentStatus,
+            scrollY: window.scrollY
+        }));
+    } catch (e) {
+        // sessionStorage unavailable (e.g. private browsing) - state just
+        // won't persist, same as today's behavior
+    }
+}
+
+function restoreCatalogState() {
+    const searchBox = document.getElementById('searchBox');
+    const sortSelect = document.getElementById('sortSelect');
+    const grid = document.getElementById('catalogGrid');
+    if (!searchBox || !sortSelect || !grid) return false;
+
+    let saved;
+    try {
+        saved = JSON.parse(sessionStorage.getItem(CATALOG_STATE_KEY));
+    } catch (e) {
+        return false;
+    }
+    if (!saved) return false;
+
+    searchBox.value = saved.search || '';
+    sortSelect.value = saved.sort || 'default';
+    currentCategory = saved.category || 'ALL';
+    currentStatus = saved.status || 'In Stock';
+
+    // filterCatalog() only filters/sorts the cards - it doesn't touch pill
+    // highlighting, so re-sync that separately from the restored state.
+    document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+    const catBtn = Array.from(document.querySelectorAll('.cat-pill'))
+        .find(b => b.getAttribute('onclick') === "setCategory('" + currentCategory + "', this)");
+    (catBtn || document.querySelector('.cat-all')).classList.add('active');
+
+    document.querySelectorAll('.status-pill').forEach(p => p.classList.remove('active'));
+    const statusBtn = Array.from(document.querySelectorAll('.status-pill'))
+        .find(b => b.getAttribute('onclick') === "setStatus('" + currentStatus + "', this)");
+    if (statusBtn) statusBtn.classList.add('active');
+
+    filterCatalog();
+
+    if (typeof saved.scrollY === 'number') {
+        // Wait a frame so the grid has finished re-populating before
+        // jumping - scrolling immediately can land short if the browser
+        // hasn't reflowed the filtered/sorted layout yet.
+        requestAnimationFrame(() => window.scrollTo(0, saved.scrollY));
+    }
+
+    return true;
+}
+
 function filterCatalog() {
     let searchBox = document.getElementById('searchBox');
     let sortSelect = document.getElementById('sortSelect');
@@ -48,20 +119,22 @@ function filterCatalog() {
         card.style.display = '';
         grid.appendChild(card);
     });
+
+    saveCatalogState();
 }
 
 function setCategory(cat, btn) {
     currentCategory = cat;
     document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
-    filterCatalog();
+    filterCatalog(); // also saves state - see saveCatalogState() call at its end
 }
 
 function setStatus(status, btn) {
     currentStatus = status;
     document.querySelectorAll('.status-pill').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
-    filterCatalog();
+    filterCatalog(); // also saves state - see saveCatalogState() call at its end
 }
 
 function copyPrice(btn) {
@@ -85,5 +158,24 @@ function copyPrice(btn) {
     });
 }
 
-// Run initial filter on page load (no-ops safely if catalog isn't on this page)
-filterCatalog();
+// On load: restore whatever search/filter/sort/scroll state was saved
+// right before navigating away (e.g. tapping the eye icon to a product
+// detail page), so "Back to Catalog" lands back where you were instead
+// of a fresh top-of-page catalog. Falls back to a normal fresh filter
+// when there's nothing saved (first visit this session, cleared, etc.).
+// filterCatalog() no-ops safely if this isn't the catalog page either way.
+if (!restoreCatalogState()) {
+    filterCatalog();
+}
+
+// scrollY changes constantly but isn't tied to any filterCatalog() call,
+// so it needs its own capture point. pagehide fires right as the page is
+// being navigated away from (including into bfcache) - the last safe
+// moment to snapshot it. visibilitychange is a backup for cases where
+// pagehide doesn't fire reliably (some mobile/PWA scenarios).
+window.addEventListener('pagehide', saveCatalogState);
+document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+        saveCatalogState();
+    }
+});
