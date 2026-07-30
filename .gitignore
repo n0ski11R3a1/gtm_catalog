@@ -1,2 +1,4 @@
 gtm_catalog.db
 uploads/
+__pycache__/
+gtm_catalog.db.backup
