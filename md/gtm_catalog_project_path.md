@@ -1004,3 +1004,187 @@ Open questions, not yet answered:
 Not scoped to specific files yet since the entry point (new gallery
 view vs. modifying product_detail.html vs. something else entirely)
 isn't decided.
+
+
+Notification bell — in-stock/out-of-stock alerts added — DONE.
+
+db.py: new _log_status_change() helper, same pattern as the existing
+_log_price_change() (only fires if the status actually changed, shares
+the caller's transaction, caller commits). Logs two distinct event
+types — back_in_stock and out_of_stock — rather than one generic
+"status_changed", so the feed can color/icon them differently without
+the client parsing details strings. Wired into the two places status
+can change:
+  - update_product() (admin manually edits a product) — reuses the
+    pre-edit row already being fetched for the price-change check.
+  - import_excel_into_db() — both when a row's Status differs on
+    upload, AND when a product gets bulk-flipped to Out Of Stock
+    because it's missing from the uploaded sheet (fetches the
+    about-to-flip rows before running that bulk UPDATE, since a single
+    SQL statement has no per-row hook otherwise).
+status.js: activityIconFor() now returns a check-circle icon for
+back_in_stock and an x-circle icon for out_of_stock. Everything else
+(chevron, click-to-product navigation, unread bell dot) needed zero
+changes — already generic over event_type.
+style.css: added .activity-icon-back_in_stock (green, matches the
+existing in-stock badge tone) and .activity-icon-out_of_stock (red).
+Tested against a real copy of gtm_catalog.db — status flip logged
+correctly ahead of existing price-change/product-added entries.
+app.py, index.html, product_detail.html: untouched.
+
+---
+
+## Open item: swipeable product gallery for in-store order-taking
+
+**Status: FULLY DESIGNED, NOTHING BUILT YET.** Every decision below is
+locked. Next chat should implement directly from this spec — do not
+re-ask these questions unless something here turns out to be wrong
+once real files are in hand.
+
+**Problem being solved:** reps visiting a store currently tap the eye
+icon on each product card individually to show a customer a photo —
+takes hours per category across 200+ products. Solution: a phone-
+Photos-app-style flow — category albums -> thumbnail grid -> full-
+screen swipeable image with price/details, reachable as a second mode
+alongside (not replacing) the existing product-card List.
+
+### 1. Scope for v1
+- **Add-to-order is OUT of scope.** Don't show it, don't touch the
+  existing cart/order code (order.js, the qty stepper, /order/submit,
+  etc.) at all. Gallery is browsing-only.
+- **List view stays fully intact and is the default landing view.**
+  Gallery is a second mode, not a replacement. Reasoning: the current
+  product-card grid does double duty (browsing + fast order entry via
+  qty stepper + Add to Order inline); Gallery doesn't do order entry
+  yet, so it can't replace List without removing reps' ability to place
+  orders efficiently.
+
+### 2. Mode toggle
+- Lives in the **bottom tab bar** (`_glass_tabbar.html`), not the top
+  bar — user explicitly wants it there, not next to the bell/sliders.
+- Choice **persists via localStorage** — a rep who lives in Gallery
+  mode while in-store shouldn't have to re-toggle every visit.
+- **Default on first-ever load (no stored preference): List.**
+
+### 3. Information architecture (Gallery mode only)
+- **Level 1 — Category cards** (replaces the category chip bar when in
+  Gallery mode): each card shows a **4-photo collage cover**
+  (Pinterest/Google-Photos-album style).
+  - Selection rule: **first 4 products in that category, ordered by
+    `id ASC`** (same ordering `db.get_all_products()` already uses),
+    filtered to only those with a resolvable image.
+  - Fallback layouts for categories with fewer than 4 available
+    product images (mirrors how Google Photos varies its album-cover
+    layout by photo count):
+    - 0 images → simple placeholder tile, category still tappable
+    - 1 image → full-bleed single tile
+    - 2 images → side-by-side split
+    - 3 images → one large + two stacked (Google Photos' own 3-photo
+      pattern)
+    - 4 images → standard 2x2 collage
+- **Level 2 — Thumbnail grid**: tapping a category opens a grid of
+  small resized thumbnails (Instagram/Photos-grid style), scoped to
+  that category only.
+  - **Reuses the same filter/search state as List** (explicitly agreed
+    — may revisit later, not urgent).
+- **Level 3 — Full-screen swipeable view**: tapping a thumbnail opens
+  image + price + details overlay, swipe left/right between products
+  within that category (Facebook-photo-viewer-style). No add-to-order
+  UI.
+  - Closing/back must restore the grid's exact scroll position — reuse
+    the existing sessionStorage pattern from index.html/
+    product_detail.html (§11), don't reinvent it.
+  - Missing image → price-only fallback tile/slide instead of a broken
+    image. (User will keep images complete manually going forward; an
+    admin "products missing an image" checklist is a nice-to-have for
+    later, not required for v1.)
+
+### 4. Swipe gesture — resolved, no special handling needed
+Reps exclusively open the app via "Add to Home Screen" (confirmed).
+Standalone/installed display mode has no browser chrome, so there's no
+edge-swipe-back gesture to conflict with a full-width swipe listener.
+No defensive swipe-zone logic required.
+
+### 5. Image pipeline — this is the part with real engineering decisions
+
+**Bug found in the existing offline-cache setup (fix this regardless of
+whether Gallery ships):** `sw.js`'s generic "static assets: cache-first"
+fetch handler is currently catching product images (they're a GET
+request that isn't `/product/`, isn't a navigation, isn't `/api/`, so
+they fall through to that handler) and caching them into `CACHE_NAME`
+— the **versioned** bucket that gets fully wiped every version bump
+already viewed silently vanishes from the offline cache on the next
+
+unrelated deploy.
+
+**Fix — two files, both already exist, no new file needed:**
+- **sw.js**: add a path check for `/static/product-images/` (same
+
+  pattern as the existing `/product/` check), routing images into
+  their own persistent bucket, e.g. `PRODUCT_IMAGES_CACHE`. Add that
+  bucket name to the `activate` step's cache-cleanup exclusion filter
+  too, or it gets purged on the very next version bump.
+- **precache.js**: extend the existing per-product loop (it already
+  iterates every product from `/api/prices` and skips anything already
+  cached) to also queue each product's image URL alongside the page
+  URL, using the same bounded-concurrency worker pool already there.
+  This is the half that actually matters for the gallery — sw.js alone
+  only caches an image *after* someone views it online once, which
+  doesn't help a rep opening Gallery cold with no signal in a shop.
+- **Explicitly decided: do NOT create a new JS file for this** — extend
+  these two existing files only.
+
+**Thumbnails for the Level 2 grid:**
+- Source images are compressed webp or jpeg (user will provide).
+- **Server-generates resized thumbnail variants once, via a batch
+  script, into a dedicated static folder** (e.g.
+  `static/product-thumbs/`) — NOT generated on-the-fly per request.
+  Reasoning: PythonAnywhere free tier has CPU-second limits; resizing
+  200+ images live on every grid load risks hitting those.
+  - Regenerate only when a product's source image changes (mtime
+    check or similar — not decided yet, implementation detail for
+    next chat).
+  - Target roughly 300px, webp, quality ~70 as a starting point —
+    should land around 5-15KB/thumbnail, well within budget (see
+    quota note below). Adjust after seeing real output size.
+
+**PythonAnywhere free-tier disk quota: 450MB total — this is a real
+constraint, not a formality.**
+- Thumbnails themselves are cheap (a few MB total for 240 products at
+  the target size above) — NOT the actual risk.
+
+- **The real risk is unknown baseline usage** — pandas + openpyxl in
+  the venv can easily eat 100-200MB on their own, before
+
+  gtm_catalog.db, the 14-day backups/ rotation (§12/§14), and the
+  original product images are even counted.
+
+- **ACTION ITEM for next chat, do this FIRST before generating any
+  thumbnails:** check actual disk usage on PythonAnywhere (e.g.
+  `du -sh ~/` and a breakdown of subfolders) to confirm real headroom
+  before assuming how much of the 450MB is actually free.
+
+### Files this will touch (once built)
+- **sw.js** — add image-path routing to its own persistent cache
+  bucket + activate-step exclusion (bug fix, independent value even
+  without Gallery)
+- **precache.js** — extend existing loop to also precache image URLs
+- **New thumbnail-generation batch script** (one-time/on-demand, run
+  manually or as a PythonAnywhere Scheduled Task — same operational
+  pattern as backup_db.py) — not written yet
+- **_glass_tabbar.html** — add the List/Gallery toggle control
+- **New route(s) in app.py** for category-album view + thumbnail-grid
+  view (not scoped/named yet)
+- **New template(s)** for the three gallery levels (not created yet)
+- **New CSS** for collage covers, thumbnail grid, swipe view
+- **New JS** for swipe gesture handling (touchstart/move/end, no
+  library assumed yet)
+- **db.py / app.py**: none anticipated for the gallery views themselves
+  since they're read-only browsing — TBC once routes are actually
+  designed
+
+### To pick this up in a new chat, paste this file plus:
+app.py, db.py, index.html, product_detail.html, style.css, precache.js,
+sw.js, _glass_tabbar.html, and a couple of actual product images
+(webp/jpeg) so real file sizes can be checked before finalizing
+thumbnail settings.
