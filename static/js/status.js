@@ -102,7 +102,17 @@ async function checkForUnreadActivity() {
 // --------------------------------------
 
 function activityIconFor(eventType) {
-    return eventType === 'product_added' ? 'bi-plus-circle-fill' : 'bi-graph-up-arrow';
+    switch (eventType) {
+        case 'product_added':
+            return 'bi-plus-circle-fill';
+        case 'back_in_stock':
+            return 'bi-check-circle-fill';
+        case 'out_of_stock':
+            return 'bi-x-circle-fill';
+        case 'price_changed':
+        default:
+            return 'bi-graph-up-arrow';
+    }
 }
 
 // Matches the exact normalization app.py uses server-side (find_product_image

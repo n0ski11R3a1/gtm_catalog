@@ -278,6 +278,35 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
     )
 
 
+def _log_status_change(conn, product_id, product_name, old_status, new_status):
+    """Logs an activity_log entry when a product's Status actually changes
+    (e.g. 'In Stock' -> 'Out Of Stock'). Same "only if it actually
+    changed" guard as _log_price_change, and shares its transaction with
+    the caller for the same reason (commit/close is the caller's job).
+
+    Two distinct event_types instead of one generic "status_changed" -
+    same reasoning as product_added vs price_changed being separate: it
+    lets the bell/activity feed show a different icon/color for
+    "went out of stock" vs "back in stock" without the client having to
+    parse the details string to figure out which happened."""
+
+    old_status = (old_status or "").strip()
+    new_status = (new_status or "").strip()
+
+    if not new_status or old_status == new_status:
+        return
+
+    event_type = "back_in_stock" if new_status == "In Stock" else "out_of_stock"
+
+    _log_activity(
+        conn,
+        event_type=event_type,
+        product_id=product_id,
+        product_name=product_name,
+        details=f"{old_status or 'Unknown'} \u2192 {new_status}",
+    )
+
+
 # ------------------------
 # Reads
 # ------------------------
@@ -851,6 +880,14 @@ def update_product(product_pk, data):
             source="manual",
         )
 
+        _log_status_change(
+            conn,
+            product_id=data.get("product_id", "") or existing["product_id"],
+            product_name=data.get("product_name", "") or existing["product_name"],
+            old_status=existing["status"],
+            new_status=data.get("status", "In Stock"),
+        )
+
     conn.commit()
     conn.close()
 
@@ -945,6 +982,15 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                 source=source,
             )
 
+            if log_activity:
+                _log_status_change(
+                    conn,
+                    product_id=product_id,
+                    product_name=product_name,
+                    old_status=existing["status"],
+                    new_status=status,
+                )
+
             # Optional columns (Description, Supplier): if this sheet
             # doesn't include the column, keep whatever's already in the
             # DB for that field rather than wiping it - only a sheet that
@@ -994,6 +1040,20 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
 
     if replace and seen_product_ids:
         placeholders = ",".join("?" for _ in seen_product_ids)
+
+        # Fetch exactly which rows are about to flip to Out Of Stock
+        # BEFORE running the bulk UPDATE below, so each one can get its
+        # own activity_log entry - the UPDATE itself is a single bulk SQL
+        # statement with no per-row hook to log from otherwise.
+        about_to_go_oos = conn.execute(
+            f"""
+            SELECT product_id, product_name, status FROM products
+            WHERE product_id NOT IN ({placeholders})
+              AND status != 'Out Of Stock'
+            """,
+            seen_product_ids,
+        ).fetchall()
+
         conn.execute(
             f"""
             UPDATE products
@@ -1003,6 +1063,16 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
             """,
             seen_product_ids,
         )
+
+        if log_activity:
+            for row in about_to_go_oos:
+                _log_status_change(
+                    conn,
+                    product_id=row["product_id"],
+                    product_name=row["product_name"],
+                    old_status=row["status"],
+                    new_status="Out Of Stock",
+                )
 
     conn.commit()
     conn.close()
