@@ -26,7 +26,13 @@
 // every unrelated style tweak would be wasteful and slow, especially on
 // a rep's mobile data. PRODUCT_PAGES_CACHE persists across normal
 // version bumps and is only cleared if ITS OWN name changes.
-const CACHE_NAME = 'gtm-catalog-v20';
+//
+// v20->v21: added a message listener so the page can ask "what version
+// are you running" (powers a version display in the new Updates &
+// Status panel) - service workers and page scripts are separate
+// contexts, so this is the only way the page can know the SW's live
+// CACHE_NAME without hardcoding a guess that could drift out of sync.
+const CACHE_NAME = 'gtm-catalog-v21';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 
 const STATIC_ASSETS = [
@@ -36,6 +42,7 @@ const STATIC_ASSETS = [
     '/static/js/admin.js',
     '/static/js/order.js',
     '/static/js/precache.js',
+    '/static/js/status.js',
     '/static/manifest.json'
 ];
 
@@ -162,4 +169,15 @@ self.addEventListener('fetch', (event) => {
             });
         })
     );
+});
+
+// Lets a page ask "what version are you running" - used by the Updates
+// & Status panel to display the live app version. Replies on the
+// MessageChannel port the page sent along with the request, rather than
+// a broadcast, so concurrent requests from multiple tabs don't cross
+// wires with each other.
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'GET_VERSION' && event.ports && event.ports[0]) {
+        event.ports[0].postMessage({ version: CACHE_NAME });
+    }
 });
