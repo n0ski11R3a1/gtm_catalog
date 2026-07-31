@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}{{ category }} - Gallery - GTM Catalog{% endblock %}
+
+{% block content %}
+
+<div class="detail-back-row">
+    <a href="{{ url_for('gallery_home') }}" class="detail-back-link" id="galleryBackLink">
+        <i class="bi bi-arrow-left"></i>
+        Back to Gallery
+    </a>
+</div>
+
+<div class="hero-block">
+    <h1>{{ category }}</h1>
+</div>
+
+<div class="gallery-container">
+    <div class="gallery-thumb-grid" id="galleryThumbGrid">
+        {% for p in products %}
+        <button type="button"
+                class="gallery-thumb-tile"
+                data-index="{{ loop.index0 }}"
+                data-name="{{ p['Product Name']|lower }} {{ p['Product ID']|lower }}"
+                data-status="{{ p['Status'] }}"
+                aria-label="View {{ p['Product Name'] }}">
+            {% if p.image_path %}
+            <img src="{{ url_for('static', filename=p.image_path) }}" alt="" loading="lazy">
+            {% else %}
+            <div class="gallery-thumb-placeholder">
+                <span class="gallery-thumb-price">{% if p['Retail'] > 0 %}{{ "{:,.0f}".format(p['Retail']) }} Ks{% else %}-{% endif %}</span>
+            </div>
+            {% endif %}
+            {% if p['Status']|lower == 'out of stock' %}
+            <span class="gallery-thumb-oos">OOS</span>
+            {% endif %}
+        </button>
+        {% endfor %}
+    </div>
+</div>
+
+<div id="galleryProductsData" style="display:none;">{{ products|tojson }}</div>
+
+<div class="gallery-viewer" id="galleryViewer" aria-hidden="true">
+    <button type="button" class="gallery-viewer-close" id="galleryViewerClose" aria-label="Close">
+        <i class="bi bi-x-lg"></i>
+    </button>
+
+    <div class="gallery-viewer-track" id="galleryViewerTrack"></div>
+
+    <button type="button" class="gallery-viewer-nav gallery-viewer-prev" id="galleryViewerPrev" aria-label="Previous">
+        <i class="bi bi-chevron-left"></i>
+    </button>
+    <button type="button" class="gallery-viewer-nav gallery-viewer-next" id="galleryViewerNext" aria-label="Next">
+        <i class="bi bi-chevron-right"></i>
+    </button>
+</div>
+
+{% include "_glass_tabbar.html" %}
+
+{% include "_order_modal.html" %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/order.js') }}"></script>
+<script src="{{ url_for('static', filename='js/gallery.js') }}"></script>
+<script>
+    document.getElementById('galleryBackLink').addEventListener('click', function (e) {
+        if (window.history.length > 1) {
+            e.preventDefault();
+            window.history.back();
+        }
+    });
+</script>
+{% endblock %}

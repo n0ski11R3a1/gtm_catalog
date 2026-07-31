@@ -97,6 +97,31 @@ def find_product_image(business_product_id):
     return None
 
 
+# Gallery mode (browsing-only, Photos-app-style second view alongside
+# List) - Level 1's category cards need, per category, the first 4
+# products (id ASC, same ordering db.get_all_products() already uses)
+# that actually have a resolvable image - skipping any without one so a
+# category's cover never shows broken/placeholder tiles mixed with real
+# photos.
+def get_category_covers(all_products, category, limit=4):
+    """Returns (cover_products, total_count) for one category. cover_products
+    is a list of up to `limit` product dicts (with an added 'image_path'
+    key) - the first ones in id order that have a real image on disk.
+    total_count is every product in the category, regardless of image."""
+
+    in_category = [p for p in all_products if p["Category"] == category]
+
+    covers = []
+    for p in in_category:
+        image_path = find_product_image(p["Product ID"])
+        if image_path:
+            covers.append({**p, "image_path": image_path})
+            if len(covers) >= limit:
+                break
+
+    return covers, len(in_category)
+
+
 def product_form_to_dict(form):
 
     def to_float(value):
@@ -167,6 +192,50 @@ def product_detail(product_id_slug):
     )
 
 
+@app.route("/gallery")
+def gallery_home():
+
+    # Level 1: category cards with a 4-photo collage cover each. Public,
+    # no login required - same audience as the catalog itself. Add-to-order
+    # is out of scope for Gallery entirely (browsing-only), so this route
+    # doesn't need reps/cart data the way home()/product_detail() do.
+    all_products = db.get_all_products()
+    categories = db.get_categories()
+
+    category_cards = []
+    for cat in categories:
+        covers, total_count = get_category_covers(all_products, cat)
+        category_cards.append({
+            "name": cat,
+            "covers": covers,
+            "total_count": total_count,
+        })
+
+    return render_template("gallery.html", category_cards=category_cards)
+
+
+@app.route("/gallery/<category>")
+def gallery_category(category):
+
+    categories = db.get_categories()
+
+    if category not in categories:
+        flash(f'"{category}" is not a known category.', "warning")
+        return redirect(url_for("gallery_home"))
+
+    all_products = db.get_all_products()
+    products = [p for p in all_products if p["Category"] == category]
+
+    for p in products:
+        p["image_path"] = find_product_image(p["Product ID"])
+
+    return render_template(
+        "gallery_category.html",
+        category=category,
+        products=products,
+    )
+
+
 @app.route("/api/prices")
 def api_prices():
 
@@ -174,6 +243,28 @@ def api_prices():
     # so Excel's "Get Data from Web" / Power Query keeps working unchanged.
     # The only addition is an "id" field used internally by the admin panel.
     return jsonify(db.get_all_products())
+
+
+@app.route("/api/product-images")
+def api_product_images():
+
+    # Dedicated endpoint (not folded into /api/prices) so that contract
+    # stays exactly as-is for Excel's Power Query integration. Used by
+    # precache.js to know which images actually exist on disk without
+    # guessing extensions client-side - only products with a real,
+    # resolvable file are listed.
+    products = db.get_all_products()
+
+    images = []
+    for p in products:
+        image_path = find_product_image(p["Product ID"])
+        if image_path:
+            images.append({
+                "product_id": p["Product ID"],
+                "path": image_path,
+            })
+
+    return jsonify(images)
 
 
 @app.route("/api/price-history")

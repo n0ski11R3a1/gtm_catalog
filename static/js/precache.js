@@ -7,13 +7,14 @@
 // already cached, so repeat visits only download what's actually new or
 // missing (usually nothing, meaning no UI ever appears at all).
 //
-// IMPORTANT: PRODUCT_PAGES_CACHE must exactly match the constant of the
-// same name in sw.js. A page script and a service worker are separate
-// files that can't share a JS import, so if you ever rename one, rename
-// the other to match, or the two will silently stop agreeing on where
-// product pages live.
+// IMPORTANT: PRODUCT_PAGES_CACHE and PRODUCT_IMAGES_CACHE must exactly
+// match the constants of the same names in sw.js. A page script and a
+// service worker are separate files that can't share a JS import, so if
+// you ever rename one, rename the other to match, or the two will
+// silently stop agreeing on where product pages/images live.
 
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
+const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const PRECACHE_CONCURRENCY = 5;
 
 // Read by status.js's Updates & Status panel to show "Last Offline Sync".
@@ -71,7 +72,22 @@ async function runProductPrecache() {
         return;
     }
 
-    const cache = await caches.open(PRODUCT_PAGES_CACHE);
+    // Product images (Gallery mode's cold-open case): sw.js only caches an
+    // image AFTER someone views it online once, which doesn't help a rep
+    // opening Gallery cold with no signal in a shop - so images need the
+    // same proactive queueing as pages, from a dedicated endpoint that
+    // only lists products with an actual resolvable file (no client-side
+    // extension-guessing, no wasted 404 requests).
+    let images = [];
+    try {
+        const imgRes = await fetch('/api/product-images');
+        images = await imgRes.json();
+    } catch (e) {
+        // images just won't precache this run - pages still will, below
+    }
+
+    const pagesCache = await caches.open(PRODUCT_PAGES_CACHE);
+    const imagesCache = await caches.open(PRODUCT_IMAGES_CACHE);
 
     // Figure out what's actually missing BEFORE showing any UI - a
     // repeat visit with everything already cached should be silent.
@@ -81,9 +97,21 @@ async function runProductPrecache() {
         if (!slug) continue;
 
         const url = '/product/' + slug;
-        const cached = await cache.match(url);
+        const cached = await pagesCache.match(url);
         if (!cached) {
-            toFetch.push(url);
+            toFetch.push({ url, cache: pagesCache });
+        }
+    }
+
+    if (Array.isArray(images)) {
+        for (const img of images) {
+            if (!img.path) continue;
+
+            const url = '/static/' + img.path;
+            const cached = await imagesCache.match(url);
+            if (!cached) {
+                toFetch.push({ url, cache: imagesCache });
+            }
         }
     }
 
@@ -101,20 +129,20 @@ async function runProductPrecache() {
     }
     updateCount();
 
-    // Bounded-concurrency worker pool: fast enough for 200+ pages without
-    // opening an unreasonable number of simultaneous connections.
+    // Bounded-concurrency worker pool: fast enough for 200+ pages/images
+    // without opening an unreasonable number of simultaneous connections.
     let nextIndex = 0;
 
     async function worker() {
         while (nextIndex < toFetch.length) {
-            const url = toFetch[nextIndex++];
+            const item = toFetch[nextIndex++];
             try {
-                const response = await fetch(url);
+                const response = await fetch(item.url);
                 if (response.ok) {
-                    await cache.put(url, response);
+                    await item.cache.put(item.url, response);
                 }
             } catch (e) {
-                // one page failing (e.g. a mid-download connection drop)
+                // one item failing (e.g. a mid-download connection drop)
                 // shouldn't stop the rest of the batch
             }
             done++;

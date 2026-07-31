@@ -32,8 +32,20 @@
 // Status panel) - service workers and page scripts are separate
 // contexts, so this is the only way the page can know the SW's live
 // CACHE_NAME without hardcoding a guess that could drift out of sync.
-const CACHE_NAME = 'gtm-catalog-v21';
+//
+// v21->v22: BUG FIX - product images (/static/product-images/*) were
+// GET requests that aren't /product/, aren't a navigation, and aren't
+// /api/, so they fell through to the generic "static assets: cache-first"
+// handler at the bottom and landed in CACHE_NAME - the VERSIONED bucket
+// that gets fully wiped on every routine CSS/JS deploy. An image a rep
+// already viewed offline would silently vanish from the offline cache on
+// the next unrelated version bump. Product images now get their own
+// path check (same pattern as /product/ below) routing them into
+// PRODUCT_IMAGES_CACHE, a persistent bucket excluded from cleanup below -
+// same reasoning as PRODUCT_PAGES_CACHE.
+const CACHE_NAME = 'gtm-catalog-v22';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
+const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 
 const STATIC_ASSETS = [
     '/static/css/style.css',
@@ -43,6 +55,7 @@ const STATIC_ASSETS = [
     '/static/js/order.js',
     '/static/js/precache.js',
     '/static/js/status.js',
+    '/static/js/gallery.js',
     '/static/manifest.json'
 ];
 
@@ -68,7 +81,7 @@ self.addEventListener('activate', (event) => {
         caches.keys().then((keys) =>
             Promise.all(
                 keys
-                    .filter((key) => key !== CACHE_NAME && key !== PRODUCT_PAGES_CACHE)
+                    .filter((key) => key !== CACHE_NAME && key !== PRODUCT_PAGES_CACHE && key !== PRODUCT_IMAGES_CACHE)
                     .map((key) => caches.delete(key))
             )
         )
@@ -104,6 +117,24 @@ self.addEventListener('fetch', (event) => {
                 .then((response) => {
                     const clone = response.clone();
                     caches.open(PRODUCT_PAGES_CACHE).then((cache) => cache.put(request.url, clone));
+                    return response;
+                })
+                .catch(() => caches.match(request.url))
+        );
+        return;
+    }
+
+    // Product images: cache-and-serve from PRODUCT_IMAGES_CACHE, not the
+    // versioned CACHE_NAME - see the v21->v22 note above. Checked by path
+    // for the same reason as /product/ below: precache.js downloads these
+    // with a plain fetch(), not a navigation, so this has to run before
+    // the generic static-asset handler ever sees the request.
+    if (url.pathname.startsWith('/static/product-images/')) {
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    const clone = response.clone();
+                    caches.open(PRODUCT_IMAGES_CACHE).then((cache) => cache.put(request.url, clone));
                     return response;
                 })
                 .catch(() => caches.match(request.url))

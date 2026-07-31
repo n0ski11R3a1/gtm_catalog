@@ -1,7 +1,14 @@
 <nav class="glass-tabbar" id="glassTabbar">
-    <a href="{{ url_for('home') }}" class="tab-item{% if request.endpoint == 'home' %} active{% endif %}" aria-label="Catalog">
+    <a href="{{ url_for('home') }}" class="tab-item{% if request.endpoint == 'home' %} active{% endif %}"
+       onclick="if(window.setGalleryModePreference)setGalleryModePreference('list')" aria-label="List view">
         <i class="bi bi-shop"></i>
-        <span class="tab-label">Catalog</span>
+        <span class="tab-label">List</span>
+    </a>
+
+    <a href="{{ url_for('gallery_home') }}" class="tab-item{% if request.endpoint in ('gallery_home', 'gallery_category') %} active{% endif %}"
+       onclick="if(window.setGalleryModePreference)setGalleryModePreference('gallery')" aria-label="Gallery view">
+        <i class="bi bi-images"></i>
+        <span class="tab-label">Gallery</span>
     </a>
 
     <button type="button" class="tab-item" onclick="openOrderPanel()" aria-label="Open order list">

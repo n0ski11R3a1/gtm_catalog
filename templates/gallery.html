@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Gallery - GTM Catalog{% endblock %}
+
+{% block content %}
+
+<div class="hero-block">
+    <span class="eyebrow"><span class="live-dot"></span> Live Price List</span>
+    <h1>Master Product Catalog</h1>
+    <p>Browse by category</p>
+</div>
+
+<div class="gallery-container">
+    <div class="gallery-category-grid">
+        {% for card in category_cards %}
+        <a href="{{ url_for('gallery_category', category=card.name) }}" class="gallery-category-card">
+            <div class="collage-cover collage-count-{{ card.covers|length }}">
+                {% for cover in card.covers %}
+                <div class="collage-tile">
+                    <img src="{{ url_for('static', filename=cover.image_path) }}" alt="" loading="lazy">
+                </div>
+                {% endfor %}
+                {% if card.covers|length == 0 %}
+                <div class="collage-tile collage-placeholder">
+                    <i class="bi bi-images"></i>
+                </div>
+                {% endif %}
+            </div>
+            <div class="gallery-category-label">
+                <span class="gallery-category-name">{{ card.name }}</span>
+                <span class="gallery-category-count">{{ card.total_count }} item{{ 's' if card.total_count != 1 else '' }}</span>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+{% include "_glass_tabbar.html" %}
+
+{% include "_order_modal.html" %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/order.js') }}"></script>
+<script src="{{ url_for('static', filename='js/gallery.js') }}"></script>
+{% endblock %}
