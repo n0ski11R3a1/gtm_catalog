@@ -3,3 +3,4 @@ uploads/
 __pycache__/
 gtm_catalog.db.backup
 static/product-images/
+md/pythonanywhere_access_PAT.txt
