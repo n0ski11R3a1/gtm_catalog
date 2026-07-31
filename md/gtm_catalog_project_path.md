@@ -944,3 +944,63 @@ admin_products.html: Supplier now shown as a column in the admin product list an
 Not touched: public catalog (index.html) and product detail page (product_detail.html) — supplier is intentionally never rendered there, per the original requirement.
 Excel import file: your gtm_prices_2026-07-30.xlsx already has the Supplier column with values (e.g. MMA) — re-upload it once via the admin panel to backfill all 239 existing products.
 
+
+Notification bell — in-stock/out-of-stock alerts added — DONE.
+
+db.py: new _log_status_change() helper, same pattern as the existing
+_log_price_change() (only fires if the status actually changed, shares
+the caller's transaction, caller commits). Logs two distinct event
+types — back_in_stock and out_of_stock — rather than one generic
+"status_changed", so the feed can color/icon them differently without
+the client parsing details strings. Wired into the two places status
+can change:
+  - update_product() (admin manually edits a product) — reuses the
+    pre-edit row already being fetched for the price-change check.
+  - import_excel_into_db() — both when a row's Status differs on
+    upload, AND when a product gets bulk-flipped to Out Of Stock
+    because it's missing from the uploaded sheet (fetches the
+    about-to-flip rows before running that bulk UPDATE, since a single
+    SQL statement has no per-row hook otherwise).
+status.js: activityIconFor() now returns a check-circle icon for
+back_in_stock and an x-circle icon for out_of_stock. Everything else
+(chevron, click-to-product navigation, unread bell dot) needed zero
+changes — already generic over event_type.
+style.css: added .activity-icon-back_in_stock (green, matches the
+existing in-stock badge tone) and .activity-icon-out_of_stock (red).
+Tested against a real copy of gtm_catalog.db — status flip logged
+correctly ahead of existing price-change/product-added entries.
+app.py, index.html, product_detail.html: untouched.
+
+---
+
+## Open item: swipeable product gallery for in-store order-taking
+
+Reported same day as the notification upgrade above — not designed,
+not built. Problem: reps visiting a store currently have to tap the eye
+icon on each product card individually to show a customer a photo,
+which takes hours per category across 200+ products. Wants a
+phone-photo-gallery-style swipeable view (left/right) scoped to
+whatever's currently filtered on the catalog grid, showing price/
+details alongside the image, fast enough to actually speed up
+order-taking rather than just being a nicer viewer.
+
+Open questions, not yet answered:
+* Slide content — minimal (image + price overlay, tap to add) vs.
+  full (image + price + qty stepper + Add to Order all visible per
+  slide, no extra tap)
+* Whether precache.js currently guarantees product IMAGES are
+  downloaded ahead of time (not just page data) — this determines
+  whether gallery mode is actually usable on bad in-store signal, and
+  needs to be confirmed before building the UI
+* Whether products with no photo get skipped in gallery mode or shown
+  with a price-only slide
+* Gesture conflict: a left-edge swipe-right is iOS Safari's native
+  "back" gesture — gallery swipe needs to avoid that zone or be
+  presented as a distinct full-screen mode, or reps will accidentally
+  exit constantly
+* Returning to the grid needs to reuse the existing sessionStorage
+  scroll/filter restore (§11) rather than reinventing it
+
+Not scoped to specific files yet since the entry point (new gallery
+view vs. modifying product_detail.html vs. something else entirely)
+isn't decided.
