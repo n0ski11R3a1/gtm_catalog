@@ -1248,3 +1248,35 @@ Working file: `sale_price_catalog_confidential.xlsx` (source: manually maintaine
 **Confirmed intentional, left as-is:** UPC changes on 4 products, 24 Status flips, retail/wholesale changes on 10 other products (paired with the wholesale-price backfill work).
 
 ⚠️ **Open gotcha to note for future uploads:** the catalog importer's `Description` handling only preserves existing data when the column is **missing entirely** from the sheet. If a sheet *has* a `Description` column but a row's cell is blank, that blank **will overwrite** the existing description. Since this confidential file now has a `Description` column with 203 blank rows, it should **not** be uploaded through the admin importer as-is — it would wipe those 203 products' descriptions.
+
+Here's the write-up for your project path doc:
+
+---
+
+## Static files configuration on PythonAnywhere — offload images from Flask worker — DONE
+
+**Problem:** Product images at `/static/product-images/*` were being served through Flask's built-in static route, tying up your Python Web Worker for each request. With proactive image precaching now downloading 200+ images on page load (5 concurrent), this created a bottleneck — the precache burst could make the entire site sluggish or briefly unresponsive for other users.
+
+**Solution:** Configure PythonAnywhere's dedicated static web server to serve all `/static/` content directly, bypassing Flask entirely. PythonAnywhere's static server handles thousands of concurrent requests without touching your Python worker.
+
+**Implementation (PythonAnywhere Web tab):**
+
+1. Log into your PythonAnywhere account and go to the **Web** tab for your app.
+2. Scroll to the **"Static files"** section.
+3. Add a new mapping:
+   - **URL**: `/static/`
+   - **Directory**: `/home/your-username/your-app-path/static/` (the exact path to your Flask app's `static/` folder — check your `app.py`'s `app.static_folder` or just use the default Flask convention)
+4. Save and reload your web app (button at the top of the Web tab).
+
+**What changes:**
+- Requests to `/static/css/`, `/static/js/`, `/static/product-images/`, etc. now hit the static server instead of Flask
+- No code changes needed — `app.py`, `sw.js`, `precache.js`, templates all reference `/static/` the same way, they just don't know which server answered
+
+**What doesn't change:**
+- `/sw.js` stays served through Flask (custom route with `Service-Worker-Allowed` header) — it's not in the `/static/` folder, so this mapping doesn't affect it
+- Offline feature is unaffected — service worker caches responses regardless of which server originated them, and precaching now completes faster since image requests aren't queued behind your Python worker
+- Your code doesn't need any update — this is purely a server configuration change
+
+**Upside for precaching:** the 200+ image downloads that fire on page load now complete much faster and with zero load on your Python worker, making precaching less noticeable to other concurrent users and improving overall reliability.
+
+---
