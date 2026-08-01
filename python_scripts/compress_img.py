@@ -3,7 +3,7 @@ from pathlib import Path
 from PIL import Image
 
 # Path to your GTM folder
-FOLDER_PATH = r"C:\Users\trust\Desktop\gtm_product_list"
+FOLDER_PATH = r"C:\Users\trust\Desktop\gtm_products_image"
 
 # Output folder for optimized web images
 OUTPUT_FOLDER = Path(FOLDER_PATH) / "compressed_web"

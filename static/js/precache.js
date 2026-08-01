@@ -1,20 +1,24 @@
 // =====================================================
-// GTM CATALOG - Product Page Precache (offline support)
+// GTM CATALOG - Product & Gallery Page Precache (offline support)
 // =====================================================
-// Downloads every product's detail page into a dedicated cache bucket so
-// they work offline, showing a visible progress indicator while doing
-// so. Runs once per page load on the catalog page - skips anything
-// already cached, so repeat visits only download what's actually new or
-// missing (usually nothing, meaning no UI ever appears at all).
+// Downloads every product's detail page, plus every Gallery page
+// (/gallery and each /gallery/<category>), into dedicated cache buckets
+// so they work offline, showing a visible progress indicator while
+// doing so. Runs once per page load on the catalog page - skips
+// anything already cached, so repeat visits only download what's
+// actually new or missing (usually nothing, meaning no UI ever appears
+// at all).
 //
-// IMPORTANT: PRODUCT_PAGES_CACHE and PRODUCT_IMAGES_CACHE must exactly
-// match the constants of the same names in sw.js. A page script and a
-// service worker are separate files that can't share a JS import, so if
-// you ever rename one, rename the other to match, or the two will
-// silently stop agreeing on where product pages/images live.
+// IMPORTANT: PRODUCT_PAGES_CACHE, PRODUCT_IMAGES_CACHE, and
+// GALLERY_PAGES_CACHE must exactly match the constants of the same
+// names in sw.js. A page script and a service worker are separate
+// files that can't share a JS import, so if you ever rename one,
+// rename the other to match, or the two will silently stop agreeing on
+// where product/gallery pages or images live.
 
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
+const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
 const PRECACHE_CONCURRENCY = 5;
 
 // Read by status.js's Updates & Status panel to show "Last Offline Sync".
@@ -88,6 +92,7 @@ async function runProductPrecache() {
 
     const pagesCache = await caches.open(PRODUCT_PAGES_CACHE);
     const imagesCache = await caches.open(PRODUCT_IMAGES_CACHE);
+    const galleryCache = await caches.open(GALLERY_PAGES_CACHE);
 
     // Figure out what's actually missing BEFORE showing any UI - a
     // repeat visit with everything already cached should be silent.
@@ -112,6 +117,29 @@ async function runProductPrecache() {
             if (!cached) {
                 toFetch.push({ url, cache: imagesCache });
             }
+        }
+    }
+
+    // Gallery pages: /gallery itself, plus one /gallery/<category> per
+    // distinct category. Categories are derived from the products list
+    // we already have in hand - no need for a separate endpoint, and it
+    // guarantees the precached category set always matches what /gallery
+    // itself would actually render. encodeURIComponent handles category
+    // names with spaces/punctuation (e.g. "Food & Snacks") the same way
+    // a real browser navigation would.
+    const galleryUrls = ['/gallery'];
+    const seenCategories = new Set();
+    for (const p of products) {
+        const cat = p['Category'];
+        if (!cat || seenCategories.has(cat)) continue;
+        seenCategories.add(cat);
+        galleryUrls.push('/gallery/' + encodeURIComponent(cat));
+    }
+
+    for (const url of galleryUrls) {
+        const cached = await galleryCache.match(url);
+        if (!cached) {
+            toFetch.push({ url, cache: galleryCache });
         }
     }
 

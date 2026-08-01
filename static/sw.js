@@ -43,9 +43,30 @@
 // path check (same pattern as /product/ below) routing them into
 // PRODUCT_IMAGES_CACHE, a persistent bucket excluded from cleanup below -
 // same reasoning as PRODUCT_PAGES_CACHE.
-const CACHE_NAME = 'gtm-catalog-v22';
+// v22->v23: BUG FIX - Gallery mode's own pages (/gallery and
+// /gallery/<category>) were navigation requests that weren't '/', so
+// they fell into the generic "Admin/login/etc while offline: no cached
+// fallback, by design" branch below - the same branch meant for
+// session-dependent pages. But Gallery is public/browsing-only, same
+// audience as '/' and /product/<id> (see comments on those), so it
+// should never have been lumped in with admin/login. Gallery pages now
+// get the same cache-and-serve treatment as /product/ pages, in their
+// own persistent bucket (GALLERY_PAGES_CACHE) so a routine CSS/JS
+// version bump doesn't force re-downloading every category page -
+// same reasoning as PRODUCT_PAGES_CACHE/PRODUCT_IMAGES_CACHE.
+// v23->v24: BUG FIX - category names containing "&" (e.g. "Baby &
+// Health", "Food & Snacks") were being cached under a different key
+// than the one a real navigation actually requested, because a browser
+// leaves "&" unescaped in a path (only spaces get auto-encoded) while
+// precache.js's encodeURIComponent() escapes it to "%26". Any category
+// without "&" happened to produce identical strings both ways, which
+// is why this only ever broke those two categories. Gallery cache
+// reads/writes now go through canonicalizeGalleryPath() so both forms
+// resolve to one key.
+const CACHE_NAME = 'gtm-catalog-v24';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
+const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
 
 const STATIC_ASSETS = [
     '/static/css/style.css',
@@ -81,7 +102,7 @@ self.addEventListener('activate', (event) => {
         caches.keys().then((keys) =>
             Promise.all(
                 keys
-                    .filter((key) => key !== CACHE_NAME && key !== PRODUCT_PAGES_CACHE && key !== PRODUCT_IMAGES_CACHE)
+                    .filter((key) => key !== CACHE_NAME && key !== PRODUCT_PAGES_CACHE && key !== PRODUCT_IMAGES_CACHE && key !== GALLERY_PAGES_CACHE)
                     .map((key) => caches.delete(key))
             )
         )
@@ -90,11 +111,31 @@ self.addEventListener('activate', (event) => {
 });
 
 // Fetch strategy:
-// - HTML page navigations (/, /login, /admin, /admin/products, etc.):
+// - Gallery pages (/gallery, /gallery/<category>) and product detail
+//   pages (/product/<id>): cache-and-serve from their own persistent
+//   buckets - public, session-independent, safe to serve stale-while-
+//   revalidate style.
+// - Other HTML page navigations (/login, /admin, /admin/products, etc.):
 //   ALWAYS go to the network. Session/auth state changes per request,
-//   so these must never be served from cache.
+//   so these must never be served from cache. ('/' is the one exception,
+//   see isCatalogHome below.)
 // - API calls (/api/*): network-first, fall back to cache if offline.
 // - Static assets (css/js/manifest): cache-first, refreshed in the background.
+// Normalizes a URL path so category names with characters like "&" always
+// produce the same cache key, regardless of whether the path arrived with
+// that character literal (a real browser navigation) or percent-encoded
+// (precache.js's encodeURIComponent()) - see the BUG FIX note on the
+// gallery block below for why this exists. Must produce the same output
+// as an un-encoded category name run through encodeURIComponent() alone,
+// since that's exactly what precache.js does when it builds a gallery URL
+// straight from the raw category string with no prior encoding to undo.
+function canonicalizeGalleryPath(pathname) {
+    return pathname
+        .split('/')
+        .map((segment) => (segment ? encodeURIComponent(decodeURIComponent(segment)) : segment))
+        .join('/');
+}
+
 self.addEventListener('fetch', (event) => {
     const { request } = event;
 
@@ -103,6 +144,40 @@ self.addEventListener('fetch', (event) => {
     }
 
     const url = new URL(request.url);
+
+    // Gallery pages (/gallery and /gallery/<category>): cache-and-serve
+    // from GALLERY_PAGES_CACHE, same pattern as /product/ below and for
+    // the same reason - public, session-independent, and precache.js
+    // needs to be able to reach this with a plain fetch() (not
+    // navigate-mode), so this is checked by path, before the
+    // navigate-only branch further down would otherwise catch it.
+    //
+    // BUG FIX: category names can contain characters like "&" that are
+    // valid, unescaped path characters as far as a real browser
+    // navigation is concerned (only space gets auto-encoded to %20),
+    // but precache.js's encodeURIComponent() escapes them (& -> %26).
+    // Caching by the raw request.url meant the SAME category page ended
+    // up under two different keys depending on which path created it -
+    // a real click-through vs. precache.js's proactive download - so an
+    // offline visit to a category that was only ever proactively
+    // precached (never actually clicked while online) missed the cache
+    // entirely. canonicalizeGalleryPath() normalizes both forms to one
+    // string before it's ever used as a cache key, on both the write
+    // and the read side, so it no longer matters which encoding a given
+    // request happened to arrive with.
+    if (url.pathname === '/gallery' || url.pathname.startsWith('/gallery/')) {
+        const cacheKey = self.location.origin + canonicalizeGalleryPath(url.pathname) + url.search;
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    const clone = response.clone();
+                    caches.open(GALLERY_PAGES_CACHE).then((cache) => cache.put(cacheKey, clone));
+                    return response;
+                })
+                .catch(() => caches.match(cacheKey))
+        );
+        return;
+    }
 
     // Product detail pages: cache-and-serve from PRODUCT_PAGES_CACHE.
     // Checked by PATH here, not request.mode - the offline precache

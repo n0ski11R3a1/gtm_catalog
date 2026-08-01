@@ -1188,3 +1188,63 @@ app.py, db.py, index.html, product_detail.html, style.css, precache.js,
 sw.js, _glass_tabbar.html, and a couple of actual product images
 (webp/jpeg) so real file sizes can be checked before finalizing
 thumbnail settings.
+
+Here's the write-up, in the same style as your existing project path doc entries — just copy this in:
+
+---
+
+## Gallery offline mode — proactive precache + two cache bugs fixed (v20 → v24) — DONE
+
+**Problem 1: Gallery pages weren't cached for offline at all.** `sw.js`'s navigate handler only ever gave offline treatment to `/` — every other navigation (including `/gallery` and `/gallery/<category>`) fell into the branch built for `/admin`/`/login` ("no cached fallback, by design"), even though Gallery is public and session-independent, same audience as `/` and `/product/<id>`. And `precache.js` never proactively downloaded gallery pages either, so even a category visited once online wasn't guaranteed to survive going offline.
+
+**Fix:** New `GALLERY_PAGES_CACHE` bucket in `sw.js` (persistent across version bumps, same reasoning as `PRODUCT_PAGES_CACHE`/`PRODUCT_IMAGES_CACHE` — a routine CSS/JS deploy shouldn't force re-downloading every category page). New path-based routing block (checked before the navigate-only branch, since `precache.js` reaches it with a plain `fetch()`, not a navigation) does cache-and-serve for `/gallery` and `/gallery/<category>`. Added to the `activate` cleanup exclusion list.
+
+`precache.js` now also derives the full category list from the products it already fetches via `/api/prices` (no new endpoint needed) and proactively downloads `/gallery` plus every `/gallery/<category>` page into the new bucket, same worker-pool pattern already used for product pages/images.
+
+**Problem 2 (found after the above shipped): category names containing `&` — `Baby & Health` and `Food & Snacks` — silently failed offline, every other category worked fine.** Root cause: a real browser navigation leaves `&` unescaped in a URL path (valid path character, only spaces get auto-encoded to `%20`), but `precache.js` builds its cache key with `encodeURIComponent()`, which escapes `&` → `%26`. That produced two different strings for the same logical page — one written by precache.js's proactive download, a different one looked up by `sw.js` on an offline visit that had never been proactively cached under that exact key. Any category without `&` happened to produce identical strings both ways, which is why only those two broke.
+
+**Fix:** added `canonicalizeGalleryPath()` to `sw.js` — decodes each path segment then re-encodes it — and routed every gallery cache write and read through it, so both encoding forms collapse to one key regardless of which one a given request arrives with. `precache.js` didn't need changes; it was already producing the canonical form directly from the raw (un-encoded) category string.
+
+Verified: canonicalization collapses both the literal-`&` and pre-encoded-`%26` forms to the identical cache key; categories without special characters are unaffected. `node --check` clean on both files.
+
+Files touched: `sw.js` (v20 → v24 across both fixes), `precache.js`.
+
+Not touched: `app.py`, `db.py`, templates.
+
+---
+
+## Confidential cost/margin catalog — new internal fields + admin-only endpoint — DONE
+
+**Feature:** Added `base_cost` and `b2b_price` as internal-only columns on `products`, plus a new admin-only `/api/prices-margin` endpoint that returns those two fields alongside three computed margins (`Retail Margin`, `Wholesale Margin`, `B2B Margin`).
+
+**Schema:** `products.base_cost REAL DEFAULT NULL`, `products.b2b_price REAL DEFAULT NULL` — added via the same `ALTER TABLE IF NOT EXISTS`-style migration pattern already used for `description`/`supplier`. `NULL` default (not `0`) so "no cost data yet" stays distinguishable from "cost is genuinely zero" — matters for the margin math, which would otherwise silently show a 100% margin for a product nobody's entered a cost for.
+
+**db.py:**
+- `_row_to_dict()` / `get_all_products()` — **unchanged**, deliberately. No confidential field ever reaches `/api/prices`, the public catalog, or the product detail page.
+- New `_row_to_dict_with_margin()` / `get_all_products_with_margin()` — adds `Base Cost`, `B2B`, and the three margins. Margins are computed live from cost vs. price, not stored, so they can't drift stale the way the manually-maintained confidential spreadsheet's own margin columns did.
+- `add_product()` / `update_product()` quietly accept `base_cost`/`b2b_price` if passed, but preserve existing values if not passed — admin-UI editing for these fields is a planned feature, not built yet.
+- `import_excel_into_db()` treats `Base Cost` / `B2B` as optional columns, same rule as `Description`/`Supplier`: a normal catalog upload without those columns never wipes existing cost data.
+
+**app.py:** new route `/api/prices-margin` — checks `login_required()`, returns `401` (JSON) if not authenticated, otherwise `db.get_all_products_with_margin()`. `/api/prices` stays public, unchanged.
+
+**Verified with a smoke test:** public dict has zero confidential fields; margins compute correctly; cost fields survive a normal edit that doesn't touch them; bulk import both fills in and preserves cost data correctly across re-uploads with/without the optional columns.
+
+Note: Excel import column is named `Base Cost` (not `Base Price`, which is what the working confidential spreadsheet uses) — no alias support yet if the sheet needs to recognize both names.
+
+---
+
+## Confidential price/margin spreadsheet — corrupted rows fixed, missing product restored, descriptions backfilled — DONE
+
+Working file: `sale_price_catalog_confidential.xlsx` (source: manually maintained, not uploaded through the catalog importer).
+
+**Corruption found and fixed:** `GTM-0243` and `GTM-0244` had been overwritten with the wrong products' data — *Bourbon 150g* and *Calsome (China)* were sitting under the Product IDs that belonged to *Gummy Candy (Pack)* and *Jeeno Jelly (Strawberry)*. Gave Bourbon/Calsome fresh IDs (`GTM-0249`, `GTM-0250`), restored `GTM-0243`/`GTM-0244` to their original data from the server export.
+
+**Missing product restored:** `GTM-0128` (Kung Fu ခြင်ဆေးခွေ) was absent from the confidential file entirely — confirmed unintentional, added back with its original data.
+
+**Reverted 3 unintentional product-name edits** (`GTM-0086`, `GTM-0158`, `GTM-0231`) back to the web/server version's naming.
+
+**Description column added:** confidential file originally excluded `Description` by design (to avoid overwriting it via a future upload). Copied `Description` over from the server export instead, and stripped `_x000D_` artifacts (unresolved carriage-return escapes from a raw XML export) along with normalizing `\r\n`/`\r` to clean `\n` line breaks. Reused the file's existing stray empty column rather than adding a new one. Only 43 of 246 products have a description in the source at all — rest left blank, matching the original.
+
+**Confirmed intentional, left as-is:** UPC changes on 4 products, 24 Status flips, retail/wholesale changes on 10 other products (paired with the wholesale-price backfill work).
+
+⚠️ **Open gotcha to note for future uploads:** the catalog importer's `Description` handling only preserves existing data when the column is **missing entirely** from the sheet. If a sheet *has* a `Description` column but a row's cell is blank, that blank **will overwrite** the existing description. Since this confidential file now has a `Description` column with 203 blank rows, it should **not** be uploaded through the admin importer as-is — it would wipe those 203 products' descriptions.
