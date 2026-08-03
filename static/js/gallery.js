@@ -44,17 +44,105 @@ window.setGalleryModePreference = setGalleryModePreference;
 })();
 
 // --------------------------------------
-// Level 2: thumbnail grid filter reuse
+// Level 1: category-card search (gallery.html topbar)
 // --------------------------------------
-// Reuses the exact sessionStorage key app.js already writes
-// (gtm_catalog_state_v1) so switching from List to Gallery mid-search
-// keeps the same search text / in-stock filter applied to the thumbnail
-// grid - no new storage, per the "reuses the same filter/search state as
-// List" decision. Only search + status apply here; category is already
-// fixed by the route, and sort has no meaning in a photo grid.
+function filterGalleryCategories() {
+    const searchBox = document.getElementById('galleryCategorySearch');
+    const grid = document.getElementById('galleryCategoryGrid');
+    const empty = document.getElementById('galleryCategoryEmpty');
+    if (!searchBox || !grid) return; // not on the Level 1 page
+
+    const query = searchBox.value.toLowerCase().trim();
+    let visibleCount = 0;
+
+    grid.querySelectorAll('.gallery-category-card').forEach((card) => {
+        const nameData = card.getAttribute('data-name') || '';
+        const matches = !query || nameData.includes(query);
+        card.style.display = matches ? '' : 'none';
+        if (matches) visibleCount += 1;
+    });
+
+    if (empty) empty.style.display = visibleCount === 0 ? 'flex' : 'none';
+}
+
+// --------------------------------------
+// Level 2: thumbnail grid - search + status filter (gallery_category.html
+// topbar). Reuses the exact sessionStorage key app.js already writes
+// (gtm_catalog_state_v1) so switching between List and Gallery mid-search
+// keeps the same search text / status filter - and now also writes back
+// to that same key so a change made here carries back to List too.
+// Category is already fixed by the route; sort has no meaning in a photo
+// grid, so only search + status apply here.
+let galleryCurrentStatus = 'ALL';
+
+function toggleGalleryFilters() {
+    const panel = document.getElementById('galleryFilterPanel');
+    const btn = document.querySelector('#galleryTopbar .filter-toggle-btn');
+    if (!panel || !btn) return;
+
+    const isOpen = panel.classList.toggle('open');
+    btn.classList.toggle('active', isOpen);
+    btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+}
+
+function saveGalleryThumbState() {
+    const searchBox = document.getElementById('galleryThumbSearch');
+    if (!searchBox) return;
+
+    let saved;
+    try {
+        saved = JSON.parse(sessionStorage.getItem('gtm_catalog_state_v1')) || {};
+    } catch (e) {
+        saved = {};
+    }
+
+    saved.search = searchBox.value;
+    saved.status = galleryCurrentStatus;
+
+    try {
+        sessionStorage.setItem('gtm_catalog_state_v1', JSON.stringify(saved));
+    } catch (e) {
+        // sessionStorage unavailable - state just won't persist
+    }
+}
+
+function filterGalleryThumbs() {
+    const searchBox = document.getElementById('galleryThumbSearch');
+    const grid = document.getElementById('galleryThumbGrid');
+    const empty = document.getElementById('galleryThumbEmpty');
+    if (!searchBox || !grid) return; // not on the Level 2 page
+
+    const query = searchBox.value.toLowerCase().trim();
+    let visibleCount = 0;
+
+    grid.querySelectorAll('.gallery-thumb-tile').forEach((tile) => {
+        const nameData = tile.getAttribute('data-name') || '';
+        const statusData = tile.getAttribute('data-status') || '';
+
+        const matchesSearch = !query || nameData.includes(query);
+        const matchesStatus = (galleryCurrentStatus === 'ALL' || statusData.toLowerCase() === galleryCurrentStatus.toLowerCase());
+        const visible = matchesSearch && matchesStatus;
+
+        tile.style.display = visible ? '' : 'none';
+        if (visible) visibleCount += 1;
+    });
+
+    if (empty) empty.style.display = visibleCount === 0 ? 'flex' : 'none';
+
+    saveGalleryThumbState();
+}
+
+function setGalleryStatus(status, btn) {
+    galleryCurrentStatus = status;
+    document.querySelectorAll('#galleryFilterPanel .status-pill').forEach((p) => p.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    filterGalleryThumbs(); // also saves state - see saveGalleryThumbState() call at its end
+}
+
 (function () {
     const grid = document.getElementById('galleryThumbGrid');
-    if (!grid) return; // not on the Level 2 page
+    const searchBox = document.getElementById('galleryThumbSearch');
+    if (!grid || !searchBox) return; // not on the Level 2 page
 
     let saved;
     try {
@@ -63,20 +151,15 @@ window.setGalleryModePreference = setGalleryModePreference;
         saved = null;
     }
 
-    const query = (saved && saved.search ? saved.search : '').toLowerCase().trim();
-    const status = saved && saved.status ? saved.status : 'In Stock';
+    searchBox.value = (saved && saved.search) ? saved.search : '';
+    galleryCurrentStatus = (saved && saved.status) ? saved.status : 'ALL';
 
-    if (!query && status === 'ALL') return; // nothing to filter out
+    document.querySelectorAll('#galleryFilterPanel .status-pill').forEach((p) => p.classList.remove('active'));
+    const statusBtn = Array.from(document.querySelectorAll('#galleryFilterPanel .status-pill'))
+        .find((b) => b.getAttribute('onclick') === "setGalleryStatus('" + galleryCurrentStatus + "', this)");
+    (statusBtn || document.querySelector('#galleryFilterPanel .status-pill:last-child')).classList.add('active');
 
-    grid.querySelectorAll('.gallery-thumb-tile').forEach((tile) => {
-        const nameData = tile.getAttribute('data-name') || '';
-        const statusData = tile.getAttribute('data-status') || '';
-
-        const matchesSearch = !query || nameData.includes(query);
-        const matchesStatus = (status === 'ALL' || statusData.toLowerCase() === status.toLowerCase());
-
-        tile.style.display = (matchesSearch && matchesStatus) ? '' : 'none';
-    });
+    filterGalleryThumbs();
 })();
 
 // --------------------------------------
@@ -128,16 +211,23 @@ window.setGalleryModePreference = setGalleryModePreference;
                 ? '<img src="/static/' + p.image_path + '" alt="">'
                 : '<div class="gallery-viewer-slide-placeholder"><i class="bi bi-image"></i></div>';
 
+            const isOos = (p['Status'] || '').toLowerCase() === 'out of stock';
+            const statusBadge = '<span class="gallery-viewer-slide-status ' + (isOos ? 'is-oos' : 'is-instock') + '">' +
+                '<span class="gallery-viewer-slide-status-dot"></span>' + escapeHtml(p['Status']) +
+                '</span>';
+
             return (
                 '<div class="gallery-viewer-slide">' +
                     '<div class="gallery-viewer-slide-media">' + image + '</div>' +
                     '<div class="gallery-viewer-slide-info">' +
+                        '<div class="gallery-viewer-slide-id">' + escapeHtml(p['Product ID']) + '</div>' +
                         '<div class="gallery-viewer-slide-name">' + escapeHtml(p['Product Name']) + '</div>' +
                         '<div class="gallery-viewer-slide-unit">' + escapeHtml(p['Unit']) + '</div>' +
                         '<div class="gallery-viewer-slide-prices">' +
                             '<span>Retail: ' + formatKs(p['Retail']) + '</span>' +
                             '<span>Wholesale: ' + formatKs(p['Wholesale']) + '</span>' +
                         '</div>' +
+                        statusBadge +
                     '</div>' +
                 '</div>'
             );

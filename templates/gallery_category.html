@@ -15,15 +15,39 @@
     <h1>{{ category }}</h1>
 </div>
 
+<div class="glass-topbar" id="galleryTopbar">
+    <div class="topbar-row">
+        <div class="search-wrap">
+            <i class="bi bi-search search-icon"></i>
+            <input type="text" id="galleryThumbSearch" class="search-box" placeholder="Search item name, ID..." onkeyup="filterGalleryThumbs()">
+        </div>
+
+        <button class="filter-toggle-btn" type="button" onclick="toggleGalleryFilters()" aria-expanded="false" aria-controls="galleryFilterPanel" aria-label="Filters">
+            <i class="bi bi-sliders"></i>
+        </button>
+    </div>
+
+    <div class="filter-panel" id="galleryFilterPanel">
+        <div class="toolbar-row">
+            <div class="status-group">
+                <button class="pill instock status-pill" onclick="setGalleryStatus('In Stock', this)">In Stock</button>
+                <button class="pill outofstock status-pill" onclick="setGalleryStatus('Out Of Stock', this)">OOS</button>
+                <button class="pill active status-pill" onclick="setGalleryStatus('ALL', this)">All</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="gallery-container">
     <div class="gallery-thumb-grid" id="galleryThumbGrid">
         {% for p in products %}
+        {% set is_oos = p['Status']|lower == 'out of stock' %}
         <button type="button"
-                class="gallery-thumb-tile"
+                class="gallery-thumb-tile{% if is_oos %} gallery-thumb-tile-oos{% endif %}"
                 data-index="{{ loop.index0 }}"
                 data-name="{{ p['Product Name']|lower }} {{ p['Product ID']|lower }}"
                 data-status="{{ p['Status'] }}"
-                aria-label="View {{ p['Product Name'] }}">
+                aria-label="View {{ p['Product Name'] }}, {{ p['Product ID'] }}, {{ p['Status'] }}">
             {% if p.image_path %}
             <img src="{{ url_for('static', filename=p.image_path) }}" alt="" loading="lazy">
             {% else %}
@@ -31,11 +55,20 @@
                 <span class="gallery-thumb-price">{% if p['Retail'] > 0 %}{{ "{:,.0f}".format(p['Retail']) }} Ks{% else %}-{% endif %}</span>
             </div>
             {% endif %}
-            {% if p['Status']|lower == 'out of stock' %}
-            <span class="gallery-thumb-oos">OOS</span>
-            {% endif %}
+
+            <span class="gallery-thumb-status-badge {{ 'is-oos' if is_oos else 'is-instock' }}">
+                <span class="gallery-thumb-status-dot"></span>{{ 'OOS' if is_oos else 'In Stock' }}
+            </span>
+
+            <span class="gallery-thumb-info">
+                <span class="gallery-thumb-id">{{ p['Product ID'] }}</span>
+            </span>
         </button>
         {% endfor %}
+    </div>
+    <div class="gallery-empty-state" id="galleryThumbEmpty" style="display:none;">
+        <i class="bi bi-search"></i>
+        <span>No items match your search or filter.</span>
     </div>
 </div>
 

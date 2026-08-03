@@ -1095,7 +1095,7 @@ body {
    ===================================================== */
 
 /* Level 1: category cards with a 4-photo collage cover */
-.gallery-container { padding-bottom: 100px; }
+.gallery-container { padding-top: 4px; padding-bottom: 100px; }
 
 .gallery-category-grid {
     display: grid;
@@ -1179,17 +1179,80 @@ body {
     color: var(--ink);
 }
 
-.gallery-thumb-oos {
+.gallery-thumb-tile-oos img { opacity: .5; }
+.gallery-thumb-tile-oos .gallery-thumb-placeholder { opacity: .5; }
+
+.gallery-thumb-status-badge {
     position: absolute;
-    top: 4px;
-    right: 4px;
-    background: rgba(16, 36, 62, .78);
+    top: 5px;
+    right: 5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(10, 14, 20, .72);
     color: #fff;
     font-size: 9px;
     font-weight: 700;
-    letter-spacing: .03em;
-    padding: 2px 5px;
-    border-radius: 4px;
+    letter-spacing: .02em;
+    padding: 3px 7px 3px 6px;
+    border-radius: 20px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+.gallery-thumb-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.gallery-thumb-status-badge.is-instock .gallery-thumb-status-dot { background: var(--leaf); box-shadow: 0 0 4px rgba(34, 197, 94, .8); }
+.gallery-thumb-status-badge.is-oos .gallery-thumb-status-dot { background: #F87171; }
+.gallery-thumb-status-badge.is-oos { background: rgba(10, 14, 20, .82); }
+
+.gallery-thumb-info {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 12px 6px 5px;
+    background: linear-gradient(to top, rgba(0, 0, 0, .68), rgba(0, 0, 0, 0));
+    pointer-events: none;
+}
+.gallery-thumb-id {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .5);
+}
+
+/* Empty-state message shown when a gallery search/filter matches nothing */
+.gallery-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 48px 16px;
+    color: var(--muted);
+    font-size: 13.5px;
+    text-align: center;
+}
+.gallery-empty-state i { font-size: 26px; }
+
+.gallery-category-oos-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 20px;
+    background: rgba(239, 68, 68, .10);
+    color: #B91C1C;
+    font-size: 10px;
+    font-weight: 700;
 }
 
 /* Level 3: full-screen swipeable viewer overlay - browsing only, no
@@ -1254,6 +1317,14 @@ body {
 }
 
 .gallery-viewer-slide-info { text-align: center; color: #fff; margin-top: 20px; }
+.gallery-viewer-slide-id {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .03em;
+    color: rgba(255, 255, 255, .5);
+    margin-bottom: 3px;
+}
 .gallery-viewer-slide-name { font-family: var(--font-display); font-weight: 700; font-size: 17px; }
 .gallery-viewer-slide-unit { font-size: 12.5px; color: rgba(255, 255, 255, .6); margin-top: 2px; }
 .gallery-viewer-slide-prices {
@@ -1266,6 +1337,30 @@ body {
     font-weight: 600;
     color: #fff;
 }
+.gallery-viewer-slide-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .02em;
+}
+.gallery-viewer-slide-status-dot { width: 7px; height: 7px; border-radius: 50%; }
+.gallery-viewer-slide-status.is-instock {
+    background: rgba(34, 197, 94, .16);
+    border: 1px solid rgba(74, 222, 128, .35);
+    color: #4ADE80;
+}
+.gallery-viewer-slide-status.is-instock .gallery-viewer-slide-status-dot { background: #4ADE80; }
+.gallery-viewer-slide-status.is-oos {
+    background: rgba(248, 113, 113, .14);
+    border: 1px solid rgba(248, 113, 113, .35);
+    color: #F87171;
+}
+.gallery-viewer-slide-status.is-oos .gallery-viewer-slide-status-dot { background: #F87171; }
 
 .gallery-viewer-close {
     position: absolute;

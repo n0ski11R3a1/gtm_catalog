@@ -10,10 +10,19 @@
     <p>Browse by category</p>
 </div>
 
+<div class="glass-topbar" id="galleryTopbar">
+    <div class="topbar-row">
+        <div class="search-wrap">
+            <i class="bi bi-search search-icon"></i>
+            <input type="text" id="galleryCategorySearch" class="search-box" placeholder="Search category..." onkeyup="filterGalleryCategories()">
+        </div>
+    </div>
+</div>
+
 <div class="gallery-container">
-    <div class="gallery-category-grid">
+    <div class="gallery-category-grid" id="galleryCategoryGrid">
         {% for card in category_cards %}
-        <a href="{{ url_for('gallery_category', category=card.name) }}" class="gallery-category-card">
+        <a href="{{ url_for('gallery_category', category=card.name) }}" class="gallery-category-card" data-name="{{ card.name|lower }}">
             <div class="collage-cover collage-count-{{ card.covers|length }}">
                 {% for cover in card.covers %}
                 <div class="collage-tile">
@@ -28,10 +37,17 @@
             </div>
             <div class="gallery-category-label">
                 <span class="gallery-category-name">{{ card.name }}</span>
-                <span class="gallery-category-count">{{ card.total_count }} item{{ 's' if card.total_count != 1 else '' }}</span>
+                <span class="gallery-category-count">
+                    {{ card.total_count }} item{{ 's' if card.total_count != 1 else '' }}
+                    {% if card.oos_count > 0 %}<span class="gallery-category-oos-tag">{{ card.oos_count }} OOS</span>{% endif %}
+                </span>
             </div>
         </a>
         {% endfor %}
+    </div>
+    <div class="gallery-empty-state" id="galleryCategoryEmpty" style="display:none;">
+        <i class="bi bi-search"></i>
+        <span>No categories match your search.</span>
     </div>
 </div>
 

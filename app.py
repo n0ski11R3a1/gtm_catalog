@@ -104,12 +104,15 @@ def find_product_image(business_product_id):
 # category's cover never shows broken/placeholder tiles mixed with real
 # photos.
 def get_category_covers(all_products, category, limit=4):
-    """Returns (cover_products, total_count) for one category. cover_products
-    is a list of up to `limit` product dicts (with an added 'image_path'
-    key) - the first ones in id order that have a real image on disk.
-    total_count is every product in the category, regardless of image."""
+    """Returns (cover_products, total_count, oos_count) for one category.
+    cover_products is a list of up to `limit` product dicts (with an added
+    'image_path' key) - the first ones in id order that have a real image
+    on disk. total_count is every product in the category, regardless of
+    image. oos_count is how many of those are Out Of Stock, so the gallery
+    category card can surface stock status without opening the category."""
 
     in_category = [p for p in all_products if p["Category"] == category]
+    oos_count = sum(1 for p in in_category if p["Status"].lower() == "out of stock")
 
     covers = []
     for p in in_category:
@@ -119,7 +122,7 @@ def get_category_covers(all_products, category, limit=4):
             if len(covers) >= limit:
                 break
 
-    return covers, len(in_category)
+    return covers, len(in_category), oos_count
 
 
 def product_form_to_dict(form):
@@ -204,11 +207,12 @@ def gallery_home():
 
     category_cards = []
     for cat in categories:
-        covers, total_count = get_category_covers(all_products, cat)
+        covers, total_count, oos_count = get_category_covers(all_products, cat)
         category_cards.append({
             "name": cat,
             "covers": covers,
             "total_count": total_count,
+            "oos_count": oos_count,
         })
 
     return render_template("gallery.html", category_cards=category_cards)

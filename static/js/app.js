@@ -4,7 +4,7 @@
 // =====================================================
 
 let currentCategory = 'ALL';
-let currentStatus = 'In Stock';
+let currentStatus = 'ALL';
 
 // Remembers search/sort/filter/scroll state across a trip to the product
 // detail page and back, so "Back to Catalog" restores where you were
@@ -51,7 +51,7 @@ function restoreCatalogState() {
     searchBox.value = saved.search || '';
     sortSelect.value = saved.sort || 'default';
     currentCategory = saved.category || 'ALL';
-    currentStatus = saved.status || 'In Stock';
+    currentStatus = saved.status || 'ALL';
 
     // filterCatalog() only filters/sorts the cards - it doesn't touch pill
     // highlighting, so re-sync that separately from the restored state.

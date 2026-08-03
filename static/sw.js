@@ -63,7 +63,7 @@
 // is why this only ever broke those two categories. Gallery cache
 // reads/writes now go through canonicalizeGalleryPath() so both forms
 // resolve to one key.
-const CACHE_NAME = 'gtm-catalog-v24';
+const CACHE_NAME = 'gtm-catalog-v25';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
