@@ -1280,3 +1280,21 @@ Here's the write-up for your project path doc:
 **Upside for precaching:** the 200+ image downloads that fire on page load now complete much faster and with zero load on your Python worker, making precaching less noticeable to other concurrent users and improving overall reliability.
 
 ---
+git commit -m "Fix: Excel upload notifications & prevent Product ID reuse after delete
+
+- Add persistent id_counter table to never reuse Product IDs, even after delete
+  (previously deleted products' IDs could be reassigned to new unrelated products,
+  causing confusion in price_history/activity_log)
+
+- Fix Excel import blank Product ID collision bug that prevented notifications
+  Blank Product IDs in uploads were looked up against the table, causing two
+  separate 'new' products with blank IDs to silently merge into one row instead
+  of inserting as two distinct rows—no activity_log entry fired on the second one
+  Now blank IDs always mean 'new product' and auto-reserve a unique, permanent ID
+
+- Share connection in get_next_product_id() to avoid mid-transaction deadlock
+  Excel import can now reserve IDs inside its own transaction rather than opening
+  a competing connection, preventing SQLite single-writer lock issues
+
+- Fixes: Excel-uploaded products no longer appear in notification bell
+- Fixes: Product ID numbers no longer reused after deletion"
