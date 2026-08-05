@@ -97,6 +97,21 @@ def init_db():
         ON activity_log(created_at DESC)
     """)
 
+    # Single-row counter backing get_next_product_id(). Unlike scanning
+    # products.product_id for the current max (the old approach), this
+    # value only ever goes up - once a number is handed out it's gone for
+    # good, even if that product is later deleted. Without this, deleting
+    # the highest-numbered product would make its old ID look "available"
+    # again to the next scan, and a brand new, unrelated product could end
+    # up reusing an ID that already appears in price_history/activity_log
+    # for something else entirely.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS id_counter (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            next_number INTEGER NOT NULL
+        )
+    """)
+
     # Sales-rep order list ("cart"). rep_name is required at submit time.
     # No customer name / login for now - kept intentionally simple.
     conn.execute("""
@@ -435,33 +450,64 @@ def get_stats():
 _GTM_ID_PATTERN = re.compile(r"^gtm\s*-\s*(\d+)$", re.IGNORECASE)
 
 
-def get_next_product_id():
-    """Compute the next auto-generated Product ID, e.g. 'GTM - 0226'.
+def get_next_product_id(conn=None):
+    """Reserves and returns the next auto-generated Product ID, e.g.
+    'GTM - 0226'. Backed by the id_counter table, which only ever
+    increases - once a number is returned here it's permanently reserved,
+    even if that product is later deleted. This replaces the old
+    "scan products for the current max GTM - #### and add one" approach,
+    which would silently hand a deleted product's old number to a
+    completely different new product (e.g. two unrelated products both
+    ending up as "GTM - 0244" at different points in time - confusing in
+    price_history/activity_log, which key on this business id).
 
-    Scans existing product_id values for a 'GTM - ####' style pattern -
-    tolerant of spacing/case variants (gtm-0001, GTM-0001, GTM - 0001, all
-    match) - ignores anything that doesn't match (like legacy IDs that
-    don't follow this scheme), and returns one past the highest number
-    found. New IDs are always generated in the canonical 'GTM - ####'
-    form. Padding starts at 4 digits and grows naturally past 9999
-    (GTM - 10000, GTM - 10001, ...) since zfill only pads, never truncates.
+    First call ever seeds the counter from the highest existing
+    'GTM - ####' style id currently in the catalog (same regex scan the
+    old logic used), so upgrading to this doesn't renumber anything
+    already in use - it just stops the number from ever going backwards
+    again from here on.
+
+    Pass an existing `conn` to reserve the id inside a caller-owned
+    connection/transaction instead of opening a new one (the caller is
+    then responsible for commit/close) - import_excel_into_db does this
+    so ID reservation shares its transaction rather than opening a second,
+    competing connection while the first is still mid-transaction, which
+    could otherwise trip SQLite's single-writer lock.
     """
 
-    conn = get_db_connection()
-    rows = conn.execute("SELECT product_id FROM products").fetchall()
-    conn.close()
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_db_connection()
 
-    max_num = 0
+    row = conn.execute("SELECT next_number FROM id_counter WHERE id = 1").fetchone()
 
-    for row in rows:
-        value = (row["product_id"] or "").strip()
-        match = _GTM_ID_PATTERN.match(value)
-        if match:
-            num = int(match.group(1))
-            if num > max_num:
-                max_num = num
+    if row is None:
+        rows = conn.execute("SELECT product_id FROM products").fetchall()
 
-    next_num = max_num + 1
+        max_num = 0
+        for r in rows:
+            value = (r["product_id"] or "").strip()
+            match = _GTM_ID_PATTERN.match(value)
+            if match:
+                num = int(match.group(1))
+                if num > max_num:
+                    max_num = num
+
+        next_num = max_num + 1
+        conn.execute(
+            "INSERT INTO id_counter (id, next_number) VALUES (1, ?)",
+            (next_num + 1,),
+        )
+    else:
+        next_num = row["next_number"]
+        conn.execute(
+            "UPDATE id_counter SET next_number = ? WHERE id = 1",
+            (next_num + 1,),
+        )
+
+    if owns_conn:
+        conn.commit()
+        conn.close()
 
     return f"GTM - {str(next_num).zfill(4)}"
 
@@ -955,7 +1001,7 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
     seen_product_ids = []
 
     for _, row in df.iterrows():
-        product_id = str(row["Product ID"])
+        product_id = str(row["Product ID"]).strip()
         product_name = str(row["Product Name"])
         upc = int(row["UPC"])
         unit = str(row["Unit"])
@@ -964,11 +1010,20 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
         category = str(row["Category"])
         status = str(row["Status"])
 
-        seen_product_ids.append(product_id)
-
-        existing = conn.execute(
-            "SELECT * FROM products WHERE product_id = ?", (product_id,)
-        ).fetchone()
+        # A blank Product ID must NEVER be looked up against the table -
+        # it always means "this is a new product," never "match whatever
+        # other row also happens to have a blank id." Without this guard,
+        # two different blank-ID rows uploaded at different times would
+        # silently collapse into the SAME database row (the second
+        # "new" product would just overwrite the first's fields instead
+        # of being inserted) - and since an overwrite doesn't necessarily
+        # change price or status, that could mean NO activity gets logged
+        # at all for what the uploader intended as a brand new product.
+        existing = None
+        if product_id:
+            existing = conn.execute(
+                "SELECT * FROM products WHERE product_id = ?", (product_id,)
+            ).fetchone()
 
         if existing is not None:
             _log_price_change(
@@ -1017,7 +1072,17 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                 (product_name, upc, unit, retail, wholesale, category, status,
                  description_val, supplier_val, product_id),
             )
+
+            seen_product_ids.append(product_id)
         else:
+            if not product_id:
+                # Sheet left the Product ID blank for this row (the normal
+                # way to signal "auto-assign one," same as the web Add
+                # Product form) - reserve a real, never-reused id instead
+                # of inserting a literal blank that could collide with a
+                # future upload's blank row.
+                product_id = get_next_product_id(conn)
+
             description = str(row["Description"]) if has_description_col else ""
             supplier = str(row["Supplier"]) if has_supplier_col else ""
             conn.execute(
@@ -1037,6 +1102,8 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                     product_name=product_name,
                     details="New product added via catalog upload",
                 )
+
+            seen_product_ids.append(product_id)
 
     if replace and seen_product_ids:
         placeholders = ",".join("?" for _ in seen_product_ids)
