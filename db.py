@@ -196,6 +196,24 @@ def init_db():
     if "supplier" not in product_columns:
         conn.execute("ALTER TABLE products ADD COLUMN supplier TEXT DEFAULT ''")
 
+    # Web Push subscriptions - one row per device that's opted in to
+    # phone/desktop notifications-tray alerts. No login/per-user concept
+    # here either (same as LAST_SEEN_ACTIVITY_KEY), so a "subscriber" is
+    # just an endpoint URL + the two keys the browser handed us; the
+    # endpoint itself is what's unique, not any person. ON CONFLICT
+    # upsert (used by add_push_subscription) covers the case where a
+    # browser's push subscription rotates its keys but keeps the same
+    # endpoint - not supposed to happen per spec, but cheap to be safe.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            endpoint TEXT NOT NULL UNIQUE,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -291,6 +309,42 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
         product_name=product_name,
         details=_format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale),
     )
+
+
+def add_push_subscription(endpoint, p256dh, auth):
+    """Stores (or refreshes) one device's push subscription. Upserted on
+    endpoint since that's the actual unique identity of a subscription -
+    a browser re-subscribing with the same endpoint but rotated keys
+    should overwrite, not duplicate."""
+    conn = get_db_connection()
+    conn.execute(
+        """
+        INSERT INTO push_subscriptions (endpoint, p256dh, auth)
+        VALUES (?, ?, ?)
+        ON CONFLICT(endpoint) DO UPDATE SET
+            p256dh = excluded.p256dh,
+            auth = excluded.auth
+        """,
+        (endpoint, p256dh, auth),
+    )
+    conn.commit()
+    conn.close()
+
+
+def remove_push_subscription(endpoint):
+    """Called both when a device explicitly unsubscribes and when
+    push.py discovers a dead endpoint (browser returned 404/410)."""
+    conn = get_db_connection()
+    conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+    conn.commit()
+    conn.close()
+
+
+def get_all_push_subscriptions():
+    conn = get_db_connection()
+    rows = conn.execute("SELECT * FROM push_subscriptions").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def _log_status_change(conn, product_id, product_name, old_status, new_status):
@@ -407,17 +461,66 @@ def get_recent_price_changes(limit=50):
     return [dict(r) for r in rows]
 
 
-def get_recent_activity(limit=30):
+def get_recent_activity(limit=30, before_id=None):
     """Recent activity for the notification bell: new products + price
-    changes, most recent first. Backs GET /api/activity."""
+    changes, most recent first. Backs GET /api/activity.
+
+    before_id powers the panel's "See more" button: a cursor (not a
+    page-number OFFSET) so that a new activity_log row inserted between
+    two "See more" clicks can't shift already-seen rows into view again
+    or skip one - each page just asks for "everything older than the
+    last id I already have"."""
+    conn = get_db_connection()
+
+    if before_id:
+        rows = conn.execute(
+            """
+            SELECT * FROM activity_log
+            WHERE id < ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (before_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT * FROM activity_log
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_latest_activity_id():
+    """Cheap 'what's the highest activity_log id right now' check - used
+    by app.py to snapshot the id right before a write, so it can tell
+    afterwards whether that write actually logged anything (and if so,
+    exactly which rows) without re-deriving the same diff logic
+    _log_price_change/_log_status_change already apply internally."""
+    conn = get_db_connection()
+    row = conn.execute("SELECT MAX(id) AS m FROM activity_log").fetchone()
+    conn.close()
+    return row["m"] or 0
+
+
+def get_activity_after(after_id, limit=500):
+    """Everything logged after a given id, oldest first - pairs with
+    get_latest_activity_id() to tell app.py exactly what a write just
+    produced, so it can decide what to push."""
     conn = get_db_connection()
     rows = conn.execute(
         """
         SELECT * FROM activity_log
-        ORDER BY id DESC
+        WHERE id > ?
+        ORDER BY id ASC
         LIMIT ?
         """,
-        (limit,),
+        (after_id, limit),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

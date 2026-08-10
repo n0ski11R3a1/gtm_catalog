@@ -28,6 +28,35 @@ function parseSqliteUtc(sqliteString) {
     return isNaN(date.getTime()) ? null : date;
 }
 
+// Pagination state for the "See more" button. loadedEvents accumulates
+// every page fetched so far (re-rendered in full each time, date
+// headers included) rather than appending raw DOM nodes - simplest way
+// to keep date-group headings correct as more, older rows come in.
+let loadedEvents = [];
+let activityHasMore = false;
+let loadingMoreActivity = false;
+
+// Groups activity rows under "Today" / "Yesterday" / a short date, same
+// idea as most notification-tray UIs, so a rep skimming the expanded
+// list can tell at a glance which batch of changes happened when.
+function dateHeadingFor(date) {
+    if (!date) return 'Unknown date';
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfEvent = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.round((startOfToday - startOfEvent) / 86400000);
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+
+    return date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: startOfEvent.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+    });
+}
+
 function formatRelativeTime(date) {
     if (!date) return 'unknown';
 
@@ -126,18 +155,35 @@ function slugifyProductId(productId) {
 function renderActivityList(events) {
     const listEl = document.getElementById('activityList');
     const emptyEl = document.getElementById('activityEmpty');
+    const seeMoreBtn = document.getElementById('activitySeeMoreBtn');
     if (!listEl) return;
 
     listEl.innerHTML = '';
 
     if (!events.length) {
         if (emptyEl) emptyEl.style.display = '';
+        if (seeMoreBtn) seeMoreBtn.style.display = 'none';
         return;
     }
 
     if (emptyEl) emptyEl.style.display = 'none';
 
+    let lastHeading = null;
+
     events.forEach((ev) => {
+        const evDate = parseSqliteUtc(ev.created_at);
+        const heading = dateHeadingFor(evDate);
+
+        // events arrive newest-first, so a new heading only needs to be
+        // inserted when the heading actually changes from the row before it.
+        if (heading !== lastHeading) {
+            const headingEl = document.createElement('div');
+            headingEl.className = 'activity-date-heading';
+            headingEl.textContent = heading;
+            listEl.appendChild(headingEl);
+            lastHeading = heading;
+        }
+
         const row = document.createElement('div');
         row.className = 'activity-row';
 
@@ -186,6 +232,49 @@ function renderActivityList(events) {
 
         listEl.appendChild(row);
     });
+
+    if (seeMoreBtn) {
+        seeMoreBtn.style.display = activityHasMore ? '' : 'none';
+        seeMoreBtn.disabled = false;
+        seeMoreBtn.textContent = 'See more';
+    }
+}
+
+// --------------------------------------
+// "See more": fetches the next page (cursor = oldest id already loaded)
+// and re-renders the full accumulated list, so date headings stay
+// correct across the boundary between pages.
+// --------------------------------------
+
+async function loadMoreActivity() {
+    if (loadingMoreActivity || !loadedEvents.length) return;
+
+    const seeMoreBtn = document.getElementById('activitySeeMoreBtn');
+    loadingMoreActivity = true;
+    if (seeMoreBtn) {
+        seeMoreBtn.disabled = true;
+        seeMoreBtn.textContent = 'Loading...';
+    }
+
+    try {
+        const oldestId = loadedEvents[loadedEvents.length - 1].id;
+        const res = await fetch('/api/activity?limit=30&before_id=' + oldestId);
+        const data = await res.json();
+
+        loadedEvents = loadedEvents.concat(data.events || []);
+        activityHasMore = !!data.has_more;
+
+        renderActivityList(loadedEvents);
+    } catch (e) {
+        // offline or request failed - just re-enable the button so the
+        // person can try again, rather than leaving it stuck disabled
+        if (seeMoreBtn) {
+            seeMoreBtn.disabled = false;
+            seeMoreBtn.textContent = 'See more';
+        }
+    } finally {
+        loadingMoreActivity = false;
+    }
 }
 
 // --------------------------------------
@@ -209,7 +298,9 @@ async function updateStatusPanelContent() {
         const res = await fetch('/api/activity?limit=30');
         const data = await res.json();
 
-        renderActivityList(data.events || []);
+        loadedEvents = data.events || [];
+        activityHasMore = !!data.has_more;
+        renderActivityList(loadedEvents);
 
         if (data.latest_id) {
             localStorage.setItem(LAST_SEEN_ACTIVITY_KEY, String(data.latest_id));
@@ -222,12 +313,127 @@ async function updateStatusPanelContent() {
 
 function openStatusPanel() {
     updateStatusPanelContent();
+    refreshPushToggleUI();
 
     const modalEl = document.getElementById('statusModal');
     if (!modalEl || typeof bootstrap === 'undefined') return;
 
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
+}
+
+// --------------------------------------
+// Push notifications (phone/desktop notification tray)
+// --------------------------------------
+
+// PushManager.subscribe() needs the VAPID public key as a Uint8Array,
+// not the base64url string the server hands back - this is the
+// standard conversion (browsers don't do it for you).
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+function pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window;
+}
+
+async function getExistingPushSubscription() {
+    if (!pushSupported()) return null;
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return null;
+    return registration.pushManager.getSubscription();
+}
+
+// Reflects actual subscription state in the toggle UI - checked
+// silently (no permission prompt), both on page load and whenever the
+// panel opens, so the toggle never lies about whether this device is
+// really subscribed (e.g. after the person cleared site data elsewhere).
+async function refreshPushToggleUI() {
+    const toggle = document.getElementById('pushToggle');
+    if (!toggle) return;
+
+    if (!pushSupported() || Notification.permission === 'denied') {
+        toggle.disabled = true;
+        toggle.checked = false;
+        return;
+    }
+
+    toggle.disabled = false;
+    const existing = await getExistingPushSubscription();
+    toggle.checked = !!existing;
+}
+
+async function subscribeToPush() {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return false;
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return false;
+
+    const keyRes = await fetch('/api/push/public-key');
+    const keyData = await keyRes.json();
+
+    const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyData.publicKey),
+    });
+
+    const raw = subscription.toJSON();
+    await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: raw.endpoint, keys: raw.keys }),
+    });
+
+    return true;
+}
+
+async function unsubscribeFromPush() {
+    const existing = await getExistingPushSubscription();
+    if (!existing) return;
+
+    const endpoint = existing.endpoint;
+    await existing.unsubscribe();
+
+    // Best-effort - if this fails (offline), the endpoint will just get
+    // pruned server-side the next time a push to it 404s/410s.
+    try {
+        await fetch('/api/push/unsubscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint }),
+        });
+    } catch (e) {
+        // ignore - see comment above
+    }
+}
+
+async function onPushToggleChange(event) {
+    const toggle = event.target;
+    toggle.disabled = true;
+
+    try {
+        if (toggle.checked) {
+            const ok = await subscribeToPush();
+            if (!ok) toggle.checked = false; // permission denied/dismissed
+        } else {
+            await unsubscribeFromPush();
+        }
+    } catch (e) {
+        // subscribe/unsubscribe failed (offline, browser quirk, etc.) -
+        // put the toggle back to whatever's actually true rather than
+        // trusting the click
+        await refreshPushToggleUI();
+    } finally {
+        toggle.disabled = false;
+    }
 }
 
 // --------------------------------------
@@ -279,4 +485,15 @@ async function hardRefresh() {
 
 window.addEventListener('load', () => {
     setTimeout(checkForUnreadActivity, 800);
+    refreshPushToggleUI();
+
+    const seeMoreBtn = document.getElementById('activitySeeMoreBtn');
+    if (seeMoreBtn) {
+        seeMoreBtn.addEventListener('click', loadMoreActivity);
+    }
+
+    const pushToggle = document.getElementById('pushToggle');
+    if (pushToggle) {
+        pushToggle.addEventListener('change', onPushToggleChange);
+    }
 });

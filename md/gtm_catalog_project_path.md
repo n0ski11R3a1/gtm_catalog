@@ -1280,3 +1280,78 @@ Here's the write-up for your project path doc:
 **Upside for precaching:** the 200+ image downloads that fire on page load now complete much faster and with zero load on your Python worker, making precaching less noticeable to other concurrent users and improving overall reliability.
 
 ---
+## Notification bell upgrade — Web Push (real OS notifications) + paginated "See more" — DONE
+
+**Feature 1: Web Push.** The in-app activity feed already existed (bell +
+`activity_log`); this adds actual OS-level notifications-tray pushes on
+top of it, opt-in per device. New `push_subscriptions` table
+(`endpoint` unique, `p256dh`/`auth` keys). New `push.py` — kept as its
+own file, same reasoning as `db.py`/`app.py`'s existing separation:
+db.py only talks to SQLite, app.py stays routes-only, push.py is the
+only file that talks to the push service (`pywebpush`).
+
+Three new public routes: `/api/push/public-key`, `/api/push/subscribe`,
+`/api/push/unsubscribe`. A "Notify Me on This Device" switch in the
+Updates & Status panel (`index.html`) drives `PushManager.subscribe()`
+client-side (`status.js`), refreshed silently (no permission prompt) both
+on page load and every time the panel reopens, so the toggle can't drift
+out of sync with reality (e.g. after the person clears site data
+elsewhere).
+
+`sw.js` (v25 → v26) gained `push` and `notificationclick` handlers — the
+latter deep-links to the affected product's detail page, same URL
+pattern the bell's existing click-to-navigate already uses.
+
+**Trigger points:** the three existing write paths that already call
+`_log_activity` internally — manual add, manual edit, bulk Excel
+upload — now snapshot `get_latest_activity_id()` immediately before the
+write and diff against it after, reusing `_log_price_change`/
+`_log_status_change`'s own "did it actually change" checks rather than
+re-deciding that in a second place. A bulk upload's activity rows
+collapse into **one** summary push ("N catalog updates") instead of one
+push per row — sending 50+ separate tray notifications from a single
+Excel re-upload would be worse UX than the in-app feed it's meant to
+complement, not better.
+
+Dead subscriptions (browser returns 404/410 — uninstalled, revoked
+permission, cleared site data) are pruned automatically the first time a
+push to them fails, rather than left to retry-fail forever.
+
+**iOS caveat:** push only fires for a PWA added to the Home Screen, not
+from a regular Safari tab — an Apple platform restriction, same ceiling
+already noted for offline caching (see §9).
+
+**Setup, one-time:** `pip install pywebpush`; run
+`generate_vapid_keys.py` once and paste the output into `config.py`
+(`VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_CLAIM_EMAIL`) — never
+regenerate, doing so silently invalidates every device's existing
+subscription.
+
+---
+
+**Feature 2: "See more" pagination on the activity panel.** `/api/activity`
+now accepts `?before_id=` (a cursor, not an OFFSET — a page number would
+let a newly-logged row between two clicks shift already-seen rows back
+into view or skip one) and returns `has_more`. `get_recent_activity()`
+in `db.py` gained the same parameter; new `get_activity_after()` backs
+the push trigger above.
+
+`status.js` renders the accumulated list grouped under "Today" /
+"Yesterday" / short-date headings (`dateHeadingFor()`), re-rendering in
+full on each "See more" click so headings stay correct across page
+boundaries rather than trying to patch DOM incrementally. Chose an
+expand-in-place list over a separate notifications page/route — no new
+template or URL needed, and it matches how the panel already works as
+an overlay rather than a navigation.
+
+Files touched: `db.py`, `app.py`, `sw.js` (v25 → v26), `status.js`,
+`index.html`. New: `push.py`, `generate_vapid_keys.py`.
+
+Not touched: `base.html` (service worker registration and manifest
+links were already correct — only used to confirm the icon path
+`sw.js`'s notifications now reference).
+
+Not built: outstanding notification bell "clickable redirect" item from
+§10 was already done in a prior session — this entry doesn't touch that.
+Multi-language toggle, GPS visit tracking, beat/route planning,
+approval workflows remain shelved as before.

@@ -63,7 +63,12 @@
 // is why this only ever broke those two categories. Gallery cache
 // reads/writes now go through canonicalizeGalleryPath() so both forms
 // resolve to one key.
-const CACHE_NAME = 'gtm-catalog-v25';
+// v25->v26: added 'push' and 'notificationclick' handlers so a
+// server-sent Web Push shows up in the phone/desktop's actual OS
+// notification tray (not just the in-app bell) and tapping it deep-links
+// into the app - see push.py on the server side, which is what sends
+// the payload these handlers receive.
+const CACHE_NAME = 'gtm-catalog-v26';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
@@ -286,4 +291,59 @@ self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'GET_VERSION' && event.ports && event.ports[0]) {
         event.ports[0].postMessage({ version: CACHE_NAME });
     }
+});
+
+// --------------------------------------
+// Web Push: puts a real notification in the phone/desktop's OS
+// notification tray, not just the in-app bell. push.py sends a JSON
+// payload shaped { title, body, url } - url is where notificationclick
+// below should land (a specific /product/<slug> for a single event, or
+// '/' for a batched "N catalog updates" summary - see
+// push.notify_new_activity()).
+// --------------------------------------
+
+self.addEventListener('push', (event) => {
+    let data = { title: 'Catalog update', body: 'Tap to view.', url: '/' };
+
+    if (event.data) {
+        try {
+            data = Object.assign(data, event.data.json());
+        } catch (e) {
+            // Payload wasn't JSON for some reason - fall back to the
+            // generic defaults above rather than throwing and dropping
+            // the notification entirely.
+        }
+    }
+
+    event.waitUntil(
+        self.registration.showNotification(data.title, {
+            body: data.body,
+            icon: '/static/icon-192.png',
+            badge: '/static/icon-192.png',
+            data: { url: data.url || '/' },
+        })
+    );
+});
+
+// Tapping the OS notification: focus an already-open tab on this app if
+// one exists (navigating it to the target URL) instead of always opening
+// a fresh tab - matches how installed PWAs are expected to behave.
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+
+    const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+            for (const client of clientList) {
+                if ('focus' in client) {
+                    client.navigate(targetUrl);
+                    return client.focus();
+                }
+            }
+            if (self.clients.openWindow) {
+                return self.clients.openWindow(targetUrl);
+            }
+        })
+    );
 });

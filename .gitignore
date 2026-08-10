@@ -4,3 +4,5 @@ __pycache__/
 gtm_catalog.db.backup
 static/product-images/
 md/pythonanywhere_access_PAT.txt
+sqlite3.exe
+config.py

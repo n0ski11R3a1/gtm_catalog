@@ -144,6 +144,12 @@
                     <span class="status-label">Last Offline Sync</span>
                     <span id="statusLastSync" class="status-value">—</span>
                 </div>
+                <div class="status-info-row">
+                    <label class="status-label" for="pushToggle">Notify Me on This Device</label>
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="pushToggle" role="switch">
+                    </div>
+                </div>
 
                 <button type="button" id="hardRefreshBtn" class="btn-hard-refresh" onclick="hardRefresh()">
                     <i class="bi bi-arrow-clockwise"></i>
@@ -158,6 +164,9 @@
                 <div id="activityEmpty" class="text-muted text-center py-4" style="display:none;">
                     No recent activity yet.
                 </div>
+                <button type="button" id="activitySeeMoreBtn" class="btn-hard-refresh" style="display:none;">
+                    See More
+                </button>
 
             </div>
         </div>

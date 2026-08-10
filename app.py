@@ -27,10 +27,12 @@ from config import (
     UPLOAD_FOLDER,
     ADMIN_USERNAME,
     ADMIN_PASSWORD_HASH,
-    REQUIRED_COLUMNS
+    REQUIRED_COLUMNS,
+    VAPID_PUBLIC_KEY
 )
 
 import db
+import push
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -123,6 +125,18 @@ def get_category_covers(all_products, category, limit=4):
                 break
 
     return covers, len(in_category), oos_count
+
+
+def notify_activity_since(before_id):
+    """Call right after a db write that might have logged activity_log
+    rows (add_product / update_product / import_excel_into_db). Diffs
+    against the id snapshot taken right before that write and pushes a
+    notification for whatever actually got logged - reuses
+    _log_price_change/_log_status_change's own "did it actually change"
+    checks (already applied inside db.py) rather than re-deciding that
+    here, and never fires a push if nothing really changed."""
+    events = db.get_activity_after(before_id)
+    push.notify_new_activity(events)
 
 
 def product_form_to_dict(form):
@@ -294,13 +308,64 @@ def api_activity():
     # of ?limit, so the client can cheaply check "is there anything new
     # since I last looked" with a small ?limit=1 request instead of
     # pulling the whole feed just to compare one number.
+    #
+    # ?before_id powers the panel's "See more" button - a cursor, not a
+    # page number, so rows already shown can't shift or duplicate if
+    # something new gets logged between clicks (see get_recent_activity).
     limit = request.args.get("limit", default=30, type=int)
     limit = max(1, min(limit, 100))
+    before_id = request.args.get("before_id", type=int)
 
-    events = db.get_recent_activity(limit=limit)
-    latest_id = events[0]["id"] if events else 0
+    events = db.get_recent_activity(limit=limit, before_id=before_id)
 
-    return jsonify({"latest_id": latest_id, "events": events})
+    # latest_id reflects the true current max regardless of pagination -
+    # a "See more" request (before_id set) still needs the real latest_id
+    # so the client's unread check stays correct, not the id of the
+    # oldest row in this particular page.
+    latest_id = db.get_latest_activity_id()
+
+    return jsonify({
+        "latest_id": latest_id,
+        "events": events,
+        "has_more": len(events) == limit,
+    })
+
+
+@app.route("/api/push/public-key")
+def api_push_public_key():
+    # Public, no login - the frontend needs this to call
+    # PushManager.subscribe() with the right applicationServerKey.
+    # It's a public key by definition; there's nothing to protect here.
+    return jsonify({"publicKey": VAPID_PUBLIC_KEY})
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+def api_push_subscribe():
+    # Public, no login - same audience as the catalog itself. Any device
+    # that opts in (via the browser's own permission prompt) can
+    # register, no rep account or admin gate involved.
+    payload = request.get_json(silent=True) or {}
+    endpoint = payload.get("endpoint")
+    keys = payload.get("keys") or {}
+    p256dh = keys.get("p256dh")
+    auth = keys.get("auth")
+
+    if not endpoint or not p256dh or not auth:
+        return jsonify({"error": "Invalid subscription."}), 400
+
+    db.add_push_subscription(endpoint, p256dh, auth)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+def api_push_unsubscribe():
+    payload = request.get_json(silent=True) or {}
+    endpoint = payload.get("endpoint")
+
+    if endpoint:
+        db.remove_push_subscription(endpoint)
+
+    return jsonify({"ok": True})
 
 
 @app.route("/order/submit", methods=["POST"])
@@ -484,7 +549,9 @@ def admin_product_add():
                 categories=categories
             )
 
+        before_id = db.get_latest_activity_id()
         db.add_product(data)
+        notify_activity_since(before_id)
 
         flash(f"Added \"{data['product_name']}\" as {next_id}.", "success")
 
@@ -531,7 +598,9 @@ def admin_product_edit(product_id):
                 price_history=db.get_price_history(product["Product ID"])
             )
 
+        before_id = db.get_latest_activity_id()
         db.update_product(product_id, data)
+        notify_activity_since(before_id)
 
         flash(f"Updated \"{data['product_name']}\".", "success")
 
@@ -824,7 +893,9 @@ def upload():
             EXCEL_FILE
         )
 
+        before_id = db.get_latest_activity_id()
         row_count = db.import_excel_into_db(EXCEL_FILE, replace=True)
+        notify_activity_since(before_id)
 
         flash(
             f"Catalog uploaded successfully ({row_count} products).",
