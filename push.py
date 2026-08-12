@@ -21,8 +21,74 @@ import db
 
 logger = logging.getLogger(__name__)
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+
 
 def _send_one(subscription, payload_json):
+    endpoint = subscription.get("endpoint", "")
+    p256dh = subscription.get("p256dh", "")
+    auth = subscription.get("auth", "")
+
+    try:
+        webpush(
+            subscription_info={
+                "endpoint": endpoint,
+                "keys": {
+                    "p256dh": p256dh,
+                    "auth": auth,
+                },
+            },
+            data=payload_json,
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims={"sub": f"mailto:{VAPID_CLAIM_EMAIL}"},
+        )
+        logger.info("Successfully delivered push to endpoint: ...%s", endpoint[-20:])
+        return True
+
+    except WebPushException as ex:
+        res = getattr(ex, "response", None)
+        status = getattr(res, "status_code", "UNKNOWN")
+        
+        # Extract body safely regardless of stream state
+        body = ""
+        if res is not None:
+            try:
+                body = res.text
+            except Exception:
+                body = str(getattr(res, "content", ""))
+
+        logger.error(
+            "\n================ [PUSH ERROR DEBUG] ================\n"
+            "Status Code : %s\n"
+            "Endpoint    : %s\n"
+            "P256DH Key  : %s\n"
+            "Auth Key    : %s\n"
+            "VAPID Claim : mailto:%s\n"
+            "Response    : %s\n"
+            "Exception   : %s\n"
+            "====================================================",
+            status,
+            endpoint,
+            p256dh[:15] + "..." if p256dh else "MISSING",
+            auth[:10] + "..." if auth else "MISSING",
+            VAPID_CLAIM_EMAIL,
+            body if body.strip() else "[EMPTY RESPONSE BODY FROM PUSH SERVICE]",
+            repr(ex)
+        )
+
+        if status in (404, 410):
+            logger.info("Pruning expired endpoint: ...%s", endpoint[-20:])
+            db.remove_push_subscription(endpoint)
+
+        return False
+
+
+def _send_one_original(subscription, payload_json):
     """Sends to a single subscription. Returns True on success, False on
     any failure. A 404/410 from the push service means the browser has
     permanently revoked/expired that subscription (uninstalled, cleared

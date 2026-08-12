@@ -112,6 +112,50 @@ def init_db():
         )
     """)
 
+    # MIGRATION / SELF-REPAIR: if id_counter has no row (fresh install, or
+    # this row was ever lost - e.g. wiped by a restored backup, a bad
+    # migration, or manual DB surgery), get_next_product_id() would fall
+    # back to scanning only the CURRENTLY EXISTING products for the max
+    # "GTM - ####" number. That fallback is what let already-deleted
+    # products' IDs get handed out again to unrelated new products (real
+    # incident, confirmed in this database: GTM - 0245, GTM - 0255,
+    # GTM - 0256 were each reused by a second, different product after the
+    # first was deleted - polluting their price_history/activity_log with
+    # each other's history). Repairing it here means every process start
+    # self-heals this instead of relying on remembering to run a one-off
+    # script. Seeds from the highest "GTM - ####" number that has EVER
+    # appeared anywhere - products, price_history, AND activity_log - not
+    # just current products, so a deleted product's old number can never
+    # be handed out again.
+    if conn.execute("SELECT next_number FROM id_counter WHERE id = 1").fetchone() is None:
+        max_num = 0
+        for table, column in (
+            ("products", "product_id"),
+            ("price_history", "product_id"),
+            ("activity_log", "product_id"),
+        ):
+            for row in conn.execute(f"SELECT {column} AS pid FROM {table}").fetchall():
+                match = _GTM_ID_PATTERN.match((row["pid"] or "").strip())
+                if match:
+                    max_num = max(max_num, int(match.group(1)))
+        conn.execute(
+            "INSERT INTO id_counter (id, next_number) VALUES (1, ?)",
+            (max_num + 1,),
+        )
+
+    # MIGRATION: prevent two products from ever sharing the same business
+    # Product ID going forward. Nothing in the original schema enforced
+    # this - it's what let a reused/duplicate ID slip in silently (see the
+    # id_counter repair note above). A blank product_id ('') is allowed to
+    # repeat (multiple legacy rows may have never had one assigned), so
+    # the unique index only applies to non-empty values via a partial
+    # index - SQLite supports WHERE clauses on indexes for exactly this.
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_products_product_id_unique
+        ON products(product_id)
+        WHERE product_id != ''
+    """)
+
     # Sales-rep order list ("cart"). rep_name is required at submit time.
     # No customer name / login for now - kept intentionally simple.
     conn.execute("""
@@ -553,6 +597,58 @@ def get_stats():
 _GTM_ID_PATTERN = re.compile(r"^gtm\s*-\s*(\d+)$", re.IGNORECASE)
 
 
+def _seed_id_counter_if_missing(conn):
+    """Shared by peek/reserve: if id_counter somehow still has no row at
+    call time (shouldn't happen after init_db()'s migration, but a
+    fallback here is cheap insurance), seed it from the highest
+    'GTM - ####' number that has EVER appeared in products, price_history,
+    or activity_log - never just current products, since that's exactly
+    what let deleted products' old IDs get reused (see init_db)."""
+
+    row = conn.execute("SELECT next_number FROM id_counter WHERE id = 1").fetchone()
+    if row is not None:
+        return row["next_number"]
+
+    max_num = 0
+    for table, column in (
+        ("products", "product_id"),
+        ("price_history", "product_id"),
+        ("activity_log", "product_id"),
+    ):
+        for r in conn.execute(f"SELECT {column} AS pid FROM {table}").fetchall():
+            match = _GTM_ID_PATTERN.match((r["pid"] or "").strip())
+            if match:
+                max_num = max(max_num, int(match.group(1)))
+
+    next_num = max_num + 1
+    conn.execute(
+        "INSERT INTO id_counter (id, next_number) VALUES (1, ?)",
+        (next_num,),
+    )
+    return next_num
+
+
+def peek_next_product_id():
+    """Read-only preview of what the next auto-generated Product ID WOULD
+    be, e.g. 'GTM - 0226' - does NOT reserve/consume it. Use this anywhere
+    you're just displaying the suggested id (like the Add Product page's
+    GET render) - never for an id that will actually be written to a
+    product, or two different rows could both display/use the same
+    preview number before either commits.
+
+    (Previously the Add Product page's GET route called the
+    reserving get_next_product_id() just to show a preview, which meant
+    every page load/refresh silently burned a real number AND the number
+    shown on the form didn't even match what submit actually assigned,
+    since submit reserved a fresh one on top of it.)"""
+
+    conn = get_db_connection()
+    next_num = _seed_id_counter_if_missing(conn)
+    conn.commit()
+    conn.close()
+    return f"GTM - {str(next_num).zfill(4)}"
+
+
 def get_next_product_id(conn=None):
     """Reserves and returns the next auto-generated Product ID, e.g.
     'GTM - 0226'. Backed by the id_counter table, which only ever
@@ -564,11 +660,10 @@ def get_next_product_id(conn=None):
     ending up as "GTM - 0244" at different points in time - confusing in
     price_history/activity_log, which key on this business id).
 
-    First call ever seeds the counter from the highest existing
-    'GTM - ####' style id currently in the catalog (same regex scan the
-    old logic used), so upgrading to this doesn't renumber anything
-    already in use - it just stops the number from ever going backwards
-    again from here on.
+    Only call this at the point an id is ACTUALLY about to be written to
+    a new product (form submit / import insert) - use peek_next_product_id()
+    for any read-only preview/display, or every page view burns a real
+    number whether or not a product ever gets created with it.
 
     Pass an existing `conn` to reserve the id inside a caller-owned
     connection/transaction instead of opening a new one (the caller is
@@ -582,31 +677,11 @@ def get_next_product_id(conn=None):
     if owns_conn:
         conn = get_db_connection()
 
-    row = conn.execute("SELECT next_number FROM id_counter WHERE id = 1").fetchone()
-
-    if row is None:
-        rows = conn.execute("SELECT product_id FROM products").fetchall()
-
-        max_num = 0
-        for r in rows:
-            value = (r["product_id"] or "").strip()
-            match = _GTM_ID_PATTERN.match(value)
-            if match:
-                num = int(match.group(1))
-                if num > max_num:
-                    max_num = num
-
-        next_num = max_num + 1
-        conn.execute(
-            "INSERT INTO id_counter (id, next_number) VALUES (1, ?)",
-            (next_num + 1,),
-        )
-    else:
-        next_num = row["next_number"]
-        conn.execute(
-            "UPDATE id_counter SET next_number = ? WHERE id = 1",
-            (next_num + 1,),
-        )
+    next_num = _seed_id_counter_if_missing(conn)
+    conn.execute(
+        "UPDATE id_counter SET next_number = ? WHERE id = 1",
+        (next_num + 1,),
+    )
 
     if owns_conn:
         conn.commit()
@@ -1103,6 +1178,25 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
 
     seen_product_ids = []
 
+    # Guard against a sheet's explicitly-typed Product ID silently
+    # colliding with an ID that belonged to a NOW-DELETED product. That
+    # product no longer exists in `products` (so the "existing" lookup
+    # below won't find it), but its price_history/activity_log rows are
+    # still keyed on that same business id - so a new, unrelated product
+    # would silently inherit a stranger's history/notifications (this is
+    # the exact bug already confirmed in this database for
+    # GTM - 0245/0255/0256). This doesn't block the upload - it's a real
+    # if rare legitimate case (re-adding a genuinely discontinued-then-
+    # relisted product) - it just collects a warning so an admin can
+    # verify it was intentional instead of it happening silently.
+    historical_ids = set()
+    for table in ("price_history", "activity_log"):
+        for r in conn.execute(f"SELECT DISTINCT product_id FROM {table}").fetchall():
+            pid = (r["product_id"] or "").strip()
+            if pid:
+                historical_ids.add(pid)
+    reused_id_warnings = []
+
     for _, row in df.iterrows():
         product_id = str(row["Product ID"]).strip()
         product_name = str(row["Product Name"])
@@ -1186,6 +1280,14 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                 # future upload's blank row.
                 product_id = get_next_product_id(conn)
 
+            if product_id in historical_ids:
+                reused_id_warnings.append(
+                    f"{product_id} ({product_name or 'unnamed'}) was previously used by a "
+                    f"different, now-deleted product - its notification/price history will "
+                    f"now be shown as belonging to this new product. Double-check this ID "
+                    f"was intentional."
+                )
+
             description = str(row["Description"]) if has_description_col else ""
             supplier = str(row["Supplier"]) if has_supplier_col else ""
             conn.execute(
@@ -1247,4 +1349,4 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
     conn.commit()
     conn.close()
 
-    return len(df)
+    return len(df), reused_id_warnings

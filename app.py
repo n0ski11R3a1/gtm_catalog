@@ -530,24 +530,29 @@ def admin_product_add():
 
     if request.method == "POST":
 
-        # The Product ID is always server-generated in Add mode, computed
-        # fresh at submit time - never trust whatever the client sent for
-        # this field, even though it's displayed read-only in the form.
-        next_id = db.get_next_product_id()
-
         data = product_form_to_dict(request.form)
-        data["product_id"] = next_id
 
         if not data["product_name"]:
             flash("Product Name is required.", "danger")
+            # Validation failed - don't reserve/consume a real Product ID
+            # for a submission that isn't actually going to create a
+            # product. Peek-only here; a real id gets reserved below only
+            # once we're actually about to insert.
             return render_template(
                 "product_form.html",
                 product=None,
                 mode="add",
                 form_data=data,
-                next_product_id=next_id,
+                next_product_id=db.peek_next_product_id(),
                 categories=categories
             )
+
+        # The Product ID is always server-generated in Add mode, computed
+        # fresh right before the actual insert - never trust whatever the
+        # client sent for this field, even though it's displayed read-only
+        # in the form.
+        next_id = db.get_next_product_id()
+        data["product_id"] = next_id
 
         before_id = db.get_latest_activity_id()
         db.add_product(data)
@@ -557,7 +562,12 @@ def admin_product_add():
 
         return redirect(url_for("admin_products"))
 
-    next_id = db.get_next_product_id()
+    # GET (just showing the form): PEEK only, don't reserve/consume a
+    # real id - this is a preview, not a commitment. The actual id is
+    # generated fresh at submit time above (line ~536), which is also
+    # why it's safe for this preview number to differ from what a
+    # concurrent admin's submit ends up using.
+    next_id = db.peek_next_product_id()
 
     return render_template(
         "product_form.html",
@@ -894,13 +904,20 @@ def upload():
         )
 
         before_id = db.get_latest_activity_id()
-        row_count = db.import_excel_into_db(EXCEL_FILE, replace=True)
+        row_count, reused_id_warnings = db.import_excel_into_db(EXCEL_FILE, replace=True)
         notify_activity_since(before_id)
 
         flash(
             f"Catalog uploaded successfully ({row_count} products).",
             "success"
         )
+
+        # Flag (don't block) any Product ID in this upload that previously
+        # belonged to a different, now-deleted product - that product's
+        # old notifications/price history will now display as this new
+        # product's, which is usually a typo rather than intentional.
+        for warning in reused_id_warnings:
+            flash(warning, "warning")
 
     except Exception as e:
 
