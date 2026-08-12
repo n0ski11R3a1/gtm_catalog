@@ -21,8 +21,6 @@ import db
 
 logger = logging.getLogger(__name__)
 
-import logging
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -46,6 +44,18 @@ def _send_one(subscription, payload_json):
             data=payload_json,
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims={"sub": f"mailto:{VAPID_CLAIM_EMAIL}"},
+            # WNS (Microsoft's push service, used by Edge/Windows
+            # subscribers - endpoints under notify.windows.com) REQUIRES
+            # this header on every request, matched to the ttl we're
+            # sending. pywebpush itself never sets it (confirmed against
+            # the installed version - this is a known, still-unfixed gap
+            # in the library, see web-push-libs/pywebpush#162), so every
+            # push to a WNS endpoint gets silently rejected without it.
+            # We always send the default ttl=0, so this must be
+            # "no-cache" - "cache" is only correct if ttl is ever made
+            # nonzero. Chrome/Firefox/etc. simply ignore this header, so
+            # it's safe to always include.
+            headers={"x-wns-cache-policy": "no-cache"},
         )
         logger.info("Successfully delivered push to endpoint: ...%s", endpoint[-20:])
         return True
@@ -62,6 +72,12 @@ def _send_one(subscription, payload_json):
             except Exception:
                 body = str(getattr(res, "content", ""))
 
+        # WNS in particular returns a 400 with an EMPTY body and puts the
+        # actual reason in response HEADERS instead (e.g.
+        # X-WNS-ERROR-DESCRIPTION, X-WNS-STATUS) - logging only the body,
+        # as before, meant these errors were undiagnosable from the logs.
+        response_headers = dict(res.headers) if res is not None else {}
+
         logger.error(
             "\n================ [PUSH ERROR DEBUG] ================\n"
             "Status Code : %s\n"
@@ -70,6 +86,7 @@ def _send_one(subscription, payload_json):
             "Auth Key    : %s\n"
             "VAPID Claim : mailto:%s\n"
             "Response    : %s\n"
+            "Resp Headers: %s\n"
             "Exception   : %s\n"
             "====================================================",
             status,
@@ -78,6 +95,7 @@ def _send_one(subscription, payload_json):
             auth[:10] + "..." if auth else "MISSING",
             VAPID_CLAIM_EMAIL,
             body if body.strip() else "[EMPTY RESPONSE BODY FROM PUSH SERVICE]",
+            response_headers if response_headers else "[NO HEADERS CAPTURED]",
             repr(ex)
         )
 
@@ -85,39 +103,6 @@ def _send_one(subscription, payload_json):
             logger.info("Pruning expired endpoint: ...%s", endpoint[-20:])
             db.remove_push_subscription(endpoint)
 
-        return False
-
-
-def _send_one_original(subscription, payload_json):
-    """Sends to a single subscription. Returns True on success, False on
-    any failure. A 404/410 from the push service means the browser has
-    permanently revoked/expired that subscription (uninstalled, cleared
-    site data, etc.) - not a "try again later" condition - so those get
-    pruned from push_subscriptions on the spot rather than left to fail
-    forever on every future notification."""
-    try:
-        webpush(
-            subscription_info={
-                "endpoint": subscription["endpoint"],
-                "keys": {
-                    "p256dh": subscription["p256dh"],
-                    "auth": subscription["auth"],
-                },
-            },
-            data=payload_json,
-            vapid_private_key=VAPID_PRIVATE_KEY,
-            vapid_claims={"sub": f"mailto:{VAPID_CLAIM_EMAIL}"},
-        )
-        return True
-    except WebPushException as ex:
-        status = getattr(ex.response, "status_code", None)
-        if status in (404, 410):
-            db.remove_push_subscription(subscription["endpoint"])
-        else:
-            # Network blip, 5xx from the push service, rate limiting,
-            # etc. - not this device's fault, leave the subscription in
-            # place and just skip it for this notification.
-            logger.warning("Push send failed (status=%s): %s", status, ex)
         return False
 
 
