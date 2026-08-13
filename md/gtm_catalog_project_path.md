@@ -1376,3 +1376,57 @@ git commit -m "Fix: Excel upload notifications & prevent Product ID reuse after 
 - Fixes: Excel-uploaded products no longer appear in notification bell
 - Fixes: Product ID numbers no longer reused after deletion"
 >>>>>>> f476f9a889ac997a80b403c6fe42d5eecfd5a316
+Perfect — here's a summary of everything that was fixed, organized by the files changed:
+
+## **NOTIFICATION SYSTEM FIX SUMMARY**
+
+### **1. Database & Product ID Bug (db.py + gtm_catalog.db)**
+**Problem:** Product IDs were being reused after deletion, mixing notification/price history between unrelated products.
+- **Real examples found:** GTM-0245, GTM-0255, GTM-0256 each used by two different products at different times
+- **Root cause:** `id_counter` table was empty; the fallback logic only scanned current products, ignoring deleted ones
+
+**Fixes:**
+- ✅ `id_counter` auto-repair: Now scans `products`, `price_history`, AND `activity_log` to find the true historical max ID (can never go backward)
+- ✅ Unique constraint added: `idx_products_product_id_unique` prevents two products from ever sharing an ID going forward
+- ✅ Excel import collision warning: Flags (doesn't block) if an uploaded sheet tries to reuse a historically-used-but-now-deleted product ID
+- ✅ `peek_next_product_id()` new function: Preview the next ID without burning/reserving it
+- ✅ Add Product form fixed: No longer wastes ID numbers on page loads or failed submissions
+
+**Database status:** Repaired and seeded. `id_counter` is now set to 267 (past your highest ever ID, 266). All 262 products untouched.
+
+---
+
+### **2. Web Push WNS Failure (push.py)**
+**Problem:** Edge browser (WNS endpoint) pushes always return `400 Bad Request` with empty body.
+- **Root cause:** `pywebpush` library doesn't send the required `X-WNS-Cache-Policy` header; WNS silently rejects without it and hides the real error in response headers (not body)
+
+**Fixes:**
+- ✅ Added `headers={"x-wns-cache-policy": "no-cache"}` to every `webpush()` call
+- ✅ Error logging now captures response headers (WNS error reasons live there, not in the body)
+- ✅ Removed dead/buggy `_send_one_original()` code that had the same bug baked in
+
+**Test status:** Verified end-to-end — header confirmed present on real HTTP requests, and improved logging confirmed surfacing header-based error reasons.
+
+---
+
+### **3. App Routes (app.py)**
+**Changes:**
+- ✅ Add Product page (GET) now calls `peek_next_product_id()` instead of burning a real ID just to display it
+- ✅ Add Product form submit now reserves ID only right before insert (failed validation no longer wastes IDs)
+- ✅ Upload route now surfaces Excel import collision warnings to the admin
+
+---
+
+## **DEPLOYMENT CHECKLIST**
+
+| File | Action | Note |
+|------|--------|------|
+| `db.py` | Replace | Includes auto-repair of `id_counter`, unique index, Excel warnings |
+| `app.py` | Replace | Updated Add Product routes and upload warning display |
+| `push.py` | Replace | WNS header fix + improved error logging |
+| `gtm_catalog.db` | Replace | Self-repaired: `id_counter` seeded to 267, unique index created |
+
+After uploading to PythonAnywhere:
+1. Hit **Reload** on the Web tab
+2. Test: add a product (ID should be GTM-0267, no waste), then upload a sheet with an old product ID (should warn but not block)
+3. Monitor logs: next Edge push will succeed (or if it fails, the actual error reason will now be logged)
