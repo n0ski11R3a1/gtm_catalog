@@ -1430,3 +1430,45 @@ After uploading to PythonAnywhere:
 1. Hit **Reload** on the Web tab
 2. Test: add a product (ID should be GTM-0267, no waste), then upload a sheet with an old product ID (should warn but not block)
 3. Monitor logs: next Edge push will succeed (or if it fails, the actual error reason will now be logged)
+It did come through, just not shown in the excerpt. Let's read the whole thing.Found it — and it's not a CSS problem at all. It's in `sw.js`'s fetch strategy for product/gallery pages.
+
+## Root cause
+
+Look at the comment right above the `/product/` handler:
+
+> "cache-and-serve from their own persistent buckets — public, session-independent, **safe to serve stale-while-revalidate style**"
+
+That's the *intent*. But the actual code doesn't do that — it does **network-first**:
+
+```js
+if (url.pathname.startsWith('/product/')) {
+    event.respondWith(
+        fetch(request)          // ← ALWAYS tries the network first
+            .then((response) => { ...cache.put... })
+            .catch(() => caches.match(request.url))   // cache is only a fallback on failure
+    );
+```
+
+Even when a product page is **already cached** (which, thanks to `precache.js`, is basically every product after the first visit), the service worker still waits for a live round-trip to your server before showing anything — the cache is only used if the network request actually *fails*. On a slow response (PythonAnywhere's free tier is well known for sluggish cold responses under load), that's your 2-second wait, every single click, even though a perfectly good cached copy was sitting right there the whole time.
+
+Same pattern exists on the `/gallery` pages block.
+
+## The fix: actually implement stale-while-revalidate
+
+Serve the cached version **instantly** if it exists, while quietly re-fetching in the background to keep the cache fresh for next time. Only wait on the network if there's truly nothing cached yet (first-ever visit to that page).Let's also fix product images the same way — the gallery page especially leans on these, and they're just as "safe to serve stale" as the pages themselves:Now let's also fix the `precache.js` inefficiency I flagged earlier — parallelizing the sequential cache-check loops so the background precache pass itself doesn't tie up main-thread/cache-IO time on every page load:Now let's syntax-check both and simulate the fetch logic in Node to prove the "instant if cached" behavior actually works:Now let's actually simulate the stale-while-revalidate logic with mock `caches`/`fetch` to verify the timing behavior is correct — that a cache hit resolves instantly while a background refresh still happens:Both cases verified exactly as intended: an already-cached page (which, after `precache.js` runs, is basically every product) now responds in **~1ms instead of 2000ms**, and the cache still gets silently refreshed in the background. Only a genuinely never-visited page waits on the network, same as before. Let's finalize and deliver:## Root cause: your glass UI is fine — it was `sw.js` waiting on the network for pages that were already sitting in cache
+
+**The bug:** `/product/` and `/gallery` pages were coded network-first (fetch, cache only used *if the fetch fails*) even though your own code comments said they should be "stale-while-revalidate." Every click waited on a live round-trip to your server — even for pages already downloaded by `precache.js` — which explains the consistent ~2s lag regardless of connection quality.
+
+**The fix, verified with a timing simulation:**
+- Cached page → served in **~1ms** (was up to 2000ms+)
+- Page never visited before → still waits on network (unchanged, correct)
+- Cache silently refreshes in the background either way, so data doesn't go stale
+
+Applied to `/product/`, `/gallery`, and product images (`/static/product-images/`) — the three things involved in tapping the eye icon on the gallery/main page. Bumped `CACHE_NAME` to `v27` so the new service worker actually activates.
+
+**Bonus fix in `precache.js`:** the background "check what's missing" pass ran 200+ sequential cache lookups on *every* page load even when nothing needed downloading. Parallelized with `Promise.all` — same result, much less main-thread time spent right after page load (exactly when you're likely to click something).
+
+## Deploy
+1. Replace `sw.js` and `precache.js` on PythonAnywhere
+2. Reload the Web app
+3. **Important:** service workers update on their own schedule — the person needs to actually reopen/refresh the PWA (or hit your "Force Refresh" button, which calls `registration.update()`) for the new `sw.js` to take over. It won't apply mid-session automatically.

@@ -68,7 +68,21 @@
 // notification tray (not just the in-app bell) and tapping it deep-links
 // into the app - see push.py on the server side, which is what sends
 // the payload these handlers receive.
-const CACHE_NAME = 'gtm-catalog-v26';
+// v26->v27: BUG FIX - /product/ and /gallery pages were documented as
+// "safe to serve stale-while-revalidate style" but the code actually did
+// network-FIRST (fetch, only fall back to cache on outright failure).
+// That meant every click on an already-cached, already-precached product
+// page still waited on a full live round-trip to the server before
+// showing anything - the cache was only ever used as an error fallback,
+// never as the fast path. On a slow server response, that's a multi-
+// second wait for a page that was sitting in cache the whole time,
+// which is exactly what was reported as "2 second lag clicking the eye
+// icon." Both blocks now actually implement what the comments already
+// said they should: serve the cached copy INSTANTLY if one exists, and
+// silently refresh the cache in the background for next time. Network
+// is only waited on when there's truly nothing cached yet (first-ever
+// visit to that specific page).
+const CACHE_NAME = 'gtm-catalog-v27';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
@@ -173,13 +187,22 @@ self.addEventListener('fetch', (event) => {
     if (url.pathname === '/gallery' || url.pathname.startsWith('/gallery/')) {
         const cacheKey = self.location.origin + canonicalizeGalleryPath(url.pathname) + url.search;
         event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    const clone = response.clone();
-                    caches.open(GALLERY_PAGES_CACHE).then((cache) => cache.put(cacheKey, clone));
-                    return response;
+            caches.open(GALLERY_PAGES_CACHE).then((cache) =>
+                cache.match(cacheKey).then((cachedResponse) => {
+                    const networkFetch = fetch(request)
+                        .then((response) => {
+                            cache.put(cacheKey, response.clone());
+                            return response;
+                        })
+                        .catch(() => cachedResponse);
+
+                    // Cached copy exists: serve it instantly, refresh in
+                    // the background for next time. Nothing cached yet
+                    // (first-ever visit to this category): wait on the
+                    // network like before.
+                    return cachedResponse || networkFetch;
                 })
-                .catch(() => caches.match(cacheKey))
+            )
         );
         return;
     }
@@ -193,13 +216,24 @@ self.addEventListener('fetch', (event) => {
     // the wrong (main, versioned) bucket instead.
     if (url.pathname.startsWith('/product/')) {
         event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    const clone = response.clone();
-                    caches.open(PRODUCT_PAGES_CACHE).then((cache) => cache.put(request.url, clone));
-                    return response;
+            caches.open(PRODUCT_PAGES_CACHE).then((cache) =>
+                cache.match(request.url).then((cachedResponse) => {
+                    const networkFetch = fetch(request)
+                        .then((response) => {
+                            cache.put(request.url, response.clone());
+                            return response;
+                        })
+                        .catch(() => cachedResponse);
+
+                    // This is the actual fix: serve the cached page
+                    // immediately (this is what makes the eye icon feel
+                    // instant again) while the network fetch still runs
+                    // in the background to keep the cache from going
+                    // stale. Only await the network directly if this
+                    // exact product page has never been cached before.
+                    return cachedResponse || networkFetch;
                 })
-                .catch(() => caches.match(request.url))
+            )
         );
         return;
     }
@@ -211,13 +245,18 @@ self.addEventListener('fetch', (event) => {
     // the generic static-asset handler ever sees the request.
     if (url.pathname.startsWith('/static/product-images/')) {
         event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    const clone = response.clone();
-                    caches.open(PRODUCT_IMAGES_CACHE).then((cache) => cache.put(request.url, clone));
-                    return response;
+            caches.open(PRODUCT_IMAGES_CACHE).then((cache) =>
+                cache.match(request.url).then((cachedResponse) => {
+                    const networkFetch = fetch(request)
+                        .then((response) => {
+                            cache.put(request.url, response.clone());
+                            return response;
+                        })
+                        .catch(() => cachedResponse);
+
+                    return cachedResponse || networkFetch;
                 })
-                .catch(() => caches.match(request.url))
+            )
         );
         return;
     }

@@ -96,28 +96,34 @@ async function runProductPrecache() {
 
     // Figure out what's actually missing BEFORE showing any UI - a
     // repeat visit with everything already cached should be silent.
-    const toFetch = [];
-    for (const p of products) {
-        const slug = slugify(p['Product ID']);
-        if (!slug) continue;
-
-        const url = '/product/' + slug;
-        const cached = await pagesCache.match(url);
-        if (!cached) {
-            toFetch.push({ url, cache: pagesCache });
-        }
-    }
+    // Checked in PARALLEL (Promise.all), not one at a time - a
+    // sequential await-in-a-loop over 200+ products meant this ran on
+    // EVERY page load (even when nothing was missing) with 200+ back-
+    // to-back cache lookups before the "nothing to do" early-return
+    // could even fire. Cache.match() is cheap per call, but 200+ of them
+    // one after another still adds up to real time competing with
+    // whatever else is happening on the page right after load.
+    const pageChecks = await Promise.all(
+        products.map(async (p) => {
+            const slug = slugify(p['Product ID']);
+            if (!slug) return null;
+            const url = '/product/' + slug;
+            const cached = await pagesCache.match(url);
+            return cached ? null : { url, cache: pagesCache };
+        })
+    );
+    const toFetch = pageChecks.filter(Boolean);
 
     if (Array.isArray(images)) {
-        for (const img of images) {
-            if (!img.path) continue;
-
-            const url = '/static/' + img.path;
-            const cached = await imagesCache.match(url);
-            if (!cached) {
-                toFetch.push({ url, cache: imagesCache });
-            }
-        }
+        const imageChecks = await Promise.all(
+            images.map(async (img) => {
+                if (!img.path) return null;
+                const url = '/static/' + img.path;
+                const cached = await imagesCache.match(url);
+                return cached ? null : { url, cache: imagesCache };
+            })
+        );
+        toFetch.push(...imageChecks.filter(Boolean));
     }
 
     // Gallery pages: /gallery itself, plus one /gallery/<category> per
@@ -136,12 +142,13 @@ async function runProductPrecache() {
         galleryUrls.push('/gallery/' + encodeURIComponent(cat));
     }
 
-    for (const url of galleryUrls) {
-        const cached = await galleryCache.match(url);
-        if (!cached) {
-            toFetch.push({ url, cache: galleryCache });
-        }
-    }
+    const galleryChecks = await Promise.all(
+        galleryUrls.map(async (url) => {
+            const cached = await galleryCache.match(url);
+            return cached ? null : { url, cache: galleryCache };
+        })
+    );
+    toFetch.push(...galleryChecks.filter(Boolean));
 
     if (toFetch.length === 0) {
         recordSyncTime();
