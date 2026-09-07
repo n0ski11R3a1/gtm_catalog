@@ -147,21 +147,6 @@ def product_form_to_dict(form):
         except (TypeError, ValueError):
             return 0.0
 
-    def to_float_or_none(value):
-        # Distinct from to_float() above: a blank Base Price/B2C means
-        # "not recorded yet" (legitimate for an Out Of Stock product),
-        # which must stay distinguishable from a real 0 - so this
-        # returns None on blank/invalid input instead of defaulting to 0.
-        if value is None:
-            return None
-        value = value.strip() if isinstance(value, str) else value
-        if value == "":
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
     def to_int(value):
         try:
             return int(float(value))
@@ -179,8 +164,6 @@ def product_form_to_dict(form):
         "status": form.get("status", "In Stock").strip() or "In Stock",
         "description": form.get("description", "").strip(),
         "supplier": form.get("supplier", "").strip(),
-        "base_price": to_float_or_none(form.get("base_price")),
-        "b2c": to_float_or_none(form.get("b2c")),
     }
 
 
@@ -915,52 +898,6 @@ def upload():
 
             return redirect(url_for("admin"))
 
-        # Row-level pricing/margin validation (Base Price > 0, B2C/Retail/
-        # Wholesale >= Base Price, both required fields present) - checked
-        # BEFORE any DB write, and BEFORE the pre-import backup even runs,
-        # since there's no point snapshotting the DB for an upload that's
-        # about to be rejected outright. Out Of Stock rows are exempt (see
-        # db.validate_pricing_rows docstring). Reject the WHOLE upload on
-        # any failure and report every failing row - never a partial import.
-        pricing_errors = db.validate_pricing_rows(temp_path)
-
-        if pricing_errors:
-
-            os.remove(temp_path)
-
-            MAX_ERRORS_SHOWN = 20
-            for err in pricing_errors[:MAX_ERRORS_SHOWN]:
-                flash(err, "danger")
-            if len(pricing_errors) > MAX_ERRORS_SHOWN:
-                flash(
-                    f"...and {len(pricing_errors) - MAX_ERRORS_SHOWN} more row(s) "
-                    f"failed validation. Fix the sheet and re-upload - nothing was changed.",
-                    "danger"
-                )
-            else:
-                flash("Upload rejected - nothing was changed. Fix the row(s) above and re-upload.", "danger")
-
-            return redirect(url_for("admin"))
-
-        # Backup-before-import: must happen before a single row is
-        # touched, and the import must ABORT if the backup itself fails
-        # (disk full, permissions, etc.) - never proceed without this
-        # safety net. This is IN ADDITION to the existing 14-day rotating
-        # scheduled backup, not a replacement for it.
-        try:
-            db.backup_before_import()
-        except Exception as e:
-
-            os.remove(temp_path)
-
-            flash(
-                f"Import aborted: could not create the pre-import safety backup ({e}). "
-                f"No changes were made to the catalog.",
-                "danger"
-            )
-
-            return redirect(url_for("admin"))
-
         shutil.move(
             temp_path,
             EXCEL_FILE
@@ -1009,23 +946,6 @@ def cleannum(value):
         return str(int(as_float))
 
     return str(as_float)
-
-
-@app.template_filter("pct")
-def pct_filter(value):
-    """Format a decimal-fraction margin (0.25, stored per §1 of the
-    pricing spec) as a display percentage ('25.0%'). None/blank (e.g. an
-    Out Of Stock product with no Base Price on file) displays as '-'
-    rather than crashing or showing '0.0%', which would misleadingly
-    imply a real zero margin."""
-
-    if value is None or value == "":
-        return "-"
-
-    try:
-        return f"{float(value) * 100:,.1f}%"
-    except (TypeError, ValueError):
-        return "-"
 
 
 @app.template_filter("sqlitedatetime")

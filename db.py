@@ -18,8 +18,6 @@ import os
 import re
 import sqlite3
 
-from datetime import datetime
-
 import pandas as pd
 
 from config import DATABASE_FILE, EXCEL_FILE
@@ -242,29 +240,6 @@ def init_db():
     if "supplier" not in product_columns:
         conn.execute("ALTER TABLE products ADD COLUMN supplier TEXT DEFAULT ''")
 
-    # MIGRATION: pricing/margin columns (base_price, b2c, and 3 derived
-    # margin percentages). Nullable at the DB level, NOT NOT NULL -
-    # confirmed with the business owner that Out Of Stock products can
-    # legitimately have no cost/B2C price on file (they're not being
-    # sold right now, so margins aren't tracked for them yet).
-    # validate_pricing_rows() enforces "required" only for In Stock rows.
-    # Percentage columns store a decimal fraction (0.25 for 25%) and are
-    # NEVER trusted from Excel's own formula cells - always recalculated
-    # server-side here, in add_product(), and in update_product(), via
-    # the single shared _calc_margin_pct() helper.
-    for col in ("base_price", "b2c", "retail_pct", "wholesale_pct", "b2c_pct"):
-        if col not in product_columns:
-            conn.execute(f"ALTER TABLE products ADD COLUMN {col} REAL DEFAULT NULL")
-
-    # MIGRATION: price_history gains matching old/new columns for Base
-    # Price and B2C, alongside the existing Retail/Wholesale ones - full
-    # parity, per the business owner. _log_price_change() only inserts a
-    # row when at least one of the four actually changed.
-    price_history_columns = [row["name"] for row in conn.execute("PRAGMA table_info(price_history)").fetchall()]
-    for col in ("old_base_price", "new_base_price", "old_b2c", "new_b2c"):
-        if col not in price_history_columns:
-            conn.execute(f"ALTER TABLE price_history ADD COLUMN {col} REAL DEFAULT NULL")
-
     # Web Push subscriptions - one row per device that's opted in to
     # phone/desktop notifications-tray alerts. No login/per-user concept
     # here either (same as LAST_SEEN_ACTIVITY_KEY), so a "subscriber" is
@@ -312,36 +287,7 @@ def _row_to_dict(row):
         "Status": row["status"],
         "Description": row["description"] if "description" in row.keys() else "",
         "Supplier": row["supplier"] if "supplier" in row.keys() else "",
-        "Base Price": row["base_price"] if "base_price" in row.keys() else None,
-        "B2C": row["b2c"] if "b2c" in row.keys() else None,
-        "Retail %": row["retail_pct"] if "retail_pct" in row.keys() else None,
-        "Wholesale %": row["wholesale_pct"] if "wholesale_pct" in row.keys() else None,
-        "B2C %": row["b2c_pct"] if "b2c_pct" in row.keys() else None,
     }
-
-
-def _calc_margin_pct(base_price, selling_price):
-    """(selling_price - base_price) / base_price, rounded to 4 decimal
-    places (a 0.25 fraction, not 25) - or None if either value is
-    missing, non-numeric, or base_price isn't > 0 (division-by-zero
-    guard). This is the ONLY place this formula is written - shared by
-    add_product(), update_product(), and import_excel_into_db() so a
-    margin percentage can never drift from Excel-trusted vs.
-    server-calculated depending on which code path wrote it."""
-
-    if base_price is None or selling_price is None:
-        return None
-
-    try:
-        base_price = float(base_price)
-        selling_price = float(selling_price)
-    except (TypeError, ValueError):
-        return None
-
-    if base_price <= 0:
-        return None
-
-    return round((selling_price - base_price) / base_price, 4)
 
 
 def _log_activity(conn, event_type, product_id, product_name, details):
@@ -358,53 +304,36 @@ def _log_activity(conn, event_type, product_id, product_name, details):
     )
 
 
-def _format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale,
-                                  old_base_price=None, new_base_price=None,
-                                  old_b2c=None, new_b2c=None):
+def _format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale):
     """Builds a short human-readable summary like 'Retail: 96,000 -> 96,500 Ks'
-    - only mentions whichever of the four price fields actually changed.
-    Base Price/B2C can be None (Out Of Stock products aren't required to
-    have them), so those two use a '-' placeholder instead of a crashing
-    number format."""
-
-    def fmt(value):
-        return f"{value:,.0f}" if value is not None else "-"
+    - only mentions whichever of retail/wholesale actually changed."""
 
     parts = []
     if old_retail != new_retail:
         parts.append(f"Retail: {old_retail:,.0f} \u2192 {new_retail:,.0f} Ks")
     if old_wholesale != new_wholesale:
         parts.append(f"Wholesale: {old_wholesale:,.0f} \u2192 {new_wholesale:,.0f} Ks")
-    if old_base_price != new_base_price:
-        parts.append(f"Base Price: {fmt(old_base_price)} \u2192 {fmt(new_base_price)} Ks")
-    if old_b2c != new_b2c:
-        parts.append(f"B2C: {fmt(old_b2c)} \u2192 {fmt(new_b2c)} Ks")
     return " \u2022 ".join(parts)
 
 
 def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
-                       old_wholesale, new_wholesale, source,
-                       old_base_price=None, new_base_price=None,
-                       old_b2c=None, new_b2c=None):
-    """Insert a price_history row, but only if retail, wholesale, base
-    price, or B2C actually changed. Also logs a matching activity_log
-    entry for the notification bell - same "did it actually change"
-    check covers all four, so there's only one place that decides what
-    counts as a real price change. Caller is responsible for
-    commit/close (runs on an open conn so it shares a transaction with
-    the products write)."""
+                       old_wholesale, new_wholesale, source):
+    """Insert a price_history row, but only if retail or wholesale actually
+    changed. Also logs a matching activity_log entry for the notification
+    bell - same "did it actually change" check covers both, so there's
+    only one place that decides what counts as a real price change.
+    Caller is responsible for commit/close (runs on an open conn so it
+    shares a transaction with the products write)."""
 
-    if (old_retail == new_retail and old_wholesale == new_wholesale
-            and old_base_price == new_base_price and old_b2c == new_b2c):
+    if old_retail == new_retail and old_wholesale == new_wholesale:
         return
 
     conn.execute(
         """
         INSERT INTO price_history
             (product_id, product_name, old_retail, new_retail,
-             old_wholesale, new_wholesale, source,
-             old_base_price, new_base_price, old_b2c, new_b2c)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             old_wholesale, new_wholesale, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             product_id,
@@ -414,10 +343,6 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
             old_wholesale,
             new_wholesale,
             source,
-            old_base_price,
-            new_base_price,
-            old_b2c,
-            new_b2c,
         ),
     )
 
@@ -426,10 +351,7 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
         event_type="price_changed",
         product_id=product_id,
         product_name=product_name,
-        details=_format_price_change_details(
-            old_retail, new_retail, old_wholesale, new_wholesale,
-            old_base_price, new_base_price, old_b2c, new_b2c,
-        ),
+        details=_format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale),
     )
 
 
@@ -1091,23 +1013,11 @@ def delete_order(order_id):
 
 def add_product(data):
     conn = get_db_connection()
-
-    # base_price/b2c are the only manual-entry inputs among the 5 new
-    # pricing fields - the 3 margin percentages are ALWAYS derived here,
-    # never accepted from the caller (mirrors the "server is the final
-    # authority" rule applied to Excel uploads).
-    base_price = data.get("base_price")
-    b2c = data.get("b2c")
-    retail_pct = _calc_margin_pct(base_price, data.get("retail", 0))
-    wholesale_pct = _calc_margin_pct(base_price, data.get("wholesale", 0))
-    b2c_pct = _calc_margin_pct(base_price, b2c)
-
     conn.execute(
         """
         INSERT INTO products
-            (product_id, product_name, upc, unit, retail, wholesale, category, status,
-             description, supplier, base_price, b2c, retail_pct, wholesale_pct, b2c_pct)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("product_id", ""),
@@ -1120,11 +1030,6 @@ def add_product(data):
             data.get("status", "In Stock"),
             data.get("description", ""),
             data.get("supplier", ""),
-            base_price,
-            b2c,
-            retail_pct,
-            wholesale_pct,
-            b2c_pct,
         ),
     )
 
@@ -1157,12 +1062,6 @@ def update_product(product_pk, data):
         "SELECT * FROM products WHERE id = ?", (product_pk,)
     ).fetchone()
 
-    base_price = data.get("base_price")
-    b2c = data.get("b2c")
-    retail_pct = _calc_margin_pct(base_price, data.get("retail", 0))
-    wholesale_pct = _calc_margin_pct(base_price, data.get("wholesale", 0))
-    b2c_pct = _calc_margin_pct(base_price, b2c)
-
     conn.execute(
         """
         UPDATE products SET
@@ -1175,12 +1074,7 @@ def update_product(product_pk, data):
             category = ?,
             status = ?,
             description = ?,
-            supplier = ?,
-            base_price = ?,
-            b2c = ?,
-            retail_pct = ?,
-            wholesale_pct = ?,
-            b2c_pct = ?
+            supplier = ?
         WHERE id = ?
         """,
         (
@@ -1194,19 +1088,11 @@ def update_product(product_pk, data):
             data.get("status", "In Stock"),
             data.get("description", ""),
             data.get("supplier", ""),
-            base_price,
-            b2c,
-            retail_pct,
-            wholesale_pct,
-            b2c_pct,
             product_pk,
         ),
     )
 
     if existing is not None:
-        existing_base_price = existing["base_price"] if "base_price" in existing.keys() else None
-        existing_b2c = existing["b2c"] if "b2c" in existing.keys() else None
-
         _log_price_change(
             conn,
             product_id=data.get("product_id", "") or existing["product_id"],
@@ -1216,10 +1102,6 @@ def update_product(product_pk, data):
             old_wholesale=existing["wholesale"],
             new_wholesale=data.get("wholesale", 0),
             source="manual",
-            old_base_price=existing_base_price,
-            new_base_price=base_price,
-            old_b2c=existing_b2c,
-            new_b2c=b2c,
         )
 
         _log_status_change(
@@ -1245,119 +1127,6 @@ def delete_product(product_pk):
 # Bulk import (the existing "upload Excel" admin feature)
 # ------------------------
 
-def validate_pricing_rows(path):
-    """Row-level validation for the 5 new pricing/margin columns, run
-    BEFORE any DB write (header-only validation - do the required
-    columns exist at all - already happened in app.py's validate_excel()
-    by this point).
-
-    Confirmed with the business owner: Out Of Stock products are EXEMPT
-    from all 5 requirements below - the current source-of-truth sheet
-    has ~50 OOS rows with no Base Price/B2C on file yet, and that's
-    fine. Only In Stock rows must have:
-      1. Base Price present, numeric, and > 0
-      2. B2C present and numeric
-      3. Retail >= Base Price
-      4. Wholesale >= Base Price
-      5. B2C >= Base Price
-
-    Returns a list of human-readable error strings (empty list = clean
-    sheet). The caller is expected to reject the WHOLE upload if this
-    list is non-empty, per the "single source of truth, nothing must go
-    wrong" framing - never partially import."""
-
-    df = pd.read_excel(path, sheet_name="Product Catalog")
-
-    errors = []
-
-    for _, row in df.iterrows():
-
-        product_id = str(row.get("Product ID", "") or "").strip() or "(blank ID)"
-        product_name = str(row.get("Product Name", "") or "").strip() or "unnamed"
-        status = str(row.get("Status", "In Stock") or "In Stock").strip().title()
-        label = f"{product_id} ({product_name})"
-
-        if status != "In Stock":
-            continue  # Out Of Stock rows are exempt - see docstring
-
-        base_price_raw = row.get("Base Price")
-
-        if pd.isna(base_price_raw):
-            errors.append(f"{label}: Base Price is required for In Stock products.")
-            continue
-
-        try:
-            base_price = float(base_price_raw)
-        except (TypeError, ValueError):
-            errors.append(f"{label}: Base Price ({base_price_raw!r}) is not a valid number.")
-            continue
-
-        if base_price <= 0:
-            errors.append(f"{label}: Base Price must be greater than 0 (got {base_price:,.2f}).")
-            continue
-
-        b2c_raw = row.get("B2C")
-        if pd.isna(b2c_raw):
-            errors.append(f"{label}: B2C price is required for In Stock products.")
-        else:
-            try:
-                b2c = float(b2c_raw)
-                if b2c < base_price:
-                    errors.append(
-                        f"{label}: B2C ({b2c:,.2f}) is below Base Price ({base_price:,.2f})."
-                    )
-            except (TypeError, ValueError):
-                errors.append(f"{label}: B2C ({b2c_raw!r}) is not a valid number.")
-
-        for field_name in ("Retail", "Wholesale"):
-            raw_value = row.get(field_name)
-            if pd.isna(raw_value):
-                continue  # missing Retail/Wholesale is caught by existing required-column checks
-            try:
-                value = float(raw_value)
-            except (TypeError, ValueError):
-                continue  # non-numeric Retail/Wholesale is caught elsewhere
-            if value < base_price:
-                errors.append(
-                    f"{label}: {field_name} ({value:,.2f}) is below Base Price ({base_price:,.2f})."
-                )
-
-    return errors
-
-
-def backup_before_import():
-    """Snapshot the live DB using SQLite's built-in .backup() API - NOT
-    shutil.copy(), which risks grabbing the file mid-write and producing
-    a corrupted backup (see PROJECT_HANDOFF §12). Written to
-    backups/pre_import_<timestamp>.db, alongside (never replacing) the
-    existing 14-day rotating scheduled backup from backup_db.py, so
-    pre-import snapshots are identifiable by filename.
-
-    Raises on any failure (disk full, permissions, etc.) rather than
-    returning False - the caller (app.py's /upload route) must treat any
-    exception here as "abort before a single row is written," never
-    proceed with an import if this safety net didn't get created.
-    Returns the backup file path on success."""
-
-    backups_dir = os.path.join(os.path.dirname(DATABASE_FILE), "backups")
-    os.makedirs(backups_dir, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = os.path.join(backups_dir, f"pre_import_{timestamp}.db")
-
-    source_conn = sqlite3.connect(DATABASE_FILE)
-    try:
-        dest_conn = sqlite3.connect(backup_path)
-        try:
-            source_conn.backup(dest_conn)
-        finally:
-            dest_conn.close()
-    finally:
-        source_conn.close()
-
-    return backup_path
-
-
 def import_excel_into_db(path, replace=True, source="excel_upload", log_activity=True):
     """Read a validated Excel file and load it into the database.
 
@@ -1379,15 +1148,6 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
       have it at all, existing descriptions are left completely untouched
       (not wiped to blank) - only a sheet that actually includes the
       column can update descriptions in bulk.
-    - Base Price / B2C / Retail % / Wholesale % / B2C %: the 5 new
-      pricing/margin columns. Base Price and B2C are read as-is (blank
-      stays None/NULL - never filled with 0, since a missing value is
-      meaningful and distinct from a real 0). The 3 percentage columns
-      are NEVER read from the sheet at all - they're always recalculated
-      here via _calc_margin_pct(), regardless of whatever formula result
-      Excel baked into those cells. Callers are expected to have already
-      run validate_pricing_rows(path) and aborted on any errors BEFORE
-      calling this function - this function does not re-validate.
     """
 
     df = pd.read_excel(path, sheet_name="Product Catalog")
@@ -1413,13 +1173,6 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
     has_supplier_col = "Supplier" in df.columns
     if has_supplier_col:
         df["Supplier"] = df["Supplier"].fillna("")
-
-    # Base Price / B2C: deliberately NOT fillna'd like the columns above -
-    # NaN is preserved and read per-row below as None, since a blank cell
-    # (legitimate for an Out Of Stock product) must stay distinguishable
-    # from a real 0.
-    has_base_price_col = "Base Price" in df.columns
-    has_b2c_col = "B2C" in df.columns
 
     conn = get_db_connection()
 
@@ -1454,15 +1207,6 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
         category = str(row["Category"])
         status = str(row["Status"])
 
-        raw_base_price = row.get("Base Price") if has_base_price_col else None
-        raw_b2c = row.get("B2C") if has_b2c_col else None
-        base_price = None if raw_base_price is None or pd.isna(raw_base_price) else float(raw_base_price)
-        b2c = None if raw_b2c is None or pd.isna(raw_b2c) else float(raw_b2c)
-
-        retail_pct = _calc_margin_pct(base_price, retail)
-        wholesale_pct = _calc_margin_pct(base_price, wholesale)
-        b2c_pct = _calc_margin_pct(base_price, b2c)
-
         # A blank Product ID must NEVER be looked up against the table -
         # it always means "this is a new product," never "match whatever
         # other row also happens to have a blank id." Without this guard,
@@ -1479,9 +1223,6 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
             ).fetchone()
 
         if existing is not None:
-            existing_base_price = existing["base_price"] if "base_price" in existing.keys() else None
-            existing_b2c = existing["b2c"] if "b2c" in existing.keys() else None
-
             _log_price_change(
                 conn,
                 product_id=product_id,
@@ -1491,10 +1232,6 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                 old_wholesale=existing["wholesale"],
                 new_wholesale=wholesale,
                 source=source,
-                old_base_price=existing_base_price,
-                new_base_price=base_price,
-                old_b2c=existing_b2c,
-                new_b2c=b2c,
             )
 
             if log_activity:
@@ -1526,17 +1263,11 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                     category = ?,
                     status = ?,
                     description = ?,
-                    supplier = ?,
-                    base_price = ?,
-                    b2c = ?,
-                    retail_pct = ?,
-                    wholesale_pct = ?,
-                    b2c_pct = ?
+                    supplier = ?
                 WHERE product_id = ?
                 """,
                 (product_name, upc, unit, retail, wholesale, category, status,
-                 description_val, supplier_val, base_price, b2c,
-                 retail_pct, wholesale_pct, b2c_pct, product_id),
+                 description_val, supplier_val, product_id),
             )
 
             seen_product_ids.append(product_id)
@@ -1562,12 +1293,10 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
             conn.execute(
                 """
                 INSERT INTO products
-                    (product_id, product_name, upc, unit, retail, wholesale, category, status,
-                     description, supplier, base_price, b2c, retail_pct, wholesale_pct, b2c_pct)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (product_id, product_name, upc, unit, retail, wholesale, category, status,
-                 description, supplier, base_price, b2c, retail_pct, wholesale_pct, b2c_pct),
+                (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier),
             )
 
             if log_activity:
