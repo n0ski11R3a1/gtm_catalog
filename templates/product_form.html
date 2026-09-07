@@ -119,6 +119,43 @@
                     </div>
 
                     <div class="col-md-6">
+                        <label class="form-label fw-semibold">Base Price (Ks)</label>
+                        <input type="text" inputmode="decimal" name="base_price" id="basePriceInput" class="form-control numeric-input"
+                               placeholder="Cost to acquire from supplier" onfocus="this.select()"
+                               value="{{ (values.get('Base Price') if values.get('Base Price') is not none else values.get('base_price', ''))|cleannum }}">
+                        <div class="form-text">Required once this product is In Stock. Drives the margin %s below - never trust a stale figure, always re-enter if the supplier's cost changes.</div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">B2C Price (Ks)</label>
+                        <input type="text" inputmode="decimal" name="b2c" id="b2cInput" class="form-control numeric-input"
+                               placeholder="0" onfocus="this.select()"
+                               value="{{ (values.get('B2C') if values.get('B2C') is not none else values.get('b2c', ''))|cleannum }}">
+                        <div class="form-text">Separate B2C selling channel - not shown on the rep-facing catalog.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">Retail Margin</label>
+                        <input type="text" id="retailPctDisplay" class="form-control" readonly
+                               value="{{ values.get('Retail %')|pct if values.get('Retail %') is not none else '-' }}">
+                        <div class="form-text">Recalculated on save.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">Wholesale Margin</label>
+                        <input type="text" id="wholesalePctDisplay" class="form-control" readonly
+                               value="{{ values.get('Wholesale %')|pct if values.get('Wholesale %') is not none else '-' }}">
+                        <div class="form-text">Recalculated on save.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">B2C Margin</label>
+                        <input type="text" id="b2cPctDisplay" class="form-control" readonly
+                               value="{{ values.get('B2C %')|pct if values.get('B2C %') is not none else '-' }}">
+                        <div class="form-text">Recalculated on save.</div>
+                    </div>
+
+                    <div class="col-md-6">
                         <label class="form-label fw-semibold">Supplier</label>
                         <input type="text" name="supplier" class="form-control"
                                placeholder="e.g. MMA"
@@ -163,6 +200,8 @@
                                 <th>Changed</th>
                                 <th class="text-end">Retail</th>
                                 <th class="text-end">Wholesale</th>
+                                <th class="text-end">Base Price</th>
+                                <th class="text-end">B2C</th>
                                 <th>Source</th>
                             </tr>
                         </thead>
@@ -181,6 +220,22 @@
                                     <strong class="{% if h['new_wholesale'] > h['old_wholesale'] %}text-danger{% elif h['new_wholesale'] < h['old_wholesale'] %}text-success{% endif %}">
                                         {{ "{:,.0f}".format(h['new_wholesale']) }} Ks
                                     </strong>
+                                </td>
+                                <td class="text-end">
+                                    {% if h['old_base_price'] is none and h['new_base_price'] is none %}
+                                        -
+                                    {% else %}
+                                        {{ "{:,.0f}".format(h['old_base_price']) if h['old_base_price'] is not none else '-' }} &rarr;
+                                        <strong>{{ "{:,.0f}".format(h['new_base_price']) if h['new_base_price'] is not none else '-' }} Ks</strong>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    {% if h['old_b2c'] is none and h['new_b2c'] is none %}
+                                        -
+                                    {% else %}
+                                        {{ "{:,.0f}".format(h['old_b2c']) if h['old_b2c'] is not none else '-' }} &rarr;
+                                        <strong>{{ "{:,.0f}".format(h['new_b2c']) if h['new_b2c'] is not none else '-' }} Ks</strong>
+                                    {% endif %}
                                 </td>
                                 <td><span class="badge bg-light text-dark border">{{ h['source'] }}</span></td>
                             </tr>
@@ -296,6 +351,43 @@
 
         input.addEventListener('input', renderChips);
         renderChips();
+    })();
+</script>
+
+<script>
+    // Live margin-% preview as Base Price/Retail/Wholesale/B2C are typed.
+    // COSMETIC ONLY - a convenience so the admin sees the effect of an
+    // edit immediately, same spirit as the numeric-junk guard below. The
+    // stored value is ALWAYS recalculated server-side in db.py on save,
+    // never trusted from this preview.
+    (function () {
+        const baseInput = document.getElementById('basePriceInput');
+        const retailInput = document.querySelector('input[name="retail"]');
+        const wholesaleInput = document.querySelector('input[name="wholesale"]');
+        const b2cInput = document.getElementById('b2cInput');
+        const retailPctOut = document.getElementById('retailPctDisplay');
+        const wholesalePctOut = document.getElementById('wholesalePctDisplay');
+        const b2cPctOut = document.getElementById('b2cPctDisplay');
+
+        if (!baseInput || !retailPctOut) return;
+
+        function previewPct(base, price) {
+            const b = parseFloat(base);
+            const p = parseFloat(price);
+            if (!b || b <= 0 || isNaN(p)) return '-';
+            return (((p - b) / b) * 100).toFixed(1) + '%';
+        }
+
+        function recalc() {
+            const base = baseInput.value;
+            retailPctOut.value = previewPct(base, retailInput ? retailInput.value : '');
+            wholesalePctOut.value = previewPct(base, wholesaleInput ? wholesaleInput.value : '');
+            b2cPctOut.value = previewPct(base, b2cInput ? b2cInput.value : '');
+        }
+
+        [baseInput, retailInput, wholesaleInput, b2cInput].forEach(function (el) {
+            if (el) el.addEventListener('input', recalc);
+        });
     })();
 </script>
 

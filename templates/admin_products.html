@@ -48,6 +48,11 @@
                     <th>Supplier</th>
                     <th class="text-end">Retail</th>
                     <th class="text-end">Wholesale</th>
+                    <th class="text-end">Base Price</th>
+                    <th class="text-end">B2C</th>
+                    <th class="text-end">Retail %</th>
+                    <th class="text-end">Wholesale %</th>
+                    <th class="text-end">B2C %</th>
                     <th>Status</th>
                     <th class="text-end">Actions</th>
                 </tr>
@@ -61,6 +66,11 @@
                     <td class="text-muted">{{ p['Supplier'] or '-' }}</td>
                     <td class="text-end">{{ "{:,.0f}".format(p['Retail']) }} Ks</td>
                     <td class="text-end">{{ "{:,.0f}".format(p['Wholesale']) }} Ks</td>
+                    <td class="text-end">{{ "{:,.0f}".format(p['Base Price']) ~ " Ks" if p['Base Price'] is not none else '-' }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(p['B2C']) ~ " Ks" if p['B2C'] is not none else '-' }}</td>
+                    <td class="text-end">{{ p['Retail %']|pct }}</td>
+                    <td class="text-end">{{ p['Wholesale %']|pct }}</td>
+                    <td class="text-end">{{ p['B2C %']|pct }}</td>
                     <td>
                         <span class="badge {% if p['Status']|lower == 'out of stock' %}badge-oos{% else %}badge-instock{% endif %}">
                             {{ p['Status'] }}
@@ -88,7 +98,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">
+                    <td colspan="13" class="text-center text-muted py-4">
                         No products yet. Upload an Excel catalog or add one manually.
                     </td>
                 </tr>
