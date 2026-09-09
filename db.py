@@ -358,27 +358,22 @@ def _log_activity(conn, event_type, product_id, product_name, details):
     )
 
 
-def _format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale,
-                                  old_base_price=None, new_base_price=None,
-                                  old_b2c=None, new_b2c=None):
-    """Builds a short human-readable summary like 'Retail: 96,000 -> 96,500 Ks'
-    - only mentions whichever of the four price fields actually changed.
-    Base Price/B2C can be None (Out Of Stock products aren't required to
-    have them), so those two use a '-' placeholder instead of a crashing
-    number format."""
+def _format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale):
+    """Builds the activity_log 'details' text for the notification bell.
 
-    def fmt(value):
-        return f"{value:,.0f}" if value is not None else "-"
+    DELIBERATELY Retail/Wholesale ONLY - never Base Price or B2C. Verified
+    directly in app.py: /api/activity (the bell's data source) and
+    /api/price-history have NO login_required() check - they're public,
+    unauthenticated endpoints (by design, so Excel's Power Query can pull
+    from them). Base Price is internal supplier cost; it must never reach
+    this string regardless of how price_history's own columns evolve.
+    See _log_price_change()'s docstring for how the two are kept separate."""
 
     parts = []
     if old_retail != new_retail:
         parts.append(f"Retail: {old_retail:,.0f} \u2192 {new_retail:,.0f} Ks")
     if old_wholesale != new_wholesale:
         parts.append(f"Wholesale: {old_wholesale:,.0f} \u2192 {new_wholesale:,.0f} Ks")
-    if old_base_price != new_base_price:
-        parts.append(f"Base Price: {fmt(old_base_price)} \u2192 {fmt(new_base_price)} Ks")
-    if old_b2c != new_b2c:
-        parts.append(f"B2C: {fmt(old_b2c)} \u2192 {fmt(new_b2c)} Ks")
     return " \u2022 ".join(parts)
 
 
@@ -386,16 +381,30 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
                        old_wholesale, new_wholesale, source,
                        old_base_price=None, new_base_price=None,
                        old_b2c=None, new_b2c=None):
-    """Insert a price_history row, but only if retail, wholesale, base
-    price, or B2C actually changed. Also logs a matching activity_log
-    entry for the notification bell - same "did it actually change"
-    check covers all four, so there's only one place that decides what
-    counts as a real price change. Caller is responsible for
-    commit/close (runs on an open conn so it shares a transaction with
-    the products write)."""
+    """Insert a price_history row if retail, wholesale, base price, OR
+    B2C changed - full parity, for the admin-only Price History tab
+    (behind login_required(), reads this table directly - never goes
+    through a public API).
 
-    if (old_retail == new_retail and old_wholesale == new_wholesale
-            and old_base_price == new_base_price and old_b2c == new_b2c):
+    The notification-bell activity_log entry is a SEPARATE, narrower
+    thing: it's only written if Retail or Wholesale actually changed,
+    and its text NEVER mentions Base Price or B2C (see
+    _format_price_change_details docstring) - because /api/activity is
+    public and unauthenticated, so this is the one place a base_price
+    change could otherwise leak to anyone who hits that URL. A
+    Base-Price-only edit (cost changed, customer-facing prices didn't)
+    still gets recorded in price_history for your own records, it just
+    doesn't ping the public bell.
+
+    Caller is responsible for commit/close (runs on an open conn so it
+    shares a transaction with the products write)."""
+
+    price_history_changed = (
+        old_retail != new_retail or old_wholesale != new_wholesale
+        or old_base_price != new_base_price or old_b2c != new_b2c
+    )
+
+    if not price_history_changed:
         return
 
     conn.execute(
@@ -421,16 +430,16 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
         ),
     )
 
-    _log_activity(
-        conn,
-        event_type="price_changed",
-        product_id=product_id,
-        product_name=product_name,
-        details=_format_price_change_details(
-            old_retail, new_retail, old_wholesale, new_wholesale,
-            old_base_price, new_base_price, old_b2c, new_b2c,
-        ),
-    )
+    # Notification bell: ONLY fires on a Retail/Wholesale change, and its
+    # text is built exclusively from those two - see docstring above.
+    if old_retail != new_retail or old_wholesale != new_wholesale:
+        _log_activity(
+            conn,
+            event_type="price_changed",
+            product_id=product_id,
+            product_name=product_name,
+            details=_format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale),
+        )
 
 
 def add_push_subscription(endpoint, p256dh, auth):
@@ -1246,20 +1255,22 @@ def delete_product(product_pk):
 # ------------------------
 
 def validate_pricing_rows(path):
-    """Row-level validation for the 5 new pricing/margin columns, run
-    BEFORE any DB write (header-only validation - do the required
-    columns exist at all - already happened in app.py's validate_excel()
-    by this point).
+    """Row-level validation, run BEFORE any DB write (header-only
+    validation - do the required columns exist at all - already happened
+    in app.py's validate_excel() by this point).
 
     Confirmed with the business owner: Out Of Stock products are EXEMPT
-    from all 5 requirements below - the current source-of-truth sheet
-    has ~50 OOS rows with no Base Price/B2C on file yet, and that's
+    from all requirements below - the current source-of-truth sheet has
+    ~50 OOS rows with no Base Price/B2C/Supplier on file yet, and that's
     fine. Only In Stock rows must have:
       1. Base Price present, numeric, and > 0
       2. B2C present and numeric
       3. Retail >= Base Price
       4. Wholesale >= Base Price
       5. B2C >= Base Price
+      6. Supplier present and non-blank (business owner reports this
+         gets forgotten on new/restocked products - catching it here is
+         cheaper than catching it after the fact)
 
     Returns a list of human-readable error strings (empty list = clean
     sheet). The caller is expected to reject the WHOLE upload if this
@@ -1279,6 +1290,10 @@ def validate_pricing_rows(path):
 
         if status != "In Stock":
             continue  # Out Of Stock rows are exempt - see docstring
+
+        supplier_raw = row.get("Supplier")
+        if pd.isna(supplier_raw) or str(supplier_raw).strip() == "":
+            errors.append(f"{label}: Supplier is required for In Stock products.")
 
         base_price_raw = row.get("Base Price")
 

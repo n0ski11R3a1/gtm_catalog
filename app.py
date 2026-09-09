@@ -302,19 +302,48 @@ def api_product_images():
     return jsonify(images)
 
 
+# Fields safe to expose on the PUBLIC, unauthenticated /api/price-history
+# endpoint (no login_required() - see api_price_history below). Excludes
+# old_base_price/new_base_price/old_b2c/new_b2c: those are internal
+# supplier-cost columns on price_history, and this endpoint has no auth
+# check, so leaving them in would hand cost data to anyone who hits the
+# URL. The admin-only Price History tab (behind login_required(), in
+# admin_product_edit) reads db.get_price_history() directly instead of
+# through this endpoint, so it still sees the full row - this filtering
+# only affects what's serialized here.
+_PUBLIC_PRICE_HISTORY_FIELDS = (
+    "id", "product_id", "product_name",
+    "old_retail", "new_retail", "old_wholesale", "new_wholesale",
+    "source", "changed_at",
+)
+
+
+def _sanitize_price_history_for_public_api(rows):
+    return [
+        {field: row[field] for field in _PUBLIC_PRICE_HISTORY_FIELDS if field in row}
+        for row in rows
+    ]
+
+
 @app.route("/api/price-history")
 def api_price_history():
 
-    # Same idea as /api/prices, but for the price_history log, so it can
-    # be pulled into Excel with Power Query too.
+    # Same idea as /api/prices, so it can be pulled into Excel with Power
+    # Query too. PUBLIC, unauthenticated - which is exactly why the
+    # result is run through _sanitize_price_history_for_public_api()
+    # before being returned: Base Price/B2C history must never appear
+    # here (see that function's docstring). The full, unsanitized rows
+    # are still available in-app on the login-gated Price History tab.
     # Optional ?product_id=GTM - 0001 filters to a single product;
     # otherwise returns the most recent changes across all products.
     product_id = request.args.get("product_id")
 
     if product_id:
-        return jsonify(db.get_price_history(product_id, limit=1000))
+        rows = db.get_price_history(product_id, limit=1000)
+    else:
+        rows = db.get_recent_price_changes(limit=1000)
 
-    return jsonify(db.get_recent_price_changes(limit=1000))
+    return jsonify(_sanitize_price_history_for_public_api(rows))
 
 
 @app.route("/api/activity")
@@ -549,8 +578,21 @@ def admin_product_add():
 
         data = product_form_to_dict(request.form)
 
+        form_errors = []
+
         if not data["product_name"]:
-            flash("Product Name is required.", "danger")
+            form_errors.append("Product Name is required.")
+
+        # Same rule as the Excel upload path (db.validate_pricing_rows):
+        # Out Of Stock products are exempt, In Stock products must have
+        # a Supplier on file. Added because Supplier is easy to forget
+        # when quickly adding a product by hand.
+        if data["status"] == "In Stock" and not data["supplier"]:
+            form_errors.append("Supplier is required for In Stock products.")
+
+        if form_errors:
+            for err in form_errors:
+                flash(err, "danger")
             # Validation failed - don't reserve/consume a real Product ID
             # for a submission that isn't actually going to create a
             # product. Peek-only here; a real id gets reserved below only
@@ -614,8 +656,17 @@ def admin_product_edit(product_id):
 
         data = product_form_to_dict(request.form)
 
+        form_errors = []
+
         if not data["product_name"]:
-            flash("Product Name is required.", "danger")
+            form_errors.append("Product Name is required.")
+
+        if data["status"] == "In Stock" and not data["supplier"]:
+            form_errors.append("Supplier is required for In Stock products.")
+
+        if form_errors:
+            for err in form_errors:
+                flash(err, "danger")
             return render_template(
                 "product_form.html",
                 product=product,
