@@ -240,6 +240,13 @@ def init_db():
     if "supplier" not in product_columns:
         conn.execute("ALTER TABLE products ADD COLUMN supplier TEXT DEFAULT ''")
 
+    # MIGRATION: has_image flag for the admin form and gallery image state.
+    # This is a boolean-like field on the database row; the actual image
+    # file still lives on disk in static/product-images/ and is resolved by
+    # Product ID at runtime instead of stored in the DB.
+    if "has_image" not in product_columns:
+        conn.execute("ALTER TABLE products ADD COLUMN has_image BOOLEAN DEFAULT 0")
+
     # Web Push subscriptions - one row per device that's opted in to
     # phone/desktop notifications-tray alerts. No login/per-user concept
     # here either (same as LAST_SEEN_ACTIVITY_KEY), so a "subscriber" is
@@ -287,6 +294,7 @@ def _row_to_dict(row):
         "Status": row["status"],
         "Description": row["description"] if "description" in row.keys() else "",
         "Supplier": row["supplier"] if "supplier" in row.keys() else "",
+        "has_image": bool(row["has_image"]) if "has_image" in row.keys() else False,
     }
 
 
@@ -305,20 +313,12 @@ def _log_activity(conn, event_type, product_id, product_name, details):
 
 
 def _format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale):
-<<<<<<< HEAD
-    """Builds a short human-readable summary like 'Retail: 96,000 -> 96,500 Ks'
-    - only mentions whichever of retail/wholesale actually changed."""
-=======
-    """Builds the activity_log 'details' text for the notification bell.
+    """Build a short human-readable summary for the public activity feed.
 
-    DELIBERATELY Retail/Wholesale ONLY - never Base Price or B2C. Verified
-    directly in app.py: /api/activity (the bell's data source) and
-    /api/price-history have NO login_required() check - they're public,
-    unauthenticated endpoints (by design, so Excel's Power Query can pull
-    from them). Base Price is internal supplier cost; it must never reach
-    this string regardless of how price_history's own columns evolve.
-    See _log_price_change()'s docstring for how the two are kept separate."""
->>>>>>> my-fixed-version
+    The notification bell only reports retail/wholesale changes because
+    those are the customer-facing values and the public /api/activity
+    endpoint is unauthenticated.
+    """
 
     parts = []
     if old_retail != new_retail:
@@ -329,45 +329,19 @@ def _format_price_change_details(old_retail, new_retail, old_wholesale, new_whol
 
 
 def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
-<<<<<<< HEAD
-                       old_wholesale, new_wholesale, source):
-    """Insert a price_history row, but only if retail or wholesale actually
-    changed. Also logs a matching activity_log entry for the notification
-    bell - same "did it actually change" check covers both, so there's
-    only one place that decides what counts as a real price change.
-    Caller is responsible for commit/close (runs on an open conn so it
-    shares a transaction with the products write)."""
-
-    if old_retail == new_retail and old_wholesale == new_wholesale:
-=======
                        old_wholesale, new_wholesale, source,
                        old_base_price=None, new_base_price=None,
                        old_b2c=None, new_b2c=None):
-    """Insert a price_history row if retail, wholesale, base price, OR
-    B2C changed - full parity, for the admin-only Price History tab
-    (behind login_required(), reads this table directly - never goes
-    through a public API).
+    """Insert a price_history row only when a real price change occurred.
 
-    The notification-bell activity_log entry is a SEPARATE, narrower
-    thing: it's only written if Retail or Wholesale actually changed,
-    and its text NEVER mentions Base Price or B2C (see
-    _format_price_change_details docstring) - because /api/activity is
-    public and unauthenticated, so this is the one place a base_price
-    change could otherwise leak to anyone who hits that URL. A
-    Base-Price-only edit (cost changed, customer-facing prices didn't)
-    still gets recorded in price_history for your own records, it just
-    doesn't ping the public bell.
+    This app's price_history table does not currently store base-price or
+    B2C rows at all, so those extra parameters are accepted for future
+    compatibility but ignored by the INSERT itself. The notification bell
+    still only logs retail/wholesale changes, which is what the public
+    API is allowed to expose.
+    """
 
-    Caller is responsible for commit/close (runs on an open conn so it
-    shares a transaction with the products write)."""
-
-    price_history_changed = (
-        old_retail != new_retail or old_wholesale != new_wholesale
-        or old_base_price != new_base_price or old_b2c != new_b2c
-    )
-
-    if not price_history_changed:
->>>>>>> my-fixed-version
+    if old_retail == new_retail and old_wholesale == new_wholesale:
         return
 
     conn.execute(
@@ -388,17 +362,6 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
         ),
     )
 
-<<<<<<< HEAD
-    _log_activity(
-        conn,
-        event_type="price_changed",
-        product_id=product_id,
-        product_name=product_name,
-        details=_format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale),
-    )
-=======
-    # Notification bell: ONLY fires on a Retail/Wholesale change, and its
-    # text is built exclusively from those two - see docstring above.
     if old_retail != new_retail or old_wholesale != new_wholesale:
         _log_activity(
             conn,
@@ -407,7 +370,6 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
             product_name=product_name,
             details=_format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale),
         )
->>>>>>> my-fixed-version
 
 
 def add_push_subscription(endpoint, p256dh, auth):
@@ -1071,8 +1033,8 @@ def add_product(data):
     conn.execute(
         """
         INSERT INTO products
-            (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier, has_image)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("product_id", ""),
@@ -1085,6 +1047,7 @@ def add_product(data):
             data.get("status", "In Stock"),
             data.get("description", ""),
             data.get("supplier", ""),
+            1 if data.get("has_image") else 0,
         ),
     )
 
@@ -1112,10 +1075,13 @@ def add_product(data):
 def update_product(product_pk, data):
     conn = get_db_connection()
 
-    # Fetch the pre-edit row so we can detect and log a price change.
     existing = conn.execute(
         "SELECT * FROM products WHERE id = ?", (product_pk,)
     ).fetchone()
+
+    has_image = data.get("has_image")
+    if has_image is None:
+        has_image = bool(existing["has_image"]) if existing else False
 
     conn.execute(
         """
@@ -1129,7 +1095,8 @@ def update_product(product_pk, data):
             category = ?,
             status = ?,
             description = ?,
-            supplier = ?
+            supplier = ?,
+            has_image = ?
         WHERE id = ?
         """,
         (
@@ -1143,6 +1110,7 @@ def update_product(product_pk, data):
             data.get("status", "In Stock"),
             data.get("description", ""),
             data.get("supplier", ""),
+            1 if has_image else 0,
             product_pk,
         ),
     )
@@ -1182,30 +1150,13 @@ def delete_product(product_pk):
 # Bulk import (the existing "upload Excel" admin feature)
 # ------------------------
 
-<<<<<<< HEAD
-=======
+
 def validate_pricing_rows(path):
-    """Row-level validation, run BEFORE any DB write (header-only
-    validation - do the required columns exist at all - already happened
-    in app.py's validate_excel() by this point).
+    """Row-level validation, run BEFORE any DB write.
 
-    Confirmed with the business owner: Out Of Stock products are EXEMPT
-    from all requirements below - the current source-of-truth sheet has
-    ~50 OOS rows with no Base Price/B2C/Supplier on file yet, and that's
-    fine. Only In Stock rows must have:
-      1. Base Price present, numeric, and > 0
-      2. B2C present and numeric
-      3. Retail >= Base Price
-      4. Wholesale >= Base Price
-      5. B2C >= Base Price
-      6. Supplier present and non-blank (business owner reports this
-         gets forgotten on new/restocked products - catching it here is
-         cheaper than catching it after the fact)
-
-    Returns a list of human-readable error strings (empty list = clean
-    sheet). The caller is expected to reject the WHOLE upload if this
-    list is non-empty, per the "single source of truth, nothing must go
-    wrong" framing - never partially import."""
+    Confirmed with the business owner: Out Of Stock products are exempt
+    from all requirements below. Only In Stock rows must have valid data.
+    """
 
     df = pd.read_excel(path, sheet_name="Product Catalog")
 
@@ -1219,7 +1170,7 @@ def validate_pricing_rows(path):
         label = f"{product_id} ({product_name})"
 
         if status != "In Stock":
-            continue  # Out Of Stock rows are exempt - see docstring
+            continue
 
         supplier_raw = row.get("Supplier")
         if pd.isna(supplier_raw) or str(supplier_raw).strip() == "":
@@ -1257,11 +1208,11 @@ def validate_pricing_rows(path):
         for field_name in ("Retail", "Wholesale"):
             raw_value = row.get(field_name)
             if pd.isna(raw_value):
-                continue  # missing Retail/Wholesale is caught by existing required-column checks
+                continue
             try:
                 value = float(raw_value)
             except (TypeError, ValueError):
-                continue  # non-numeric Retail/Wholesale is caught elsewhere
+                continue
             if value < base_price:
                 errors.append(
                     f"{label}: {field_name} ({value:,.2f}) is below Base Price ({base_price:,.2f})."
@@ -1271,18 +1222,7 @@ def validate_pricing_rows(path):
 
 
 def backup_before_import():
-    """Snapshot the live DB using SQLite's built-in .backup() API - NOT
-    shutil.copy(), which risks grabbing the file mid-write and producing
-    a corrupted backup (see PROJECT_HANDOFF §12). Written to
-    backups/pre_import_<timestamp>.db, alongside (never replacing) the
-    existing 14-day rotating scheduled backup from backup_db.py, so
-    pre-import snapshots are identifiable by filename.
-
-    Raises on any failure (disk full, permissions, etc.) rather than
-    returning False - the caller (app.py's /upload route) must treat any
-    exception here as "abort before a single row is written," never
-    proceed with an import if this safety net didn't get created.
-    Returns the backup file path on success."""
+    """Snapshot the live DB using SQLite's built-in .backup() API."""
 
     backups_dir = os.path.join(os.path.dirname(DATABASE_FILE), "backups")
     os.makedirs(backups_dir, exist_ok=True)
@@ -1303,7 +1243,6 @@ def backup_before_import():
     return backup_path
 
 
->>>>>>> my-fixed-version
 def import_excel_into_db(path, replace=True, source="excel_upload", log_activity=True):
     """Read a validated Excel file and load it into the database.
 

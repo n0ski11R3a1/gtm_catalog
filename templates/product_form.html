@@ -52,7 +52,7 @@
         <div class="tab-pane fade show active" id="details-pane" role="tabpanel">
         <div class="dashboard-card">
 
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
 
                 <div class="row g-3">
 
@@ -124,6 +124,27 @@
                                placeholder="e.g. MMA"
                                value="{{ values.get('Supplier') if values.get('Supplier') is not none else values.get('supplier', '') }}">
                         <div class="form-text">Internal only - never shown on the public catalog. Used for inventory automation via /api/prices.</div>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Product Image</label>
+                        {% if mode == 'edit' and product and product.get('has_image') %}
+                        <div class="mb-3">
+                            <img src="{{ url_for('static', filename='product-images/' + (product['Product ID']|replace(' ', '')|upper + '.webp')) }}" alt="{{ product['Product Name'] }}" class="img-fluid rounded border" style="max-width: 180px; max-height: 180px; object-fit: cover;">
+                        </div>
+                        {% endif %}
+                        <input type="file" name="product_image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="form-control">
+                        <div class="form-text">Saved as a WebP file and named from the product ID, e.g. GTM-0001.webp. Max 5 MB.</div>
+                        {% if mode == 'edit' and product and product.get('has_image') %}
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="confirm_replace_image" name="confirm_replace_image">
+                            <label class="form-check-label" for="confirm_replace_image">This product already has an image. Replace it?</label>
+                        </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="delete_image" name="delete_image">
+                            <label class="form-check-label" for="delete_image">Delete current image</label>
+                        </div>
+                        {% endif %}
                     </div>
 
                     <div class="col-12">

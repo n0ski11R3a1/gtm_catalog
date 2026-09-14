@@ -1,6 +1,8 @@
 from datetime import datetime
 from io import BytesIO
 
+from PIL import Image
+
 from flask import (
     Flask,
     render_template,
@@ -28,7 +30,13 @@ from config import (
     ADMIN_USERNAME,
     ADMIN_PASSWORD_HASH,
     REQUIRED_COLUMNS,
-    VAPID_PUBLIC_KEY
+    VAPID_PUBLIC_KEY,
+    PRODUCT_IMAGES_DIR,
+    MAX_IMAGE_SIZE,
+    ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_MIME_TYPES,
+    WEBP_QUALITY,
+    IMAGE_MAX_WIDTH,
 )
 
 import db
@@ -36,6 +44,12 @@ import push
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+app.config["PRODUCT_IMAGES_DIR"] = PRODUCT_IMAGES_DIR
+app.config["MAX_IMAGE_SIZE"] = MAX_IMAGE_SIZE
+app.config["ALLOWED_IMAGE_EXTENSIONS"] = ALLOWED_IMAGE_EXTENSIONS
+app.config["ALLOWED_MIME_TYPES"] = ALLOWED_MIME_TYPES
+app.config["WEBP_QUALITY"] = WEBP_QUALITY
+app.config["IMAGE_MAX_WIDTH"] = IMAGE_MAX_WIDTH
 
 # Create the products table (if needed) and, on a brand new database,
 # auto-import whatever Excel file is already sitting in uploads/.
@@ -81,15 +95,100 @@ def login_required():
 PRODUCT_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
 
 
+def product_photo_slug(business_product_id):
+    slug = (business_product_id or "").replace(" ", "").strip()
+    if not slug:
+        return ""
+    return slug.upper()
+
+
+def build_product_image_filename(business_product_id):
+    slug = product_photo_slug(business_product_id)
+    if not slug:
+        return ""
+    return f"{slug}.webp"
+
+
+def is_allowed_image_file(file):
+    """Validate both extension and MIME type."""
+    if not file or not getattr(file, "filename", None):
+        return False, "No file selected"
+
+    ext = (file.filename.rsplit(".", 1)[-1] if "." in file.filename else "").lower()
+    if ext not in app.config["ALLOWED_IMAGE_EXTENSIONS"]:
+        return False, f"Invalid format. Allowed: {', '.join(sorted(app.config['ALLOWED_IMAGE_EXTENSIONS']))}"
+
+    if file.mimetype not in app.config["ALLOWED_MIME_TYPES"]:
+        return False, f"Invalid MIME type: {file.mimetype or 'unknown'}"
+
+    return True, None
+
+
+def validate_image_size(file):
+    file.seek(0, os.SEEK_END)
+    size = file.tell()
+    file.seek(0)
+
+    if size > app.config["MAX_IMAGE_SIZE"]:
+        return False, f"File too large: {size / 1024 / 1024:.1f} MB (max {app.config['MAX_IMAGE_SIZE'] / 1024 / 1024:.0f} MB)"
+
+    return True, None
+
+
+def compress_to_webp(file_obj, max_width=None, quality=None):
+    max_width = max_width or app.config.get("IMAGE_MAX_WIDTH", 1200)
+    quality = quality or app.config.get("WEBP_QUALITY", 80)
+
+    file_obj.seek(0)
+    img = Image.open(file_obj)
+
+    if img.width > max_width:
+        ratio = max_width / img.width
+        new_height = int(img.height * ratio)
+        img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+
+    if img.mode in ("RGBA", "LA", "P"):
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        background = Image.new("RGB", img.size, (255, 255, 255))
+        if img.mode == "RGBA":
+            alpha = img.split()[-1]
+            background.paste(img, mask=alpha)
+        else:
+            background.paste(img)
+        img = background
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
+
+    output = BytesIO()
+    img.save(output, format="WEBP", quality=quality, method=6)
+    output.seek(0)
+    return output
+
+
+def save_product_image(file, product_id):
+    filename = build_product_image_filename(product_id)
+    if not filename:
+        raise ValueError("Product ID is required to save an image")
+
+    target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], filename)
+    compressed = compress_to_webp(file)
+
+    with open(target_path, "wb") as fh:
+        fh.write(compressed.getvalue())
+
+    return filename
+
+
 def find_product_image(business_product_id):
     """Returns the static-relative path to a product's image if one
     exists on disk, e.g. 'product-images/GTM-0001.jpg' - or None."""
 
-    slug = (business_product_id or "").replace(" ", "").strip()
+    slug = product_photo_slug(business_product_id)
     if not slug:
         return None
 
-    images_dir = os.path.join(app.static_folder, "product-images")
+    images_dir = app.config["PRODUCT_IMAGES_DIR"]
 
     for ext in PRODUCT_IMAGE_EXTENSIONS:
         candidate = os.path.join(images_dir, slug + ext)
@@ -566,20 +665,12 @@ def admin_product_add():
         if not data["product_name"]:
             form_errors.append("Product Name is required.")
 
-        # Same rule as the Excel upload path (db.validate_pricing_rows):
-        # Out Of Stock products are exempt, In Stock products must have
-        # a Supplier on file. Added because Supplier is easy to forget
-        # when quickly adding a product by hand.
         if data["status"] == "In Stock" and not data["supplier"]:
             form_errors.append("Supplier is required for In Stock products.")
 
         if form_errors:
             for err in form_errors:
                 flash(err, "danger")
-            # Validation failed - don't reserve/consume a real Product ID
-            # for a submission that isn't actually going to create a
-            # product. Peek-only here; a real id gets reserved below only
-            # once we're actually about to insert.
             return render_template(
                 "product_form.html",
                 product=None,
@@ -589,12 +680,61 @@ def admin_product_add():
                 categories=categories
             )
 
-        # The Product ID is always server-generated in Add mode, computed
-        # fresh right before the actual insert - never trust whatever the
-        # client sent for this field, even though it's displayed read-only
-        # in the form.
         next_id = db.get_next_product_id()
         data["product_id"] = next_id
+
+        uploaded_image = request.files.get("product_image")
+        if uploaded_image and uploaded_image.filename:
+            expected_filename = build_product_image_filename(next_id)
+            if uploaded_image.filename.lower() != expected_filename.lower():
+                flash(f"Image mismatch: upload must be named {expected_filename} for {next_id}.", "danger")
+                return render_template(
+                    "product_form.html",
+                    product=None,
+                    mode="add",
+                    form_data=data,
+                    next_product_id=next_id,
+                    categories=categories
+                )
+
+            is_valid, msg = is_allowed_image_file(uploaded_image)
+            if not is_valid:
+                flash(f"Image rejected: {msg}", "danger")
+                return render_template(
+                    "product_form.html",
+                    product=None,
+                    mode="add",
+                    form_data=data,
+                    next_product_id=next_id,
+                    categories=categories
+                )
+
+            is_ok, msg = validate_image_size(uploaded_image)
+            if not is_ok:
+                flash(f"Image too large: {msg}", "danger")
+                return render_template(
+                    "product_form.html",
+                    product=None,
+                    mode="add",
+                    form_data=data,
+                    next_product_id=next_id,
+                    categories=categories
+                )
+
+            try:
+                save_product_image(uploaded_image, next_id)
+                data["has_image"] = True
+                flash(f"Image saved as {expected_filename}.", "success")
+            except Exception as exc:
+                flash(f"Image upload failed: {exc}", "danger")
+                return render_template(
+                    "product_form.html",
+                    product=None,
+                    mode="add",
+                    form_data=data,
+                    next_product_id=next_id,
+                    categories=categories
+                )
 
         before_id = db.get_latest_activity_id()
         db.add_product(data)
@@ -658,6 +798,83 @@ def admin_product_edit(product_id):
                 categories=categories,
                 price_history=db.get_price_history(product["Product ID"])
             )
+
+        uploaded_image = request.files.get("product_image")
+        if uploaded_image and uploaded_image.filename:
+            expected_filename = build_product_image_filename(data.get("product_id") or product["Product ID"])
+            if uploaded_image.filename.lower() != expected_filename.lower():
+                flash(f"Image mismatch: upload must be named {expected_filename} for {product['Product ID']}.", "danger")
+                return render_template(
+                    "product_form.html",
+                    product=product,
+                    mode="edit",
+                    form_data=data,
+                    categories=categories,
+                    price_history=db.get_price_history(product["Product ID"])
+                )
+
+            is_valid, msg = is_allowed_image_file(uploaded_image)
+            if not is_valid:
+                flash(f"Image rejected: {msg}", "danger")
+                return render_template(
+                    "product_form.html",
+                    product=product,
+                    mode="edit",
+                    form_data=data,
+                    categories=categories,
+                    price_history=db.get_price_history(product["Product ID"])
+                )
+
+            is_ok, msg = validate_image_size(uploaded_image)
+            if not is_ok:
+                flash(f"Image too large: {msg}", "danger")
+                return render_template(
+                    "product_form.html",
+                    product=product,
+                    mode="edit",
+                    form_data=data,
+                    categories=categories,
+                    price_history=db.get_price_history(product["Product ID"])
+                )
+
+            if product.get("has_image") and not request.form.get("confirm_replace_image"):
+                flash("This product already has an image. Check the replacement box to confirm replacing it.", "warning")
+                return render_template(
+                    "product_form.html",
+                    product=product,
+                    mode="edit",
+                    form_data=data,
+                    categories=categories,
+                    price_history=db.get_price_history(product["Product ID"]),
+                    show_replace_warning=True,
+                )
+
+            try:
+                current_product_id = data.get("product_id") or product["Product ID"]
+                target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(current_product_id))
+                old_image_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
+                if product.get("has_image") and os.path.exists(old_image_path) and old_image_path != target_path:
+                    os.remove(old_image_path)
+                save_product_image(uploaded_image, current_product_id)
+                data["has_image"] = True
+                flash(f"Image saved as {build_product_image_filename(current_product_id)}.", "success")
+            except Exception as exc:
+                flash(f"Image upload failed: {exc}", "danger")
+                return render_template(
+                    "product_form.html",
+                    product=product,
+                    mode="edit",
+                    form_data=data,
+                    categories=categories,
+                    price_history=db.get_price_history(product["Product ID"])
+                )
+
+        if request.form.get("delete_image"):
+            target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
+            if os.path.exists(target_path):
+                os.remove(target_path)
+            data["has_image"] = False
+            flash("Image deleted.", "success")
 
         before_id = db.get_latest_activity_id()
         db.update_product(product_id, data)
