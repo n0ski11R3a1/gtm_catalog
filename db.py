@@ -144,6 +144,16 @@ def init_db():
         WHERE product_id != ''
     """)
 
+    # Product IDs are looked up with spaces ignored, so the database must
+    # enforce that same identity rule. Without this second index, both
+    # "GTM - 0003" and "GTM-0003" can exist as separate rows even though
+    # the public catalog and image paths treat them as the same product.
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_products_product_id_normalized
+        ON products(REPLACE(LOWER(product_id), ' ', ''))
+        WHERE TRIM(product_id) != ''
+    """)
+
     # Sales-rep order list ("cart"). rep_name is required at submit time.
     # No customer name / login for now - kept intentionally simple.
     conn.execute("""

@@ -154,23 +154,34 @@ def test_bulk_zip_upload_processes_images_for_matching_products():
         "has_image": False,
     })
 
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zf:
-        image_bytes = io.BytesIO()
-        Image.new("RGB", (40, 40), "green").save(image_bytes, format="PNG")
-        zf.writestr(f"{product_id}.png", image_bytes.getvalue())
+    try:
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zf:
+            image_bytes = io.BytesIO()
+            Image.new("RGB", (40, 40), "green").save(image_bytes, format="PNG")
+            zf.writestr(f"{product_id}.png", image_bytes.getvalue())
 
-    client = app.test_client()
-    with client.session_transaction() as session:
-        session["admin"] = True
+        client = app.test_client()
+        with client.session_transaction() as session:
+            session["admin"] = True
 
-    zip_buffer.seek(0)
-    response = client.post(
-        "/admin/upload-images",
-        data={"zip_file": (zip_buffer, "images.zip")},
-        content_type="multipart/form-data",
-    )
+        zip_buffer.seek(0)
+        response = client.post(
+            "/admin/upload-images",
+            data={"zip_file": (zip_buffer, "images.zip")},
+            content_type="multipart/form-data",
+        )
 
-    assert response.status_code == 200
-    assert b"saved" in response.data.lower()
-    assert os.path.exists(os.path.join(app.config["PRODUCT_IMAGES_DIR"], f"{product_id}.webp"))
+        assert response.status_code == 200
+        assert b"saved" in response.data.lower()
+        assert os.path.exists(os.path.join(app.config["PRODUCT_IMAGES_DIR"], f"{product_id}.webp"))
+    finally:
+        product = db.get_product_by_business_id(product_id)
+        if product:
+            db.delete_product(product["id"])
+        for path in (
+            os.path.join(app.config["PRODUCT_IMAGES_DIR"], f"{product_id}.webp"),
+            os.path.join(app.config["THUMBNAILS_DIR"], f"{product_id}.webp"),
+        ):
+            if os.path.exists(path):
+                os.remove(path)
