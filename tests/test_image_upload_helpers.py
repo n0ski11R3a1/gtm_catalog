@@ -8,6 +8,32 @@ from PIL import Image
 from app import build_product_image_filename, prepare_uploaded_product_image, product_photo_slug
 
 
+def test_send_to_all_skips_malformed_subscription(monkeypatch):
+    import push
+
+    calls = []
+
+    def fake_get_all_push_subscriptions():
+        return [
+            {"endpoint": "https://example.com/bad", "p256dh": "", "auth": ""},
+            {"endpoint": "https://example.com/good", "p256dh": "good-p256dh", "auth": "good-auth"},
+        ]
+
+    def fake_remove_push_subscription(endpoint):
+        assert endpoint == "https://example.com/bad"
+
+    def fake_webpush(*args, **kwargs):
+        calls.append(kwargs["subscription_info"]["endpoint"])
+
+    monkeypatch.setattr(push.db, "get_all_push_subscriptions", fake_get_all_push_subscriptions)
+    monkeypatch.setattr(push.db, "remove_push_subscription", fake_remove_push_subscription)
+    monkeypatch.setattr(push, "webpush", fake_webpush)
+
+    push.send_to_all("Title", "Body")
+
+    assert calls == ["https://example.com/good"]
+
+
 def test_admin_images_page_uses_image_panel_controls():
     from app import app
 

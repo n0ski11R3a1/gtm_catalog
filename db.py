@@ -112,34 +112,22 @@ def init_db():
         )
     """)
 
-    # MIGRATION / SELF-REPAIR: if id_counter has no row (fresh install, or
-    # this row was ever lost - e.g. wiped by a restored backup, a bad
-    # migration, or manual DB surgery), get_next_product_id() would fall
-    # back to scanning only the CURRENTLY EXISTING products for the max
-    # "GTM - ####" number. That fallback is what let already-deleted
-    # products' IDs get handed out again to unrelated new products (real
-    # incident, confirmed in this database: GTM - 0245, GTM - 0255,
-    # GTM - 0256 were each reused by a second, different product after the
-    # first was deleted - polluting their price_history/activity_log with
-    # each other's history). Repairing it here means every process start
-    # self-heals this instead of relying on remembering to run a one-off
-    # script. Seeds from the highest "GTM - ####" number that has EVER
-    # appeared anywhere - products, price_history, AND activity_log - not
-    # just current products, so a deleted product's old number can never
-    # be handed out again.
-    if conn.execute("SELECT next_number FROM id_counter WHERE id = 1").fetchone() is None:
-        max_num = 0
-        for table, column in (
-            ("products", "product_id"),
-            ("price_history", "product_id"),
-            ("activity_log", "product_id"),
-        ):
-            for row in conn.execute(f"SELECT {column} AS pid FROM {table}").fetchall():
-                match = _GTM_ID_PATTERN.match((row["pid"] or "").strip())
-                if match:
-                    max_num = max(max_num, int(match.group(1)))
+    # MIGRATION / SELF-REPAIR: always keep the counter ahead of every GTM
+    # number ever used. The original migration only seeded a missing row;
+    # on a fresh database that row was created before the initial Excel
+    # import, leaving it at 1 even though the import loaded hundreds of IDs.
+    counter_row = conn.execute(
+        "SELECT next_number FROM id_counter WHERE id = 1"
+    ).fetchone()
+    max_num = _highest_historical_gtm_number(conn)
+    if counter_row is None:
         conn.execute(
             "INSERT INTO id_counter (id, next_number) VALUES (1, ?)",
+            (max_num + 1,),
+        )
+    elif counter_row["next_number"] <= max_num:
+        conn.execute(
+            "UPDATE id_counter SET next_number = ? WHERE id = 1",
             (max_num + 1,),
         )
 
@@ -614,6 +602,20 @@ def get_stats():
 _GTM_ID_PATTERN = re.compile(r"^gtm\s*-\s*(\d+)$", re.IGNORECASE)
 
 
+def _highest_historical_gtm_number(conn):
+    max_num = 0
+    for table, column in (
+        ("products", "product_id"),
+        ("price_history", "product_id"),
+        ("activity_log", "product_id"),
+    ):
+        for row in conn.execute(f"SELECT {column} AS pid FROM {table}").fetchall():
+            match = _GTM_ID_PATTERN.match((row["pid"] or "").strip())
+            if match:
+                max_num = max(max_num, int(match.group(1)))
+    return max_num
+
+
 def _seed_id_counter_if_missing(conn):
     """Shared by peek/reserve: if id_counter somehow still has no row at
     call time (shouldn't happen after init_db()'s migration, but a
@@ -623,26 +625,24 @@ def _seed_id_counter_if_missing(conn):
     what let deleted products' old IDs get reused (see init_db)."""
 
     row = conn.execute("SELECT next_number FROM id_counter WHERE id = 1").fetchone()
-    if row is not None:
-        return row["next_number"]
+    max_num = _highest_historical_gtm_number(conn)
+    minimum_next_num = max_num + 1
 
-    max_num = 0
-    for table, column in (
-        ("products", "product_id"),
-        ("price_history", "product_id"),
-        ("activity_log", "product_id"),
-    ):
-        for r in conn.execute(f"SELECT {column} AS pid FROM {table}").fetchall():
-            match = _GTM_ID_PATTERN.match((r["pid"] or "").strip())
-            if match:
-                max_num = max(max_num, int(match.group(1)))
+    if row is None:
+        conn.execute(
+            "INSERT INTO id_counter (id, next_number) VALUES (1, ?)",
+            (minimum_next_num,),
+        )
+        return minimum_next_num
 
-    next_num = max_num + 1
-    conn.execute(
-        "INSERT INTO id_counter (id, next_number) VALUES (1, ?)",
-        (next_num,),
-    )
-    return next_num
+    if row["next_number"] < minimum_next_num:
+        conn.execute(
+            "UPDATE id_counter SET next_number = ? WHERE id = 1",
+            (minimum_next_num,),
+        )
+        return minimum_next_num
+
+    return row["next_number"]
 
 
 def peek_next_product_id():

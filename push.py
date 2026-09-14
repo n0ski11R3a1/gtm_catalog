@@ -32,6 +32,20 @@ def _send_one(subscription, payload_json):
     p256dh = subscription.get("p256dh", "")
     auth = subscription.get("auth", "")
 
+    # Some browsers or prior buggy clients can persist a partial or
+    # malformed subscription object. A single bad row should never kill the
+    # whole batch or leave a broken endpoint in the database forever.
+    if not endpoint or not p256dh or not auth:
+        logger.warning(
+            "Skipping malformed push subscription for endpoint=%r p256dh=%r auth=%r",
+            endpoint,
+            bool(p256dh),
+            bool(auth),
+        )
+        if endpoint:
+            db.remove_push_subscription(endpoint)
+        return False
+
     try:
         webpush(
             subscription_info={
@@ -103,6 +117,13 @@ def _send_one(subscription, payload_json):
             logger.info("Pruning expired endpoint: ...%s", endpoint[-20:])
             db.remove_push_subscription(endpoint)
 
+        return False
+
+    except Exception as ex:
+        logger.exception(
+            "Unexpected push delivery failure for endpoint: %s",
+            endpoint,
+        )
         return False
 
 
