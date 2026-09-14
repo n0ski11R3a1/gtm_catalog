@@ -125,9 +125,35 @@ def is_allowed_image_file(file):
 
 
 def validate_image_size(file):
-    file.seek(0, os.SEEK_END)
-    size = file.tell()
-    file.seek(0)
+    try:
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        if hasattr(file, "seek"):
+            try:
+                file.seek(0)
+            except Exception:
+                pass
+    except (AttributeError, OSError):
+        if hasattr(file, "read"):
+            pos = None
+            try:
+                pos = file.tell()
+            except Exception:
+                pass
+            data = file.read()
+            size = len(data)
+            if pos is not None:
+                try:
+                    file.seek(pos)
+                except Exception:
+                    pass
+            if hasattr(file, "seek"):
+                try:
+                    file.seek(0)
+                except Exception:
+                    pass
+        else:
+            return False, "Unsupported file object"
 
     if size > app.config["MAX_IMAGE_SIZE"]:
         return False, f"File too large: {size / 1024 / 1024:.1f} MB (max {app.config['MAX_IMAGE_SIZE'] / 1024 / 1024:.0f} MB)"
@@ -166,13 +192,34 @@ def compress_to_webp(file_obj, max_width=None, quality=None):
     return output
 
 
-def save_product_image(file, product_id):
-    filename = build_product_image_filename(product_id)
-    if not filename:
+def prepare_uploaded_product_image(file, product_id):
+    """Return (compressed_bytesio, target_filename) for a product image.
+
+    The uploaded file's original client-side name is intentionally ignored.
+    The server always renames it to the canonical GTM-####.webp target.
+    """
+    if not file or not getattr(file, "filename", None):
+        raise ValueError("No file selected")
+
+    is_valid, msg = is_allowed_image_file(file)
+    if not is_valid:
+        raise ValueError(msg)
+
+    is_ok, msg = validate_image_size(file)
+    if not is_ok:
+        raise ValueError(msg)
+
+    target_filename = build_product_image_filename(product_id)
+    if not target_filename:
         raise ValueError("Product ID is required to save an image")
 
-    target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], filename)
     compressed = compress_to_webp(file)
+    return compressed, target_filename
+
+
+def save_product_image(file, product_id):
+    compressed, filename = prepare_uploaded_product_image(file, product_id)
+    target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], filename)
 
     with open(target_path, "wb") as fh:
         fh.write(compressed.getvalue())
@@ -264,6 +311,25 @@ def product_form_to_dict(form):
         "description": form.get("description", "").strip(),
         "supplier": form.get("supplier", "").strip(),
     }
+
+
+def product_record_to_db_payload(product, overrides=None):
+    payload = {
+        "product_id": product.get("Product ID") or product.get("product_id", ""),
+        "product_name": product.get("Product Name") or product.get("product_name", ""),
+        "upc": product.get("UPC", product.get("upc", 0)),
+        "unit": product.get("Unit") or product.get("unit", "-"),
+        "retail": product.get("Retail", product.get("retail", 0)),
+        "wholesale": product.get("Wholesale", product.get("wholesale", 0)),
+        "category": product.get("Category") or product.get("category", "General"),
+        "status": product.get("Status") or product.get("status", "In Stock"),
+        "description": product.get("Description") or product.get("description", ""),
+        "supplier": product.get("Supplier") or product.get("supplier", ""),
+        "has_image": bool(product.get("has_image", False)),
+    }
+    if overrides:
+        payload.update(overrides)
+    return payload
 
 
 # ------------------------
@@ -648,6 +714,23 @@ def admin_products():
     )
 
 
+@app.route("/admin/images")
+def admin_images():
+
+    if not login_required():
+        return redirect(url_for("login"))
+
+    products = db.get_all_products()
+    for product in products:
+        product["image_path"] = find_product_image(product["Product ID"])
+        product["has_image"] = bool(product["image_path"])
+
+    return render_template(
+        "admin_images.html",
+        products=products,
+    )
+
+
 @app.route("/admin/products/add", methods=["GET", "POST"])
 def admin_product_add():
 
@@ -685,43 +768,8 @@ def admin_product_add():
 
         uploaded_image = request.files.get("product_image")
         if uploaded_image and uploaded_image.filename:
-            expected_filename = build_product_image_filename(next_id)
-            if uploaded_image.filename.lower() != expected_filename.lower():
-                flash(f"Image mismatch: upload must be named {expected_filename} for {next_id}.", "danger")
-                return render_template(
-                    "product_form.html",
-                    product=None,
-                    mode="add",
-                    form_data=data,
-                    next_product_id=next_id,
-                    categories=categories
-                )
-
-            is_valid, msg = is_allowed_image_file(uploaded_image)
-            if not is_valid:
-                flash(f"Image rejected: {msg}", "danger")
-                return render_template(
-                    "product_form.html",
-                    product=None,
-                    mode="add",
-                    form_data=data,
-                    next_product_id=next_id,
-                    categories=categories
-                )
-
-            is_ok, msg = validate_image_size(uploaded_image)
-            if not is_ok:
-                flash(f"Image too large: {msg}", "danger")
-                return render_template(
-                    "product_form.html",
-                    product=None,
-                    mode="add",
-                    form_data=data,
-                    next_product_id=next_id,
-                    categories=categories
-                )
-
             try:
+                _, expected_filename = prepare_uploaded_product_image(uploaded_image, next_id)
                 save_product_image(uploaded_image, next_id)
                 data["has_image"] = True
                 flash(f"Image saved as {expected_filename}.", "success")
@@ -801,42 +849,6 @@ def admin_product_edit(product_id):
 
         uploaded_image = request.files.get("product_image")
         if uploaded_image and uploaded_image.filename:
-            expected_filename = build_product_image_filename(data.get("product_id") or product["Product ID"])
-            if uploaded_image.filename.lower() != expected_filename.lower():
-                flash(f"Image mismatch: upload must be named {expected_filename} for {product['Product ID']}.", "danger")
-                return render_template(
-                    "product_form.html",
-                    product=product,
-                    mode="edit",
-                    form_data=data,
-                    categories=categories,
-                    price_history=db.get_price_history(product["Product ID"])
-                )
-
-            is_valid, msg = is_allowed_image_file(uploaded_image)
-            if not is_valid:
-                flash(f"Image rejected: {msg}", "danger")
-                return render_template(
-                    "product_form.html",
-                    product=product,
-                    mode="edit",
-                    form_data=data,
-                    categories=categories,
-                    price_history=db.get_price_history(product["Product ID"])
-                )
-
-            is_ok, msg = validate_image_size(uploaded_image)
-            if not is_ok:
-                flash(f"Image too large: {msg}", "danger")
-                return render_template(
-                    "product_form.html",
-                    product=product,
-                    mode="edit",
-                    form_data=data,
-                    categories=categories,
-                    price_history=db.get_price_history(product["Product ID"])
-                )
-
             if product.get("has_image") and not request.form.get("confirm_replace_image"):
                 flash("This product already has an image. Check the replacement box to confirm replacing it.", "warning")
                 return render_template(
@@ -855,9 +867,10 @@ def admin_product_edit(product_id):
                 old_image_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
                 if product.get("has_image") and os.path.exists(old_image_path) and old_image_path != target_path:
                     os.remove(old_image_path)
+                _, saved_name = prepare_uploaded_product_image(uploaded_image, current_product_id)
                 save_product_image(uploaded_image, current_product_id)
                 data["has_image"] = True
-                flash(f"Image saved as {build_product_image_filename(current_product_id)}.", "success")
+                flash(f"Image saved as {saved_name}.", "success")
             except Exception as exc:
                 flash(f"Image upload failed: {exc}", "danger")
                 return render_template(
@@ -894,6 +907,54 @@ def admin_product_edit(product_id):
         categories=categories,
         price_history=price_history
     )
+
+
+@app.route("/admin/products/<int:product_id>/images", methods=["GET", "POST"])
+def admin_product_images(product_id):
+
+    if not login_required():
+        return redirect(url_for("login"))
+
+    product = db.get_product(product_id)
+    if product is None:
+        flash("Product not found.", "danger")
+        return redirect(url_for("admin_products"))
+
+    if request.method == "POST":
+        payload = product_record_to_db_payload(product)
+
+        if request.form.get("delete_image"):
+            image_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
+            if os.path.exists(image_path):
+                os.remove(image_path)
+            payload["has_image"] = False
+            db.update_product(product_id, payload)
+            flash("Image deleted.", "success")
+            return redirect(url_for("admin_product_images", product_id=product_id))
+
+        uploaded_image = request.files.get("product_image")
+        if uploaded_image and uploaded_image.filename:
+            if product.get("has_image") and not request.form.get("confirm_replace_image"):
+                flash("This product already has an image. Check the replacement box to confirm replacing it.", "warning")
+                return render_template("product_image_form.html", product=product, replace_warning=True)
+
+            try:
+                current_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
+                if os.path.exists(current_path):
+                    os.remove(current_path)
+                _, saved_name = prepare_uploaded_product_image(uploaded_image, product["Product ID"])
+                save_product_image(uploaded_image, product["Product ID"])
+                payload["has_image"] = True
+                db.update_product(product_id, payload)
+                flash(f"Image updated for {product['Product ID']} as {saved_name}.", "success")
+                return redirect(url_for("admin_product_images", product_id=product_id))
+            except Exception as exc:
+                flash(f"Image upload failed: {exc}", "danger")
+                return render_template("product_image_form.html", product=product)
+
+        flash("No image file was selected.", "warning")
+
+    return render_template("product_image_form.html", product=product)
 
 
 @app.route("/admin/products/<int:product_id>/delete", methods=["POST"])

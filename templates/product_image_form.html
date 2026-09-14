@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Product Image{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+            <div class="d-flex align-items-center gap-2">
+                <a href="{{ url_for('admin_products') }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i>
+                    Products
+                </a>
+                <h2 class="fw-bold mb-0">Product Image</h2>
+            </div>
+
+            <a href="{{ url_for('admin_product_edit', product_id=product['id']) }}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-pencil-square"></i>
+                Edit Product
+            </a>
+        </div>
+
+        <div class="dashboard-card">
+            <div class="mb-4">
+                <div class="text-muted small mb-2">Current product</div>
+                <div class="fw-bold fs-5">{{ product['Product Name'] }}</div>
+                <div class="text-muted">{{ product['Product ID'] }}</div>
+            </div>
+
+            {% if product.get('has_image') %}
+            <div class="mb-4 text-center">
+                <img src="{{ url_for('static', filename='product-images/' + product['Product ID']|replace(' ', '')|upper + '.webp') }}"
+                     alt="{{ product['Product Name'] }}"
+                     class="img-fluid rounded border"
+                     style="max-width: 260px; max-height: 260px; object-fit: cover;">
+            </div>
+            {% else %}
+            <div class="mb-4 alert alert-light border text-center">
+                <i class="bi bi-image fs-3 d-block mb-2"></i>
+                No image uploaded yet.
+            </div>
+            {% endif %}
+
+            <form method="POST" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Upload image</label>
+                    <input type="file" name="product_image" class="form-control" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+                    <div class="form-text">The file will be converted to WebP and saved as {{ product['Product ID']|replace(' ', '')|upper }}.webp.</div>
+                </div>
+
+                {% if product.get('has_image') %}
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="confirm_replace_image" name="confirm_replace_image">
+                    <label class="form-check-label" for="confirm_replace_image">
+                        This product already has an image. Replace it?
+                    </label>
+                </div>
+                {% endif %}
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-upload"></i>
+                        Save Image
+                    </button>
+
+                    {% if product.get('has_image') %}
+                    <button type="submit" name="delete_image" value="1" class="btn btn-outline-danger" onclick="return confirm('Delete this product image?');">
+                        <i class="bi bi-trash"></i>
+                        Delete Image
+                    </button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

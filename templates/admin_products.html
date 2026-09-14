@@ -74,6 +74,12 @@
                             Edit
                         </a>
 
+                        <a href="{{ url_for('admin_product_images', product_id=p['id']) }}"
+                           class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-image"></i>
+                            Image
+                        </a>
+
                         <form method="POST"
                               action="{{ url_for('admin_product_delete', product_id=p['id']) }}"
                               class="d-inline"

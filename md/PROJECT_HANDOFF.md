@@ -5,13 +5,32 @@ this plus your current files into a new chat and say "here's my current
 app, continue from here" — it should be enough to pick up with zero
 missing context.
 
-Last regenerated after: the **Updates & Status feature** shipped -
-notification bell (new products + price changes, with a red "unread"
-dot), live app version display via service worker messaging, and a
-hard-refresh button that respects the product-pages cache instead of
-nuking it. Two real bugs caught in testing and fixed before shipping -
-one genuinely serious (`add_product()` silently returning the wrong id).
-Full details in §14. `sw.js` bumped to v21.
+Last regenerated after: the admin UX was split into a dedicated image
+management flow, the dashboard's "Current Catalog" and "Upload New
+Catalog" cards were aligned side by side so the upload panel no longer
+drops below the status card, and the separate image panel was upgraded
+with summary stats and quick product search. This keeps the original
+dashboard intact while giving image management a focused, cleaner
+workflow. `sw.js` remains at v21, and the product image logic continues
+to use the canonical Product ID naming convention with WebP conversion.
+
+Recent admin improvements:
+
+- **Dedicated Manage Images nav item** added to the top admin navbar so
+  image editing is not mixed into the legacy product form flow.
+- **Separate image-only admin page** created at `/admin/images` with a
+  gallery-style product table and a focused Edit Image action.
+- **Image summary cards** added to the image-management panel: total
+  products, with-image count, missing-image count, and quick-action
+  state.
+- **Search/filter** added to the image list so admins can quickly find
+  products by ID or name.
+- **Dashboard layout fix**: "Current Catalog" and "Upload New Catalog"
+  now sit side by side in the same row on `/admin`, preventing the
+  upload panel from being pushed down by the larger file-upload UI.
+- **Canonical auto-rename remains enforced**: all uploaded product image
+  files are ignored by client filename and saved under the server's
+  Product-ID-based naming rule.
 
 ---
 
