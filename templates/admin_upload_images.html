@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Upload Product Images{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Bulk Upload Product Images</h2>
+        <p class="text-muted mb-0">Upload a ZIP file containing product images renamed to match Product IDs.</p>
+    </div>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-speedometer2"></i> Dashboard
+    </a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="dashboard-card h-100">
+            <div class="card-header-custom">
+                <i class="bi bi-file-earmark-zip-fill text-warning"></i>
+                <span>Upload ZIP</span>
+            </div>
+            <hr>
+
+            <form method="POST" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">ZIP File</label>
+                    <input type="file" name="zip_file" accept=".zip" class="form-control" required>
+                </div>
+
+                <div class="alert alert-light border mb-3 small">
+                    <strong>Naming rules:</strong>
+                    <ul class="mb-0 mt-2 ps-3">
+                        <li>Use product IDs like GTM-0001.jpg, GTM-0025.png, GTM-0120.webp</li>
+                        <li>Accepted formats: JPG, PNG, WebP</li>
+                        <li>All files will be converted to WebP automatically</li>
+                        <li>Uploaded images replace any existing image for that same product</li>
+                    </ul>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-upload"></i> Upload & Process
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {% if results is defined %}
+    <div class="col-lg-6">
+        <div class="dashboard-card h-100">
+            <div class="card-header-custom">
+                <i class="bi bi-list-check"></i>
+                <span>Results</span>
+            </div>
+            <hr>
+
+            <div class="d-flex gap-2 flex-wrap mb-3">
+                <span class="badge bg-success fs-6">{{ success }} saved</span>
+                <span class="badge bg-warning text-dark fs-6">{{ skipped }} skipped</span>
+                <span class="badge bg-danger fs-6">{{ errors }} errors</span>
+            </div>
+
+            <div style="max-height: 420px; overflow-y: auto;">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for filename, status, message in results %}
+                        <tr>
+                            <td class="text-muted small">{{ filename }}</td>
+                            <td>
+                                {% if status == 'ok' %}
+                                <span class="text-success"><i class="bi bi-check-circle"></i> {{ message }}</span>
+                                {% elif status == 'error' %}
+                                <span class="text-danger"><i class="bi bi-x-circle"></i> {{ message }}</span>
+                                {% else %}
+                                <span class="text-muted"><i class="bi bi-dash-circle"></i> {{ message }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

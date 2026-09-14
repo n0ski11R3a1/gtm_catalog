@@ -1,3 +1,6 @@
+import io
+import os
+import zipfile
 from io import BytesIO
 
 from PIL import Image
@@ -80,3 +83,68 @@ def test_prepare_uploaded_product_image_ignores_original_client_filename():
     result = prepare_uploaded_product_image(FakeUpload(), "GTM - 0001")
     assert result[0].getvalue().startswith(b"RIFF")
     assert result[1] == "GTM-0001.webp"
+
+
+def test_generate_thumbnail_creates_cached_webp(tmp_path):
+    from app import app, generate_thumbnail
+
+    original_images_dir = app.config.get("PRODUCT_IMAGES_DIR")
+    original_thumbs_dir = app.config.get("THUMBNAILS_DIR")
+
+    try:
+        app.config["PRODUCT_IMAGES_DIR"] = str(tmp_path / "images")
+        app.config["THUMBNAILS_DIR"] = str(tmp_path / "thumbs")
+        os.makedirs(app.config["PRODUCT_IMAGES_DIR"], exist_ok=True)
+        os.makedirs(app.config["THUMBNAILS_DIR"], exist_ok=True)
+
+        source_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], "GTM-0001.webp")
+        Image.new("RGB", (1600, 900), "blue").save(source_path, format="WEBP")
+
+        thumb_path = generate_thumbnail("GTM-0001")
+        assert thumb_path is not None
+        assert os.path.exists(thumb_path)
+        assert os.path.getsize(thumb_path) > 0
+    finally:
+        app.config["PRODUCT_IMAGES_DIR"] = original_images_dir
+        app.config["THUMBNAILS_DIR"] = original_thumbs_dir
+
+
+def test_bulk_zip_upload_processes_images_for_matching_products():
+    import db
+    from app import app
+
+    product_id = db.get_next_product_id().replace(" ", "")
+    db.add_product({
+        "product_id": product_id,
+        "product_name": "Bulk Upload Test",
+        "upc": 0,
+        "unit": "-",
+        "retail": 100,
+        "wholesale": 80,
+        "category": "General",
+        "status": "In Stock",
+        "description": "",
+        "supplier": "Test Supplier",
+        "has_image": False,
+    })
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        image_bytes = io.BytesIO()
+        Image.new("RGB", (40, 40), "green").save(image_bytes, format="PNG")
+        zf.writestr(f"{product_id}.png", image_bytes.getvalue())
+
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["admin"] = True
+
+    zip_buffer.seek(0)
+    response = client.post(
+        "/admin/upload-images",
+        data={"zip_file": (zip_buffer, "images.zip")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert b"saved" in response.data.lower()
+    assert os.path.exists(os.path.join(app.config["PRODUCT_IMAGES_DIR"], f"{product_id}.webp"))

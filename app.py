@@ -32,11 +32,14 @@ from config import (
     REQUIRED_COLUMNS,
     VAPID_PUBLIC_KEY,
     PRODUCT_IMAGES_DIR,
+    THUMBNAILS_DIR,
     MAX_IMAGE_SIZE,
     ALLOWED_IMAGE_EXTENSIONS,
     ALLOWED_MIME_TYPES,
     WEBP_QUALITY,
     IMAGE_MAX_WIDTH,
+    THUMBNAIL_WIDTH,
+    GALLERY_PAGE_SIZE,
 )
 
 import db
@@ -45,11 +48,14 @@ import push
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 app.config["PRODUCT_IMAGES_DIR"] = PRODUCT_IMAGES_DIR
+app.config["THUMBNAILS_DIR"] = THUMBNAILS_DIR
 app.config["MAX_IMAGE_SIZE"] = MAX_IMAGE_SIZE
 app.config["ALLOWED_IMAGE_EXTENSIONS"] = ALLOWED_IMAGE_EXTENSIONS
 app.config["ALLOWED_MIME_TYPES"] = ALLOWED_MIME_TYPES
 app.config["WEBP_QUALITY"] = WEBP_QUALITY
 app.config["IMAGE_MAX_WIDTH"] = IMAGE_MAX_WIDTH
+app.config["THUMBNAIL_WIDTH"] = THUMBNAIL_WIDTH
+app.config["GALLERY_PAGE_SIZE"] = GALLERY_PAGE_SIZE
 
 # Create the products table (if needed) and, on a brand new database,
 # auto-import whatever Excel file is already sitting in uploads/.
@@ -190,6 +196,43 @@ def compress_to_webp(file_obj, max_width=None, quality=None):
     img.save(output, format="WEBP", quality=quality, method=6)
     output.seek(0)
     return output
+
+
+def generate_thumbnail(product_id):
+    """Generate and cache a 400px-wide thumbnail for a product image."""
+    product_id = (product_id or "").strip()
+    if not product_id:
+        return None
+
+    full_name = None
+    for ext in PRODUCT_IMAGE_EXTENSIONS:
+        candidate = os.path.join(app.config["PRODUCT_IMAGES_DIR"], f"{product_id}{ext}")
+        if os.path.isfile(candidate):
+            full_name = candidate
+            break
+
+    if not full_name:
+        return None
+
+    thumb_dir = app.config["THUMBNAILS_DIR"]
+    os.makedirs(thumb_dir, exist_ok=True)
+    thumb_path = os.path.join(thumb_dir, f"{product_id}.webp")
+
+    with Image.open(full_name) as img:
+        width = app.config.get("THUMBNAIL_WIDTH", 400)
+        if img.width > width:
+            ratio = width / img.width
+            new_height = int(img.height * ratio)
+            img = img.resize((width, new_height), Image.Resampling.LANCZOS)
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGB")
+        if img.mode == "RGBA":
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1])
+            img = background
+        img.save(thumb_path, format="WEBP", quality=app.config.get("WEBP_QUALITY", 80), method=6)
+
+    return thumb_path
 
 
 def prepare_uploaded_product_image(file, product_id):
@@ -397,6 +440,28 @@ def gallery_home():
     return render_template("gallery.html", category_cards=category_cards)
 
 
+@app.route("/thumbnails/<product_id>.webp")
+def product_thumbnail(product_id):
+    thumb_path = os.path.join(app.config["THUMBNAILS_DIR"], f"{product_id}.webp")
+    if os.path.exists(thumb_path):
+        response = send_file(thumb_path, mimetype="image/webp")
+        response.headers["Cache-Control"] = "public, max-age=604800"
+        return response
+
+    try:
+        generated = generate_thumbnail(product_id)
+    except Exception as exc:
+        app.logger.error("Thumbnail generation failed for %s: %s", product_id, exc)
+        return "", 500
+
+    if generated is None:
+        return "", 404
+
+    response = send_file(generated, mimetype="image/webp")
+    response.headers["Cache-Control"] = "public, max-age=604800"
+    return response
+
+
 @app.route("/gallery/<category>")
 def gallery_category(category):
 
@@ -406,16 +471,30 @@ def gallery_category(category):
         flash(f'"{category}" is not a known category.', "warning")
         return redirect(url_for("gallery_home"))
 
+    page = request.args.get("page", 1, type=int)
+    per_page = app.config.get("GALLERY_PAGE_SIZE", 24)
+
     all_products = db.get_all_products()
     products = [p for p in all_products if p["Category"] == category]
 
-    for p in products:
+    total = len(products)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    end = start + per_page
+    paged_products = products[start:end]
+
+    for p in paged_products:
         p["image_path"] = find_product_image(p["Product ID"])
 
     return render_template(
         "gallery_category.html",
         category=category,
-        products=products,
+        products=paged_products,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+        per_page=per_page,
     )
 
 
@@ -694,6 +773,121 @@ def admin():
     )
 
 
+@app.route("/admin/upload-images", methods=["GET", "POST"])
+def admin_upload_images():
+    if not login_required():
+        return redirect(url_for("login"))
+
+    if request.method == "GET":
+        return render_template("admin_upload_images.html")
+
+    zip_file = request.files.get("zip_file")
+    if not zip_file or not zip_file.filename:
+        flash("No ZIP file selected.", "danger")
+        return render_template("admin_upload_images.html")
+
+    if not zip_file.filename.lower().endswith(".zip"):
+        flash("Only .zip files are accepted.", "danger")
+        return render_template("admin_upload_images.html")
+
+    results = []
+    success = 0
+    skipped = 0
+    errors = 0
+
+    try:
+        import zipfile as zipfile_module
+        with zipfile_module.ZipFile(zip_file) as archive:
+            for entry in archive.namelist():
+                base = os.path.basename(entry)
+                if not base or base.startswith("."):
+                    continue
+
+                ext = base.rsplit(".", 1)[-1].lower() if "." in base else ""
+                if ext not in app.config["ALLOWED_IMAGE_EXTENSIONS"]:
+                    results.append((base, "skip", "Not an image file — skipped."))
+                    skipped += 1
+                    continue
+
+                name_without_ext = base.rsplit(".", 1)[0].upper()
+                if not name_without_ext.startswith("GTM-"):
+                    results.append((base, "error", "Filename must start with 'GTM-' (example: GTM-0001.jpg)."))
+                    errors += 1
+                    continue
+
+                product_id = name_without_ext
+                product = db.get_product_by_business_id(product_id)
+                if product is None:
+                    results.append((base, "error", f"No product found with ID '{product_id}'."))
+                    errors += 1
+                    continue
+
+                try:
+                    raw_bytes = archive.read(entry)
+                except Exception as exc:
+                    results.append((base, "error", f"Could not read ZIP entry: {exc}"))
+                    errors += 1
+                    continue
+
+                if len(raw_bytes) > app.config["MAX_IMAGE_SIZE"]:
+                    mb = len(raw_bytes) / 1024 / 1024
+                    max_mb = app.config["MAX_IMAGE_SIZE"] / 1024 / 1024
+                    results.append((base, "error", f"Too large ({mb:.1f} MB, max {max_mb:.0f} MB)."))
+                    errors += 1
+                    continue
+
+                try:
+                    compressed = compress_to_webp(BytesIO(raw_bytes))
+                except Exception as exc:
+                    results.append((base, "error", f"Image processing failed: {exc}"))
+                    errors += 1
+                    continue
+
+                target_name = f"{product_id}.webp"
+                target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], target_name)
+                try:
+                    with open(target_path, "wb") as fh:
+                        fh.write(compressed.getvalue())
+                    thumb_path = os.path.join(app.config["THUMBNAILS_DIR"], f"{product_id}.webp")
+                    if os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                    db.update_product(product["id"], {**product, "has_image": True})
+                    results.append((base, "ok", f"Saved as {target_name}."))
+                    success += 1
+                except Exception as exc:
+                    results.append((base, "error", f"Could not save file: {exc}"))
+                    errors += 1
+    except Exception as exc:
+        flash(f"Invalid or corrupted ZIP file: {exc}", "danger")
+        return render_template("admin_upload_images.html")
+
+    return render_template(
+        "admin_upload_images.html",
+        results=results,
+        success=success,
+        skipped=skipped,
+        errors=errors,
+    )
+
+
+@app.route("/admin/clear-thumbnail-cache", methods=["POST"])
+def admin_clear_thumbnail_cache():
+    if not login_required():
+        return redirect(url_for("login"))
+
+    deleted = 0
+    for filename in os.listdir(app.config["THUMBNAILS_DIR"]):
+        if filename.endswith(".webp"):
+            try:
+                os.remove(os.path.join(app.config["THUMBNAILS_DIR"], filename))
+                deleted += 1
+            except OSError:
+                pass
+
+    flash(f"Cleared {deleted} cached thumbnails.", "success")
+    return redirect(url_for("admin"))
+
+
 # ------------------------
 # Manage Products (Edit / Add / Delete)
 # ------------------------
@@ -867,6 +1061,9 @@ def admin_product_edit(product_id):
                 old_image_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
                 if product.get("has_image") and os.path.exists(old_image_path) and old_image_path != target_path:
                     os.remove(old_image_path)
+                thumb_path = os.path.join(app.config["THUMBNAILS_DIR"], f"{current_product_id}.webp")
+                if os.path.exists(thumb_path):
+                    os.remove(thumb_path)
                 _, saved_name = prepare_uploaded_product_image(uploaded_image, current_product_id)
                 save_product_image(uploaded_image, current_product_id)
                 data["has_image"] = True
@@ -886,6 +1083,9 @@ def admin_product_edit(product_id):
             target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
             if os.path.exists(target_path):
                 os.remove(target_path)
+            thumb_path = os.path.join(app.config["THUMBNAILS_DIR"], f"{product['Product ID']}.webp")
+            if os.path.exists(thumb_path):
+                os.remove(thumb_path)
             data["has_image"] = False
             flash("Image deleted.", "success")
 

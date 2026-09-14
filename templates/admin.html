@@ -188,6 +188,18 @@
                         Price History
                     </a>
 
+                    <a href="{{ url_for('admin_upload_images') }}" class="btn btn-outline-warning btn-sm">
+                        <i class="bi bi-images me-2"></i>
+                        Bulk Upload Images
+                    </a>
+
+                    <form method="POST" action="{{ url_for('admin_clear_thumbnail_cache') }}" class="d-inline" onsubmit="return confirm('Clear all cached thumbnails? They will regenerate automatically on next view.');">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-arrow-clockwise me-2"></i>
+                            Clear Thumb Cache
+                        </button>
+                    </form>
+
                 </div>
 
             </div>
