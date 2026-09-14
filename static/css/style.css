@@ -45,6 +45,11 @@ body {
 
 .container { max-width: 1200px; margin: 0 auto; }
 
+.desktop-catalog-layout { display: contents; }
+.desktop-filter-rail { display: contents; }
+.desktop-rail-heading { display: none; }
+.desktop-catalog-main { display: contents; }
+
 /* ===============================
    Glass Topbar
 ================================ */
@@ -81,12 +86,49 @@ body {
 }
 
 @media (min-width: 768px) {
+    .hero-block {
+        padding-top: 0;
+    }
+
     .glass-topbar {
-        margin: 14px auto 0 auto;
-        max-width: 900px;
-        border-radius: 20px;
+        top: 0;
+        margin: 0 0 18px;
+        max-width: none;
+        border-radius: 16px;
         border: 1px solid rgba(255, 255, 255, .5);
         border-bottom: 1px solid rgba(255, 255, 255, .5);
+    }
+
+    .desktop-catalog-layout {
+        display: grid;
+        grid-template-columns: 202px minmax(0, 1fr);
+        gap: 24px;
+        align-items: start;
+    }
+
+    .desktop-filter-rail {
+        display: block;
+        position: sticky;
+        top: 92px;
+        padding: 16px 12px 14px;
+        background: rgba(255, 255, 255, .74);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: 0 8px 22px rgba(16, 36, 62, .05);
+    }
+
+    .desktop-rail-heading {
+        display: block;
+        margin: 0 4px 12px;
+        color: var(--ink);
+        font-family: var(--font-display);
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .desktop-catalog-main {
+        display: block;
+        min-width: 0;
     }
 }
 
@@ -175,6 +217,19 @@ body {
     max-height: 100px;
     opacity: 1;
     margin-top: 10px;
+}
+
+@media (min-width: 768px) {
+    .filter-panel {
+        max-height: none;
+        opacity: 1;
+        overflow: visible;
+        margin-top: 10px;
+    }
+
+    .filters-button {
+        display: none;
+    }
 }
 
 .search-wrap {
@@ -295,7 +350,7 @@ body {
 }
 
 @media (min-width: 768px) {
-    .catalog-container { padding-bottom: 28px; }
+    .catalog-container { padding-bottom: 100px; }
 }
 
 /* On wider screens there's usually room for every chip to fit without
@@ -307,9 +362,20 @@ body {
    would take up too much vertical space. */
 @media (min-width: 768px) {
     .category-bar {
-        flex-wrap: wrap;
-        overflow-x: visible;
-        justify-content: flex-start;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        overflow: visible;
+        margin: 0;
+        padding: 0;
+    }
+
+    .category-bar .pill {
+        width: 100%;
+        text-align: left;
+        padding: 9px 11px;
+        border-radius: 10px;
     }
 }
 
@@ -353,7 +419,12 @@ body {
 
 .product-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
 @media (min-width: 650px) { .product-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1024px) { .product-grid { grid-template-columns: repeat(3, 1fr); gap: 18px; } }
+@media (min-width: 1024px) {
+    .product-grid {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 16px;
+    }
+}
 
 .card {
     background: var(--surface);
@@ -768,14 +839,19 @@ body {
 
 @media (min-width: 768px) {
     .glass-tabbar {
-        position: static;
+        position: fixed;
+        top: auto;
+        left: auto;
+        right: 24px;
+        bottom: 20px;
         transform: none;
-        width: 100%;
-        max-width: 900px;
-        margin: 14px auto 0 auto;
+        width: auto;
+        max-width: 520px;
+        margin: 0;
         justify-content: flex-start;
         gap: 6px;
         border-radius: 16px;
+        padding: 7px 10px;
     }
     .glass-tabbar .tab-item {
         flex-direction: row;

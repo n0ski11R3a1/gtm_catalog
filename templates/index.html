@@ -8,7 +8,11 @@
     <span class="eyebrow"><span class="live-dot"></span> Live Price List</span>
     <h1>Master Product Catalog</h1>
     <p>Live inventory feed &amp; pricing lookup</p>
+</div>
 
+<div class="desktop-catalog-layout">
+    <aside class="desktop-filter-rail" aria-label="Catalog categories">
+        <div class="desktop-rail-heading">Browse catalog</div>
     {% set palette = ['var(--ocean)', 'var(--leaf)', 'var(--aqua)', 'var(--mint)'] %}
     {% set palette_text = ['#fff', '#fff', '#fff', 'var(--ink)'] %}
 
@@ -18,7 +22,9 @@
         <button class="pill cat-pill" style="--tag-color:{{ palette[loop.index0 % 4] }}; --tag-text:{{ palette_text[loop.index0 % 4] }};" onclick="setCategory('{{ cat }}', this)">{{ cat }}</button>
         {% endfor %}
     </div>
-</div>
+
+    </aside>
+    <main class="desktop-catalog-main">
 
 <div class="glass-topbar" id="glassTopbar">
     <div class="topbar-row">
@@ -32,7 +38,7 @@
             <span id="bellDot" class="bell-dot" style="display:none;"></span>
         </button>
 
-        <button class="filter-toggle-btn" type="button" onclick="toggleFilters()" aria-expanded="false" aria-controls="filterPanel" aria-label="Filters">
+        <button class="filter-toggle-btn filters-button" type="button" onclick="toggleFilters()" aria-expanded="false" aria-controls="filterPanel" aria-label="Filters">
             <i class="bi bi-sliders"></i>
         </button>
     </div>
@@ -123,6 +129,9 @@
     </div>
 </div>
 
+    </main>
+</div>
+
 {% include "_glass_tabbar.html" %}
 
 {% include "_order_modal.html" %}
@@ -180,11 +189,11 @@
 <script src="{{ url_for('static', filename='js/precache.js') }}"></script>
 <script src="{{ url_for('static', filename='js/status.js') }}"></script>
 <script>
-    // Filter panel (sort + in-stock/OOS) collapses behind a toggle button
-    // so the top bar stays to a single row.
+    // Filter panel collapses behind a toggle on mobile; desktop CSS keeps it
+    // open and hides that toggle.
     function toggleFilters() {
         const panel = document.getElementById('filterPanel');
-        const btn = document.querySelector('.filter-toggle-btn');
+        const btn = document.querySelector('.filters-button');
         if (!panel || !btn) return;
 
         const isOpen = panel.classList.toggle('open');
@@ -196,7 +205,8 @@
     // scroll up - mirrors iOS's own tab bar, reacts to direction so it's
     // back the moment you reverse. Labels always stay visible (see CSS -
     // only a small compositor-only scale, no opacity fade). Desktop
-    // (>=768px) never collapses; the bar is a normal static row there.
+    // (>=768px) never collapses; CSS turns the bar into a floating bottom
+    // navigation control there.
     //
     // The top bar no longer needs any scroll-driven JS at all: it's a
     // permanently sticky compact pill from page load, and the hero title
