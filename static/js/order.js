@@ -69,6 +69,45 @@ function updateCartBadge() {
     }
 }
 
+function renderDesktopOrderSummary() {
+    const cart = loadCart();
+    const panel = document.getElementById('desktopOrderItems');
+    const countEl = document.getElementById('desktopOrderCount');
+    const totalEl = document.getElementById('desktopOrderTotal');
+
+    if (!panel || !countEl || !totalEl) return;
+
+    let totalRetail = 0;
+    let totalQty = 0;
+    panel.innerHTML = '';
+
+    if (cart.length === 0) {
+        countEl.textContent = '0';
+        totalEl.textContent = '0 Ks';
+        panel.innerHTML = '<div class="desktop-order-empty">No items yet.</div>';
+        return;
+    }
+
+    cart.forEach(item => {
+        totalRetail += (item.unit_retail || 0) * item.quantity;
+        totalQty += item.quantity;
+
+        const row = document.createElement('div');
+        row.className = 'desktop-order-item';
+        row.innerHTML = `
+            <div class="desktop-order-name-wrap">
+                <span class="desktop-order-name">${item.product_name}</span>
+                <span class="desktop-order-meta">Qty ${item.quantity}</span>
+            </div>
+            <span class="desktop-order-line-total">${((item.unit_retail || 0) * item.quantity).toLocaleString()} Ks</span>
+        `;
+        panel.appendChild(row);
+    });
+
+    countEl.textContent = totalQty.toString();
+    totalEl.textContent = totalRetail.toLocaleString() + ' Ks';
+}
+
 // --------------------------------------
 // Per-card quantity stepper (before adding to order)
 // --------------------------------------
@@ -147,6 +186,8 @@ function renderOrderPanel() {
     const totalRetailEl = document.getElementById('orderTotalRetail');
     const totalWholesaleEl = document.getElementById('orderTotalWholesale');
     const submitBtn = document.getElementById('submitOrderBtn');
+
+    renderDesktopOrderSummary();
 
     if (!container) return;
 
@@ -362,3 +403,4 @@ function submitOrder() {
 // --------------------------------------
 
 updateCartBadge();
+renderDesktopOrderSummary();

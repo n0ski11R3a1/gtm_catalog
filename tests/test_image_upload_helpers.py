@@ -67,6 +67,19 @@ def test_admin_pages_include_quick_filters():
     assert "imageStatusFilters" in images_page.get_data(as_text=True)
 
 
+def test_catalog_desktop_shell_includes_order_summary_panel():
+    from app import app
+
+    client = app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "desktop-order-panel" in html
+    assert "desktop-order-items" in html
+    assert "desktop-order-total" in html
+
+
 def test_product_photo_slug_removes_spaces_and_normalizes_case():
     assert product_photo_slug("GTM - 0001") == "GTM-0001"
     assert product_photo_slug("gtm - 0001") == "GTM-0001"
