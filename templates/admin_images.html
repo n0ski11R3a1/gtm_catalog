@@ -62,10 +62,22 @@
             <h5 class="mb-0 fw-bold">Product Image Library</h5>
         </div>
 
-        <div class="image-search-wrap">
-            <i class="bi bi-search"></i>
-            <input type="text" id="imageSearch" class="form-control" placeholder="Search product or ID...">
+        <div class="admin-toolbar compact">
+            <div class="image-search-wrap">
+                <i class="bi bi-search"></i>
+                <input type="text" id="imageSearch" class="form-control" placeholder="Search product or ID...">
+            </div>
+
+            <div class="status-filter-group" id="imageStatusFilters" aria-label="Image status filters">
+                <button type="button" class="filter-chip active" data-filter="all">All</button>
+                <button type="button" class="filter-chip" data-filter="has_image">Has Image</button>
+                <button type="button" class="filter-chip" data-filter="missing_image">Missing Image</button>
+            </div>
         </div>
+    </div>
+
+    <div class="filter-results-row mb-3">
+        <span id="imageResultsCount" class="filter-results-count">0 results</span>
     </div>
 
     <div class="table-responsive image-table-wrap">
@@ -80,7 +92,7 @@
             </thead>
             <tbody>
                 {% for p in products %}
-                <tr data-search="{{ (p['Product ID'] ~ ' ' ~ p['Product Name'])|lower }}">
+                <tr data-search="{{ (p['Product ID'] ~ ' ' ~ p['Product Name'])|lower }}" data-image-status="{{ 'has_image' if p['image_path'] else 'missing_image' }}">
                     <td class="text-muted image-id-cell">{{ p['Product ID'] }}</td>
                     <td class="fw-semibold image-name-cell">{{ p['Product Name'] }}</td>
                     <td class="image-cell">
@@ -118,18 +130,46 @@
     (function () {
         const searchInput = document.getElementById('imageSearch');
         const table = document.getElementById('imageTable');
+        const filterGroup = document.getElementById('imageStatusFilters');
+        const resultCount = document.getElementById('imageResultsCount');
 
-        if (!searchInput || !table) {
+        if (!searchInput || !table || !filterGroup) {
             return;
         }
 
-        searchInput.addEventListener('keyup', function () {
-            const query = searchInput.value.toLowerCase().trim();
-            const rows = table.querySelectorAll('tbody tr[data-search]');
+        const rows = () => table.querySelectorAll('tbody tr[data-search]');
 
-            rows.forEach(function (row) {
-                const haystack = row.getAttribute('data-search') || '';
-                row.style.display = (!query || haystack.includes(query)) ? '' : 'none';
+        function applyFilters() {
+            const query = searchInput.value.toLowerCase().trim();
+            const activeFilter = filterGroup.querySelector('.filter-chip.active');
+            const selected = (activeFilter ? activeFilter.dataset.filter : 'all') || 'all';
+            let visibleCount = 0;
+
+            rows().forEach(function (row) {
+                const haystack = (row.getAttribute('data-search') || '').toLowerCase();
+                const imageStatus = (row.getAttribute('data-image-status') || '').toLowerCase();
+                const searchMatch = !query || haystack.includes(query);
+                const statusMatch = selected === 'all' || imageStatus === selected;
+                const visible = searchMatch && statusMatch;
+                row.style.display = visible ? '' : 'none';
+                if (visible) {
+                    visibleCount += 1;
+                }
+            });
+
+            if (resultCount) {
+                resultCount.textContent = visibleCount + ' result' + (visibleCount === 1 ? '' : 's');
+            }
+        }
+
+        searchInput.addEventListener('keyup', applyFilters);
+
+        filterGroup.querySelectorAll('.filter-chip').forEach(function (button) {
+            button.addEventListener('click', function () {
+                filterGroup.querySelectorAll('.filter-chip').forEach(function (chip) {
+                    chip.classList.toggle('active', chip === button);
+                });
+                applyFilters();
             });
         });
     })();

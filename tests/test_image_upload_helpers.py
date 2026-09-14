@@ -22,6 +22,22 @@ def test_admin_images_page_uses_image_panel_controls():
     assert "image-thumb" in html
 
 
+def test_admin_pages_include_quick_filters():
+    from app import app
+
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session["admin"] = True
+
+    products_page = client.get("/admin/products")
+    images_page = client.get("/admin/images")
+
+    assert products_page.status_code == 200
+    assert images_page.status_code == 200
+    assert "productStatusFilters" in products_page.get_data(as_text=True)
+    assert "imageStatusFilters" in images_page.get_data(as_text=True)
+
+
 def test_product_photo_slug_removes_spaces_and_normalizes_case():
     assert product_photo_slug("GTM - 0001") == "GTM-0001"
     assert product_photo_slug("gtm - 0001") == "GTM-0001"

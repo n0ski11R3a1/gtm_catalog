@@ -30,12 +30,25 @@
 
 <div class="dashboard-card">
 
-    <div class="mb-3">
-        <input
-            type="text"
-            id="productSearch"
-            class="form-control"
-            placeholder="Search by name, ID, or category...">
+    <div class="admin-toolbar mb-3">
+        <div class="admin-search-wrap">
+            <i class="bi bi-search"></i>
+            <input
+                type="text"
+                id="productSearch"
+                class="form-control"
+                placeholder="Search by name, ID, or category...">
+        </div>
+
+        <div class="status-filter-group" id="productStatusFilters" aria-label="Product status filters">
+            <button type="button" class="filter-chip active" data-filter="all">All</button>
+            <button type="button" class="filter-chip" data-filter="in stock">In Stock</button>
+            <button type="button" class="filter-chip" data-filter="out of stock">Out of Stock</button>
+        </div>
+    </div>
+
+    <div class="filter-results-row mb-3">
+        <span id="productResultsCount" class="filter-results-count">0 results</span>
     </div>
 
     <div class="table-responsive">
@@ -54,7 +67,7 @@
             </thead>
             <tbody>
                 {% for p in products %}
-                <tr data-search="{{ (p['Product Name'] ~ ' ' ~ p['Product ID'] ~ ' ' ~ p['Category'] ~ ' ' ~ p['Supplier'])|lower }}">
+                <tr data-search="{{ (p['Product Name'] ~ ' ' ~ p['Product ID'] ~ ' ' ~ p['Category'] ~ ' ' ~ p['Supplier'])|lower }}" data-status="{{ (p['Status'] or '').lower() }}">
                     <td class="text-muted">{{ p['Product ID'] }}</td>
                     <td class="fw-semibold">{{ p['Product Name'] }}</td>
                     <td>{{ p['Category'] }}</td>
@@ -109,22 +122,49 @@
 
 {% block extra_js %}
 <script>
-    // Simple client-side filter for the product table on this page only.
     (function () {
         const searchInput = document.getElementById('productSearch');
         const table = document.getElementById('productTable');
+        const filterGroup = document.getElementById('productStatusFilters');
+        const resultCount = document.getElementById('productResultsCount');
 
-        if (!searchInput || !table) {
+        if (!searchInput || !table || !filterGroup) {
             return;
         }
 
-        searchInput.addEventListener('keyup', function () {
-            const query = searchInput.value.toLowerCase().trim();
-            const rows = table.querySelectorAll('tbody tr[data-search]');
+        const rows = () => table.querySelectorAll('tbody tr[data-search]');
 
-            rows.forEach(function (row) {
-                const haystack = row.getAttribute('data-search') || '';
-                row.style.display = (!query || haystack.includes(query)) ? '' : 'none';
+        function applyFilters() {
+            const query = searchInput.value.toLowerCase().trim();
+            const activeFilter = filterGroup.querySelector('.filter-chip.active');
+            const selected = (activeFilter ? activeFilter.dataset.filter : 'all') || 'all';
+            let visibleCount = 0;
+
+            rows().forEach(function (row) {
+                const haystack = (row.getAttribute('data-search') || '').toLowerCase();
+                const status = (row.getAttribute('data-status') || '').toLowerCase();
+                const searchMatch = !query || haystack.includes(query);
+                const statusMatch = selected === 'all' || status === selected;
+                const visible = searchMatch && statusMatch;
+                row.style.display = visible ? '' : 'none';
+                if (visible) {
+                    visibleCount += 1;
+                }
+            });
+
+            if (resultCount) {
+                resultCount.textContent = visibleCount + ' result' + (visibleCount === 1 ? '' : 's');
+            }
+        }
+
+        searchInput.addEventListener('keyup', applyFilters);
+
+        filterGroup.querySelectorAll('.filter-chip').forEach(function (button) {
+            button.addEventListener('click', function () {
+                filterGroup.querySelectorAll('.filter-chip').forEach(function (chip) {
+                    chip.classList.toggle('active', chip === button);
+                });
+                applyFilters();
             });
         });
     })();
