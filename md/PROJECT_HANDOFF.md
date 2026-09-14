@@ -846,8 +846,18 @@ Paste this file plus:
 - **Never suggest re-tracking `gtm_catalog.db`, `uploads/`, or
   `__pycache__/` in git** - see §12 for exactly why that's dangerous,
   not just inconvenient.
+<<<<<<< HEAD
 - If you're extending `db.py` with a new function that logs a
   side-effect (activity, audit, etc.) alongside a real INSERT, watch the
   `last_insert_rowid()` ordering - see §6.14 for exactly how this bit
   the project once already.
 - The specific feature or bug you want to tackle next.
+=======
+- If extending `db.py` with a new function that logs a side-effect
+  (activity, audit, etc.) alongside a real INSERT, watch the
+  `last_insert_rowid()` ordering — see §7 gotcha #12 for exactly how
+  this bit the project once already.
+- State the specific feature or bug to tackle next — this doc is
+  context, not a task list.
+/home/noskillreal/Downloads/MIGRATION_COMPLETE.md
+>>>>>>> my-fixed-version
