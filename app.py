@@ -13,7 +13,8 @@ from flask import (
     session,
     jsonify,
     send_from_directory,
-    send_file
+    send_file,
+    has_request_context,
 )
 
 import os
@@ -89,7 +90,9 @@ def validate_excel(path):
 
 
 def login_required():
-
+    """Return True only when an active request has an authenticated admin session."""
+    if not has_request_context():
+        return False
     return session.get("admin") is True
 
 

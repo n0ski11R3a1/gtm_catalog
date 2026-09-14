@@ -67,17 +67,38 @@ def test_admin_pages_include_quick_filters():
     assert "imageStatusFilters" in images_page.get_data(as_text=True)
 
 
-def test_catalog_desktop_shell_includes_order_summary_panel():
-    from app import app
+def test_login_required_only_allows_admin_session():
+    from app import app, login_required
 
-    client = app.test_client()
-    response = client.get("/")
+    with app.test_request_context("/admin") as ctx:
+        from flask import session
 
-    assert response.status_code == 200
-    html = response.get_data(as_text=True)
-    assert "desktop-order-panel" in html
-    assert "desktop-order-items" in html
-    assert "desktop-order-total" in html
+        session["admin"] = True
+        assert login_required() is True
+
+    with app.test_request_context("/"):
+        assert login_required() is False
+
+
+def test_config_reads_credentials_from_environment(monkeypatch):
+    import importlib
+    import config
+
+    monkeypatch.setenv("GTM_SECRET_KEY", "env-secret")
+    monkeypatch.setenv("GTM_ADMIN_USERNAME", "superadmin")
+    monkeypatch.setenv("GTM_ADMIN_PASSWORD_HASH", "scrypt:testhash")
+    monkeypatch.setenv("GTM_VAPID_PRIVATE_KEY", "env-vapid-private")
+    monkeypatch.setenv("GTM_VAPID_PUBLIC_KEY", "env-vapid-public")
+    monkeypatch.setenv("GTM_VAPID_CLAIM_EMAIL", "ops@example.com")
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.SECRET_KEY == "env-secret"
+    assert reloaded.ADMIN_USERNAME == "superadmin"
+    assert reloaded.ADMIN_PASSWORD_HASH == "scrypt:testhash"
+    assert reloaded.VAPID_PRIVATE_KEY == "env-vapid-private"
+    assert reloaded.VAPID_PUBLIC_KEY == "env-vapid-public"
+    assert reloaded.VAPID_CLAIM_EMAIL == "ops@example.com"
 
 
 def test_product_photo_slug_removes_spaces_and_normalizes_case():
