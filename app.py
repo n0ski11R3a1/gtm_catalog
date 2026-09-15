@@ -97,6 +97,42 @@ def validate_excel(path):
     if missing:
         return False, f"Missing columns: {', '.join(missing)}"
 
+    # Product IDs must be present and unique once spaces and case are
+    # ignored. The official catalog export contains legacy filler rows
+    # (like a dozen blank Product IDs at the end) and a few accidental
+    # duplicates, which would otherwise fail only at SQLite's unique-index
+    # layer after the upload has already started.
+    seen = {}
+    blank_rows = []
+    for index, raw in enumerate(df.get("Product ID", []), start=2):
+        if raw is None or pd.isna(raw):
+            blank_rows.append(index)
+            continue
+
+        value = str(raw).strip()
+        if not value:
+            blank_rows.append(index)
+            continue
+
+        normalized = value.replace(" ", "").upper()
+        seen.setdefault(normalized, []).append((index, value))
+
+    if blank_rows:
+        return False, (
+            "Blank Product IDs found in the sheet (rows "
+            + ", ".join(str(r) for r in blank_rows[:10])
+            + (" ..." if len(blank_rows) > 10 else "")
+            + "). Every row must have a real Product ID before import."
+        )
+
+    duplicates = {norm: values for norm, values in seen.items() if len(values) > 1}
+    if duplicates:
+        details = "; ".join(
+            f"{norm} ({len(values)} rows: {', '.join(v for _, v in values[:3])}{'...' if len(values) > 3 else ''})"
+            for norm, values in sorted(duplicates.items())
+        )
+        return False, f"Duplicate Product IDs detected after normalizing spaces/case: {details}"
+
     return True, None
 
 
@@ -1395,6 +1431,90 @@ def export_price_history_excel():
         as_attachment=True,
         download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/admin/catalog-audit", methods=["GET", "POST"])
+def admin_catalog_audit():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+
+    db_duplicates = db.get_duplicate_product_ids_in_db()
+    local_issues = []
+    for norm, info in sorted(db_duplicates.items()):
+        values = sorted(dict.fromkeys(str(v) for v in info["values"]))
+        local_issues.append(
+            {
+                "id": norm,
+                "count": info["count"],
+                "values": values,
+                "message": f"{norm} appears {info['count']} times in the local DB; keep one row and remove the rest.",
+            }
+        )
+
+    audit_issues = []
+    cleaned_df = pd.DataFrame()
+
+    if request.method == "POST" and "audit_excel" in request.files:
+        file = request.files["audit_excel"]
+        if file and file.filename:
+            fd, temp_path = tempfile.mkstemp(suffix=".xlsx")
+            os.close(fd)
+            try:
+                file.save(temp_path)
+                df = pd.read_excel(temp_path, sheet_name="Product Catalog")
+                if "Product ID" not in df.columns:
+                    audit_issues.append({"id": "file", "message": "The sheet is missing the Product ID column."})
+                else:
+                    cleaned_df = db.build_cleaned_catalog_frame(df)
+                    duplicates = db.detect_duplicate_product_ids(df.to_dict(orient="records"))
+                    for norm, info in sorted(duplicates.items()):
+                        audit_issues.append(
+                            {
+                                "id": norm,
+                                "count": info["count"],
+                                "values": sorted(dict.fromkeys(str(v) for v in info["values"])),
+                                "message": f"{norm} appears {info['count']} times in the Excel file. Keep one row only.",
+                            }
+                        )
+                    blank_rows = []
+                    for idx, raw in enumerate(df.get("Product ID", []), start=2):
+                        if raw is None or pd.isna(raw) or str(raw).strip() == "":
+                            blank_rows.append(idx)
+                    if blank_rows:
+                        audit_issues.append(
+                            {
+                                "id": "blank",
+                                "count": len(blank_rows),
+                                "values": [str(v) for v in blank_rows[:10]],
+                                "message": "Blank Product ID rows found in Excel. Fill or remove these rows before upload.",
+                            }
+                        )
+
+                action = request.form.get("action")
+                if action == "download_cleaned" and "Product ID" in df.columns and not df.empty:
+                    buffer = BytesIO()
+                    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                        cleaned_df.to_excel(writer, sheet_name="Product Catalog", index=False)
+                    buffer.seek(0)
+                    filename = f"cleaned_catalog_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.xlsx"
+                    return send_file(
+                        buffer,
+                        as_attachment=True,
+                        download_name=filename,
+                        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+    return render_template(
+        "admin_catalog_audit.html",
+        duplicates=local_issues,
+        audit_issues=audit_issues,
+        cleaned_preview=cleaned_df.head(10) if not cleaned_df.empty else pd.DataFrame(),
+        has_clean_preview=not cleaned_df.empty,
     )
 
 

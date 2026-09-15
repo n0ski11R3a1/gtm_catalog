@@ -609,6 +609,84 @@ def get_stats():
     }
 
 
+def detect_duplicate_product_ids(rows):
+    """Return normalized duplicate IDs seen in a list of rows/dicts.
+
+    Example return value:
+    {
+        "GTM-0001": {
+            "count": 2,
+            "values": ["GTM - 0001", "GTM-0001"],
+        }
+    }
+    """
+    seen = {}
+    for row in rows:
+        if isinstance(row, dict):
+            raw = row.get("Product ID")
+        else:
+            raw = row
+
+        if raw is None or pd.isna(raw):
+            continue
+
+        value = str(raw).strip()
+        if not value:
+            continue
+
+        normalized = value.replace(" ", "").upper()
+        bucket = seen.setdefault(normalized, {"count": 0, "values": []})
+        bucket["count"] += 1
+        bucket["values"].append(value)
+
+    return {
+        norm: info for norm, info in sorted(seen.items()) if info["count"] > 1
+    }
+
+
+def build_cleaned_catalog_frame(df):
+    """Drop blank rows and keep only the first occurrence of each Product ID
+    after normalizing spaces/case."""
+    if df is None or df.empty:
+        return df.copy() if df is not None else pd.DataFrame()
+
+    cleaned = df.copy()
+    if "Product ID" not in cleaned.columns:
+        return cleaned
+
+    cleaned["Product ID"] = cleaned["Product ID"].map(
+        lambda v: "" if v is None or pd.isna(v) else str(v).strip()
+    )
+
+    keep_mask = []
+    seen = set()
+    for _, row in cleaned.iterrows():
+        raw = row.get("Product ID")
+        if raw is None or str(raw).strip() == "":
+            keep_mask.append(False)
+            continue
+
+        normalized = str(raw).replace(" ", "").upper()
+        if normalized in seen:
+            keep_mask.append(False)
+            continue
+
+        seen.add(normalized)
+        keep_mask.append(True)
+
+    return cleaned.loc[keep_mask].reset_index(drop=True)
+
+
+def get_duplicate_product_ids_in_db():
+    """List duplicates currently stored in the live SQLite catalog."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT product_id, product_name FROM products WHERE TRIM(COALESCE(product_id, '')) != '' ORDER BY product_id ASC"
+    ).fetchall()
+    conn.close()
+    return detect_duplicate_product_ids([dict(r) for r in rows])
+
+
 _GTM_ID_PATTERN = re.compile(r"^gtm\s*-\s*(\d+)$", re.IGNORECASE)
 
 

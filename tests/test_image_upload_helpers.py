@@ -3,9 +3,12 @@ import os
 import zipfile
 from io import BytesIO
 
+import pandas as pd
+import pytest
 from PIL import Image
 
-from app import build_product_image_filename, prepare_uploaded_product_image, product_photo_slug
+import db
+from app import build_product_image_filename, prepare_uploaded_product_image, product_photo_slug, validate_excel
 
 
 def test_send_to_all_skips_malformed_subscription(monkeypatch):
@@ -143,6 +146,64 @@ def test_prepare_uploaded_product_image_ignores_original_client_filename():
     result = prepare_uploaded_product_image(FakeUpload(), "GTM - 0001")
     assert result[0].getvalue().startswith(b"RIFF")
     assert result[1] == "GTM-0001.webp"
+
+
+def test_validate_excel_rejects_duplicate_normalized_product_ids(tmp_path):
+    path = tmp_path / "duplicate_ids.xlsx"
+    pd.DataFrame([
+        {"Product ID": "GTM - 0001", "Product Name": "One", "UPC": 1, "Unit": "Box", "Retail": 100, "Wholesale": 80, "Category": "General", "Status": "In Stock", "Supplier": "A", "Base Price": 90, "B2C": 110},
+        {"Product ID": "GTM-0001", "Product Name": "Two", "UPC": 2, "Unit": "Box", "Retail": 110, "Wholesale": 90, "Category": "General", "Status": "In Stock", "Supplier": "A", "Base Price": 90, "B2C": 120},
+        {"Product ID": "GTM - 0002", "Product Name": "Three", "UPC": 3, "Unit": "Box", "Retail": 120, "Wholesale": 100, "Category": "General", "Status": "In Stock", "Supplier": "A", "Base Price": 95, "B2C": 130},
+    ]).to_excel(path, index=False, sheet_name="Product Catalog")
+
+    valid, error = validate_excel(str(path))
+
+    assert valid is False
+    assert "Duplicate Product IDs" in error
+    assert "GTM-0001" in error
+
+
+def test_validate_excel_rejects_blank_product_ids(tmp_path):
+    path = tmp_path / "blank_ids.xlsx"
+    pd.DataFrame([
+        {"Product ID": "GTM - 0001", "Product Name": "One", "UPC": 1, "Unit": "Box", "Retail": 100, "Wholesale": 80, "Category": "General", "Status": "In Stock", "Supplier": "A", "Base Price": 90, "B2C": 110},
+        {"Product ID": "", "Product Name": "Bad blank", "UPC": 0, "Unit": "-", "Retail": 0, "Wholesale": 0, "Category": "General", "Status": "In Stock", "Supplier": "A", "Base Price": 10, "B2C": 12},
+    ]).to_excel(path, index=False, sheet_name="Product Catalog")
+
+    valid, error = validate_excel(str(path))
+
+    assert valid is False
+    assert "Blank Product IDs" in error
+
+
+def test_detect_duplicate_product_ids_ignores_spaces_and_case():
+    rows = [
+        {"Product ID": "GTM - 0001", "Product Name": "One"},
+        {"Product ID": "GTM-0001", "Product Name": "Two"},
+        {"Product ID": "GTM - 0002", "Product Name": "Three"},
+        {"Product ID": "", "Product Name": "Blank"},
+        {"Product ID": None, "Product Name": "Also blank"},
+    ]
+
+    duplicates = db.detect_duplicate_product_ids(rows)
+
+    assert "GTM-0001" in duplicates
+    assert duplicates["GTM-0001"]["count"] == 2
+    assert duplicates["GTM-0001"]["values"] == ["GTM - 0001", "GTM-0001"]
+
+
+def test_build_cleaned_catalog_frame_removes_blank_and_duplicate_rows():
+    df = pd.DataFrame([
+        {"Product ID": "GTM - 0001", "Product Name": "One", "Retail": 100},
+        {"Product ID": "GTM-0001", "Product Name": "Duplicate", "Retail": 110},
+        {"Product ID": "", "Product Name": "Blank", "Retail": 0},
+        {"Product ID": "GTM - 0002", "Product Name": "Two", "Retail": 200},
+    ])
+
+    cleaned = db.build_cleaned_catalog_frame(df)
+
+    assert len(cleaned) == 2
+    assert [row["Product ID"] for _, row in cleaned.iterrows()] == ["GTM - 0001", "GTM - 0002"]
 
 
 def test_generate_thumbnail_creates_cached_webp(tmp_path):
