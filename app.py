@@ -45,6 +45,17 @@ from config import (
 
 import db
 import push
+from services import (
+    build_product_image_filename,
+    delete_product_image_files,
+    generate_thumbnail,
+    is_allowed_image_file,
+    prepare_uploaded_product_image,
+    save_image_upload,
+    save_product_image,
+    validate_image_size,
+    validate_product_form,
+)
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
@@ -94,6 +105,19 @@ def login_required():
     if not has_request_context():
         return False
     return session.get("admin") is True
+
+
+def require_admin():
+    """Redirect unauthenticated users to the login page."""
+    if not login_required():
+        return redirect(url_for("login"))
+    return None
+
+
+def get_json_payload():
+    """Return a JSON body as a dict, or an empty dict when the body is missing or invalid."""
+    payload = request.get_json(silent=True) or {}
+    return payload if isinstance(payload, dict) else {}
 
 
 # Product images live in static/product-images/, named to match the
@@ -620,7 +644,7 @@ def api_push_subscribe():
     # Public, no login - same audience as the catalog itself. Any device
     # that opts in (via the browser's own permission prompt) can
     # register, no rep account or admin gate involved.
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_payload()
     endpoint = payload.get("endpoint")
     keys = payload.get("keys") or {}
     p256dh = keys.get("p256dh")
@@ -635,7 +659,7 @@ def api_push_subscribe():
 
 @app.route("/api/push/unsubscribe", methods=["POST"])
 def api_push_unsubscribe():
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_payload()
     endpoint = payload.get("endpoint")
 
     if endpoint:
@@ -649,7 +673,7 @@ def order_submit():
 
     # Deliberately public - reps use this straight from the catalog page,
     # no login required (matches the "no rep accounts" decision).
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_payload()
 
     rep_name = (payload.get("rep_name") or "").strip()
     outlet_name = (payload.get("outlet_name") or "").strip()
@@ -758,8 +782,9 @@ def logout():
 @app.route("/admin")
 def admin():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     stats = db.get_stats()
 
@@ -778,8 +803,9 @@ def admin():
 
 @app.route("/admin/upload-images", methods=["GET", "POST"])
 def admin_upload_images():
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     if request.method == "GET":
         return render_template("admin_upload_images.html")
@@ -875,8 +901,9 @@ def admin_upload_images():
 
 @app.route("/admin/clear-thumbnail-cache", methods=["POST"])
 def admin_clear_thumbnail_cache():
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     deleted = 0
     for filename in os.listdir(app.config["THUMBNAILS_DIR"]):
@@ -898,8 +925,9 @@ def admin_clear_thumbnail_cache():
 @app.route("/admin/products")
 def admin_products():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     products = db.get_all_products()
     categories = db.get_categories()
@@ -914,8 +942,9 @@ def admin_products():
 @app.route("/admin/images")
 def admin_images():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     products = db.get_all_products()
     for product in products:
@@ -931,8 +960,9 @@ def admin_images():
 @app.route("/admin/products/add", methods=["GET", "POST"])
 def admin_product_add():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     categories = db.get_categories()
 
@@ -940,13 +970,7 @@ def admin_product_add():
 
         data = product_form_to_dict(request.form)
 
-        form_errors = []
-
-        if not data["product_name"]:
-            form_errors.append("Product Name is required.")
-
-        if data["status"] == "In Stock" and not data["supplier"]:
-            form_errors.append("Supplier is required for In Stock products.")
+        form_errors = validate_product_form(data)
 
         if form_errors:
             for err in form_errors:
@@ -1009,8 +1033,9 @@ def admin_product_add():
 @app.route("/admin/products/<int:product_id>/edit", methods=["GET", "POST"])
 def admin_product_edit(product_id):
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     product = db.get_product(product_id)
 
@@ -1024,13 +1049,7 @@ def admin_product_edit(product_id):
 
         data = product_form_to_dict(request.form)
 
-        form_errors = []
-
-        if not data["product_name"]:
-            form_errors.append("Product Name is required.")
-
-        if data["status"] == "In Stock" and not data["supplier"]:
-            form_errors.append("Supplier is required for In Stock products.")
+        form_errors = validate_product_form(data)
 
         if form_errors:
             for err in form_errors:
@@ -1060,15 +1079,9 @@ def admin_product_edit(product_id):
 
             try:
                 current_product_id = data.get("product_id") or product["Product ID"]
-                target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(current_product_id))
-                old_image_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
-                if product.get("has_image") and os.path.exists(old_image_path) and old_image_path != target_path:
-                    os.remove(old_image_path)
-                thumb_path = os.path.join(app.config["THUMBNAILS_DIR"], f"{current_product_id}.webp")
-                if os.path.exists(thumb_path):
-                    os.remove(thumb_path)
-                _, saved_name = prepare_uploaded_product_image(uploaded_image, current_product_id)
-                save_product_image(uploaded_image, current_product_id)
+                if product.get("has_image") and current_product_id != product["Product ID"]:
+                    delete_product_image_files(product["Product ID"])
+                saved_name = save_image_upload(uploaded_image, current_product_id)
                 data["has_image"] = True
                 flash(f"Image saved as {saved_name}.", "success")
             except Exception as exc:
@@ -1083,12 +1096,7 @@ def admin_product_edit(product_id):
                 )
 
         if request.form.get("delete_image"):
-            target_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
-            if os.path.exists(target_path):
-                os.remove(target_path)
-            thumb_path = os.path.join(app.config["THUMBNAILS_DIR"], f"{product['Product ID']}.webp")
-            if os.path.exists(thumb_path):
-                os.remove(thumb_path)
+            delete_product_image_files(product["Product ID"])
             data["has_image"] = False
             flash("Image deleted.", "success")
 
@@ -1115,8 +1123,9 @@ def admin_product_edit(product_id):
 @app.route("/admin/products/<int:product_id>/images", methods=["GET", "POST"])
 def admin_product_images(product_id):
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     product = db.get_product(product_id)
     if product is None:
@@ -1127,9 +1136,7 @@ def admin_product_images(product_id):
         payload = product_record_to_db_payload(product)
 
         if request.form.get("delete_image"):
-            image_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
-            if os.path.exists(image_path):
-                os.remove(image_path)
+            delete_product_image_files(product["Product ID"])
             payload["has_image"] = False
             db.update_product(product_id, payload)
             flash("Image deleted.", "success")
@@ -1142,11 +1149,7 @@ def admin_product_images(product_id):
                 return render_template("product_image_form.html", product=product, replace_warning=True)
 
             try:
-                current_path = os.path.join(app.config["PRODUCT_IMAGES_DIR"], build_product_image_filename(product["Product ID"]))
-                if os.path.exists(current_path):
-                    os.remove(current_path)
-                _, saved_name = prepare_uploaded_product_image(uploaded_image, product["Product ID"])
-                save_product_image(uploaded_image, product["Product ID"])
+                saved_name = save_image_upload(uploaded_image, product["Product ID"])
                 payload["has_image"] = True
                 db.update_product(product_id, payload)
                 flash(f"Image updated for {product['Product ID']} as {saved_name}.", "success")
@@ -1163,8 +1166,9 @@ def admin_product_images(product_id):
 @app.route("/admin/products/<int:product_id>/delete", methods=["POST"])
 def admin_product_delete(product_id):
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     product = db.get_product(product_id)
 
@@ -1180,8 +1184,9 @@ def admin_product_delete(product_id):
 @app.route("/admin/reps")
 def admin_reps():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     reps = db.get_all_reps()
 
@@ -1191,8 +1196,9 @@ def admin_reps():
 @app.route("/admin/reps/add", methods=["GET", "POST"])
 def admin_rep_add():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     if request.method == "POST":
 
@@ -1215,8 +1221,9 @@ def admin_rep_add():
 @app.route("/admin/reps/<int:rep_id>/edit", methods=["GET", "POST"])
 def admin_rep_edit(rep_id):
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     rep = db.get_rep(rep_id)
 
@@ -1246,8 +1253,9 @@ def admin_rep_edit(rep_id):
 @app.route("/admin/reps/<int:rep_id>/delete", methods=["POST"])
 def admin_rep_delete(rep_id):
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     db.delete_rep(rep_id)
 
@@ -1259,8 +1267,9 @@ def admin_rep_delete(rep_id):
 @app.route("/admin/orders")
 def admin_orders():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     date_filter = request.args.get("date", "").strip() or None
 
@@ -1284,8 +1293,9 @@ def admin_orders():
 @app.route("/admin/orders/<int:order_id>")
 def admin_order_detail(order_id):
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     order, items = db.get_order(order_id)
 
@@ -1299,8 +1309,9 @@ def admin_order_detail(order_id):
 @app.route("/admin/orders/<int:order_id>/status", methods=["POST"])
 def admin_order_status(order_id):
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     new_status = request.form.get("status", "New").strip() or "New"
 
@@ -1314,8 +1325,9 @@ def admin_order_status(order_id):
 @app.route("/admin/orders/<int:order_id>/delete", methods=["POST"])
 def admin_order_delete(order_id):
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     db.delete_order(order_id)
 
@@ -1333,8 +1345,9 @@ def admin_order_delete(order_id):
 @app.route("/admin/export/prices.xlsx")
 def export_prices_excel():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     products = db.get_all_products()
     df = pd.DataFrame(products)
@@ -1360,8 +1373,9 @@ def export_prices_excel():
 @app.route("/admin/export/price-history.xlsx")
 def export_price_history_excel():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     history = db.get_recent_price_changes(limit=1000000)  # effectively "all"
     df = pd.DataFrame(history)
@@ -1391,8 +1405,9 @@ def export_price_history_excel():
 @app.route("/upload", methods=["POST"])
 def upload():
 
-    if not login_required():
-        return redirect(url_for("login"))
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
 
     if "excel" not in request.files:
 

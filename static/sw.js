@@ -273,13 +273,24 @@ self.addEventListener('fetch', (event) => {
 
         if (isCatalogHome) {
             event.respondWith(
-                fetch(request)
-                    .then((response) => {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put('/', clone));
-                        return response;
+                caches.open(CACHE_NAME).then((cache) =>
+                    cache.match('/').then((cachedResponse) => {
+                        const networkFetch = fetch(request)
+                            .then((response) => {
+                                if (response && response.ok) {
+                                    cache.put('/', response.clone());
+                                }
+                                return response;
+                            })
+                            .catch(() => cachedResponse || Response.error());
+
+                        // Serve a cached home page immediately if one exists,
+                        // but refresh it in the background so returning from
+                        // another page doesn't keep replaying an old shell
+                        // until a manual hard refresh.
+                        return cachedResponse || networkFetch;
                     })
-                    .catch(() => caches.match('/'))
+                )
             );
             return;
         }

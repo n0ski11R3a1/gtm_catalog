@@ -130,6 +130,28 @@
 </div>
 
     </main>
+
+    <aside class="desktop-order-panel" aria-label="Current order summary">
+        <div class="desktop-order-header">
+            <div>
+                <div class="desktop-order-title">Order List</div>
+                <div class="desktop-order-count"><span id="desktopOrderCount">0</span> items</div>
+            </div>
+            <button type="button" class="desktop-order-open-btn" onclick="openOrderPanel()">Open</button>
+        </div>
+
+        <div class="desktop-order-items" id="desktopOrderItems">
+            <div class="desktop-order-empty">No items yet.</div>
+        </div>
+
+        <div class="desktop-order-footer">
+            <div class="desktop-order-total-row">
+                <span>Total</span>
+                <strong id="desktopOrderTotal">0 Ks</strong>
+            </div>
+            <button type="button" class="desktop-order-submit-btn" onclick="openOrderPanel()">Review Order</button>
+        </div>
+    </aside>
 </div>
 
 {% include "_glass_tabbar.html" %}
