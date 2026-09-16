@@ -89,7 +89,9 @@
 // pulsing dot and an unexplained abbreviated number.
 // v29->v30: moved the price status below the price panel and restored
 // normal sentence casing for the card presentation.
-const CACHE_NAME = 'gtm-catalog-v30';
+// v30->v31: moved the price status below the product name as the quieter
+// option 3 card placement.
+const CACHE_NAME = 'gtm-catalog-v31';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
