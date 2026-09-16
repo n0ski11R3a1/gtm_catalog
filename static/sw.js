@@ -82,7 +82,10 @@
 // silently refresh the cache in the background for next time. Network
 // is only waited on when there's truly nothing cached yet (first-ever
 // visit to that specific page).
-const CACHE_NAME = 'gtm-catalog-v27';
+// v27->v28: included the split catalog modules in the static asset cache.
+// Without this, existing installations could keep stale or missing code
+// for the notification toggle after the frontend refactor.
+const CACHE_NAME = 'gtm-catalog-v28';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
@@ -95,6 +98,9 @@ const STATIC_ASSETS = [
     '/static/js/order.js',
     '/static/js/precache.js',
     '/static/js/status.js',
+    '/static/js/catalog-state.js',
+    '/static/js/catalog-filters.js',
+    '/static/js/price-badges.js',
     '/static/js/gallery.js',
     '/static/manifest.json'
 ];

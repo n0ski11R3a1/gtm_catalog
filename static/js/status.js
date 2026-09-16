@@ -376,9 +376,21 @@ function pushSupported() {
 
 async function getExistingPushSubscription() {
     if (!pushSupported()) return null;
-    const registration = await navigator.serviceWorker.getRegistration();
+    const registration = await getPushServiceWorkerRegistration();
     if (!registration) return null;
     return registration.pushManager.getSubscription();
+}
+
+async function getPushServiceWorkerRegistration() {
+    if (!pushSupported()) return null;
+
+    const existing = await navigator.serviceWorker.getRegistration();
+    if (existing) return existing;
+
+    // On a first visit the registration may still be installing because
+    // base.html registers the worker from its load handler. Wait for that
+    // registration instead of making the toggle fail silently.
+    return navigator.serviceWorker.ready;
 }
 
 // Reflects actual subscription state in the toggle UI - checked
@@ -401,7 +413,7 @@ async function refreshPushToggleUI() {
 }
 
 async function subscribeToPush() {
-    const registration = await navigator.serviceWorker.getRegistration();
+    const registration = await getPushServiceWorkerRegistration();
     if (!registration) return false;
 
     const permission = await Notification.requestPermission();
