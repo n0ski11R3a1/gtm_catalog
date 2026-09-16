@@ -1641,6 +1641,50 @@ def datetimeformat(value):
     return datetime.fromtimestamp(value).strftime("%b %d, %Y %I:%M %p")
 
 
+@app.template_filter("timeago")
+def timeago(value):
+    """Format a SQLite CURRENT_TIMESTAMP string ('2026-07-23 09:12:01')
+    as a human-readable relative time like '2h ago', 'yesterday', '3d ago'.
+    Empty/None input returns an empty string so templates can use it
+    conditionally."""
+
+    if not value:
+        return ""
+
+    try:
+        changed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return ""
+
+    now = datetime.now()
+    diff = now - changed
+    seconds = int(diff.total_seconds())
+
+    if seconds < 0:
+        return "just now"
+    if seconds < 60:
+        return "just now"
+
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+
+    days = hours // 24
+    if days < 2:
+        return "yesterday"
+    if days < 7:
+        return f"{days}d ago"
+    if days < 30:
+        weeks = days // 7
+        return f"{weeks}w ago"
+    months = days // 30
+    return f"{months}mo ago"
+
+
 # ------------------------
 # Run
 # ------------------------

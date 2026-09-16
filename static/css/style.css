@@ -103,6 +103,23 @@ input:focus {
     outline: none;
 }
 
+/* Fix: the generic .form-check-input border-radius above overrides
+Bootstrap's switch pill shape, making the toggle knob render as a
+"second dot" inside the track. Restore the proper switch geometry
+specifically for the push-notification toggle. */
+#pushToggle.form-check-input {
+    width: 36px;
+    height: 20px;
+    border-radius: 20px;
+    border: none;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, .08);
+}
+
+#pushToggle.form-check-input:checked {
+    background-color: var(--ocean);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, .15);
+}
+
 .container {
     max-width: 1300px;
     margin: 0 auto;
@@ -797,6 +814,95 @@ input:focus {
 }
 .badge-instock { background: rgba(34, 197, 94, .10); color: #15803D; border: 1px solid rgba(34, 197, 94, .25); }
 .badge-oos { background: rgba(100, 116, 139, .10); color: var(--muted); border: 1px solid rgba(100, 116, 139, .25); }
+
+/* --- Price-change marker --- */
+.price-change-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 6px;
+    font-size: 8px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    cursor: help;
+    vertical-align: middle;
+    padding: 2px 5px;
+    border-radius: 8px;
+    background: rgba(148, 163, 184, .08);
+    border: 1px solid rgba(148, 163, 184, .2);
+}
+
+.price-change-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--aqua);
+    flex-shrink: 0;
+}
+
+.price-change-text {
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* Color variants — applied by JS based on recency */
+.price-change-badge--today {
+    background: rgba(249, 115, 23, .12);
+    border-color: rgba(249, 115, 23, .3);
+}
+.price-change-badge--today .price-change-dot {
+    background-color: #F97316;
+    animation: ping-pulse 2.5s ease-in-out infinite;
+}
+.price-change-badge--today .price-change-text {
+    color: #F97316;
+}
+
+.price-change-badge--recent {
+    background: rgba(245, 158, 17, .10);
+    border-color: rgba(245, 158, 17, .25);
+}
+.price-change-badge--recent .price-change-dot {
+    background-color: #F59E1B;
+}
+.price-change-badge--recent .price-change-text {
+    color: #F59E1B;
+}
+
+.price-change-badge--older {
+    background: rgba(148, 163, 184, .08);
+    border-color: rgba(148, 163, 184, .2);
+}
+.price-change-badge--older .price-change-dot {
+    background-color: var(--muted);
+}
+.price-change-badge--older .price-change-text {
+    color: var(--muted);
+}
+
+/* Price direction arrow colors */
+.price-change-arrow-up { color: #22C55E; }   /* leaf/green — price went up */
+.price-change-arrow-down { color: #EF4444; } /* red — price went down */
+
+@keyframes ping-pulse {
+    0%, 100% { transform: scale(1); opacity: .9; }
+    50% { transform: scale(1.6); opacity: .4; }
+}
+
+.detail-price-history-note {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.detail-price-history-note i { font-size: 12px; }
 
 .item-title {
     font-family: var(--font-display);

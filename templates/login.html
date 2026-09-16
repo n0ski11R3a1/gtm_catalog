@@ -85,7 +85,7 @@
                             <button
                                 class="btn btn-outline-secondary"
                                 type="button"
-                                onclick="togglePassword()">
+                                id="togglePasswordBtn">
 
                                 <i class="bi bi-eye" id="eyeIcon"></i>
 
@@ -127,27 +127,24 @@
 
 <script>
 
-function togglePassword(){
+document.addEventListener('DOMContentLoaded', function () {
+    const button = document.getElementById('togglePasswordBtn');
+    if (!button) return;
 
-    const input = document.getElementById("password");
+    button.addEventListener('click', function () {
+        const input = document.getElementById('password');
+        const icon = document.getElementById('eyeIcon');
+        if (!input || !icon) return;
 
-    const icon = document.getElementById("eyeIcon");
-
-    if(input.type==="password"){
-
-        input.type="text";
-
-        icon.className="bi bi-eye-slash";
-
-    }else{
-
-        input.type="password";
-
-        icon.className="bi bi-eye";
-
-    }
-
-}
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+    });
+});
 
 </script>
 

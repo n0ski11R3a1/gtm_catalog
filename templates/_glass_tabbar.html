@@ -1,17 +1,15 @@
 <nav class="glass-tabbar" id="glassTabbar">
-    <a href="{{ url_for('home') }}" class="tab-item{% if request.endpoint == 'home' %} active{% endif %}"
-       onclick="if(window.setGalleryModePreference)setGalleryModePreference('list')" aria-label="List view">
+    <a href="{{ url_for('home') }}" class="tab-item{% if request.endpoint == 'home' %} active{% endif %}" data-gallery-mode="list" aria-label="List view">
         <i class="bi bi-shop"></i>
         <span class="tab-label">List</span>
     </a>
 
-    <a href="{{ url_for('gallery_home') }}" class="tab-item{% if request.endpoint in ('gallery_home', 'gallery_category') %} active{% endif %}"
-       onclick="if(window.setGalleryModePreference)setGalleryModePreference('gallery')" aria-label="Gallery view">
+    <a href="{{ url_for('gallery_home') }}" class="tab-item{% if request.endpoint in ('gallery_home', 'gallery_category') %} active{% endif %}" data-gallery-mode="gallery" aria-label="Gallery view">
         <i class="bi bi-images"></i>
         <span class="tab-label">Gallery</span>
     </a>
 
-    <button type="button" class="tab-item" onclick="openOrderPanel()" aria-label="Open order list">
+    <button type="button" class="tab-item" data-order-open="true" aria-label="Open order list">
         <span class="tab-icon-wrap">
             <i class="bi bi-cart3"></i>
             <span id="cartBadge" class="cart-badge" style="display:none;">0</span>

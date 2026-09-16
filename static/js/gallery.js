@@ -139,6 +139,28 @@ function setGalleryStatus(status, btn) {
     filterGalleryThumbs(); // also saves state - see saveGalleryThumbState() call at its end
 }
 
+function bindGalleryInteractions() {
+    const galleryToggle = document.getElementById('galleryFilterToggleBtn');
+    if (galleryToggle) {
+        galleryToggle.addEventListener('click', toggleGalleryFilters);
+    }
+
+    document.querySelectorAll('#galleryFilterPanel .status-pill').forEach((btn) => {
+        btn.addEventListener('click', () => setGalleryStatus(btn.dataset.galleryStatus || 'ALL', btn));
+    });
+
+    const searchBox = document.getElementById('galleryThumbSearch');
+    if (searchBox) {
+        searchBox.addEventListener('input', filterGalleryThumbs);
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindGalleryInteractions);
+} else {
+    bindGalleryInteractions();
+}
+
 (function () {
     const grid = document.getElementById('galleryThumbGrid');
     const searchBox = document.getElementById('galleryThumbSearch');

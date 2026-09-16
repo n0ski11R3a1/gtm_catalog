@@ -280,6 +280,23 @@ function openOrderPanel() {
     modal.show();
 }
 
+function bindOrderModalInteractions() {
+    const openButtons = document.querySelectorAll('[data-order-open="true"], #desktopOrderOpenBtn, #desktopOrderReviewBtn');
+    openButtons.forEach((button) => {
+        button.addEventListener('click', openOrderPanel);
+    });
+
+    const clearBtn = document.getElementById('clearOrderBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearOrder);
+    }
+
+    const submitBtn = document.getElementById('submitOrderBtn');
+    if (submitBtn) {
+        submitBtn.addEventListener('click', submitOrder);
+    }
+}
+
 function clearOrder() {
     if (loadCart().length === 0) return;
 
@@ -404,3 +421,9 @@ function submitOrder() {
 
 updateCartBadge();
 renderDesktopOrderSummary();
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindOrderModalInteractions);
+} else {
+    bindOrderModalInteractions();
+}

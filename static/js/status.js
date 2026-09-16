@@ -158,9 +158,17 @@ function renderActivityList(events) {
     const seeMoreBtn = document.getElementById('activitySeeMoreBtn');
     if (!listEl) return;
 
+    const seenIds = new Set();
+    const uniqueEvents = [];
+    for (const ev of events || []) {
+        if (!ev || ev.id == null || seenIds.has(ev.id)) continue;
+        seenIds.add(ev.id);
+        uniqueEvents.push(ev);
+    }
+
     listEl.innerHTML = '';
 
-    if (!events.length) {
+    if (!uniqueEvents.length) {
         if (emptyEl) emptyEl.style.display = '';
         if (seeMoreBtn) seeMoreBtn.style.display = 'none';
         return;
@@ -170,12 +178,10 @@ function renderActivityList(events) {
 
     let lastHeading = null;
 
-    events.forEach((ev) => {
+    uniqueEvents.forEach((ev) => {
         const evDate = parseSqliteUtc(ev.created_at);
         const heading = dateHeadingFor(evDate);
 
-        // events arrive newest-first, so a new heading only needs to be
-        // inserted when the heading actually changes from the row before it.
         if (heading !== lastHeading) {
             const headingEl = document.createElement('div');
             headingEl.className = 'activity-date-heading';
@@ -190,29 +196,45 @@ function renderActivityList(events) {
         const when = formatRelativeTime(parseSqliteUtc(ev.created_at));
         const slug = slugifyProductId(ev.product_id);
 
-        row.innerHTML =
-            '<i class="bi ' + activityIconFor(ev.event_type) + ' activity-icon activity-icon-' + escapeHtml(ev.event_type) + '"></i>' +
-            '<div class="activity-text">' +
-                '<div class="activity-title">' + escapeHtml(ev.product_name) + '</div>' +
-                '<div class="activity-meta">' + escapeHtml(ev.details) + '</div>' +
-            '</div>' +
-            '<div class="activity-time">' + escapeHtml(when) + '</div>' +
-            (slug ? '<i class="bi bi-chevron-right activity-chevron" aria-hidden="true"></i>' : '');
+        const icon = document.createElement('i');
+        icon.className = 'bi ' + activityIconFor(ev.event_type) + ' activity-icon activity-icon-' + escapeHtml(ev.event_type);
 
-        // Only wire up navigation when there's actually a product_id to go
-        // to - a row without one (shouldn't happen per the current schema,
-        // but cheap to guard) just stays a plain read-only row instead of
-        // silently linking to "/product/".
+        const textWrap = document.createElement('div');
+        textWrap.className = 'activity-text';
+
+        const title = document.createElement('div');
+        title.className = 'activity-title';
+        title.textContent = ev.product_name || 'Catalog update';
+
+        const meta = document.createElement('div');
+        meta.className = 'activity-meta';
+        meta.textContent = ev.details || 'Updated';
+
+        const time = document.createElement('div');
+        time.className = 'activity-time';
+        time.textContent = when;
+
+        textWrap.appendChild(title);
+        textWrap.appendChild(meta);
+        row.appendChild(icon);
+        row.appendChild(textWrap);
+        row.appendChild(time);
+
+        if (slug) {
+            const chevron = document.createElement('i');
+            chevron.className = 'bi bi-chevron-right activity-chevron';
+            chevron.setAttribute('aria-hidden', 'true');
+            row.appendChild(chevron);
+        }
+
         if (slug) {
             row.classList.add('activity-row-clickable');
             row.style.cursor = 'pointer';
             row.setAttribute('role', 'button');
             row.setAttribute('tabindex', '0');
-            row.setAttribute('aria-label', 'View ' + ev.product_name);
+            row.setAttribute('aria-label', 'View ' + (ev.product_name || 'catalog item'));
 
             const goToProduct = () => {
-                // Close the modal first so the click doesn't feel like it
-                // "hung" while the browser navigates.
                 const modalEl = document.getElementById('statusModal');
                 if (modalEl && typeof bootstrap !== 'undefined') {
                     const modal = bootstrap.Modal.getInstance(modalEl);
@@ -261,7 +283,15 @@ async function loadMoreActivity() {
         const res = await fetch('/api/activity?limit=30&before_id=' + oldestId);
         const data = await res.json();
 
-        loadedEvents = loadedEvents.concat(data.events || []);
+        const incoming = data.events || [];
+        const seen = new Set(loadedEvents.map((event) => event.id));
+        incoming.forEach((event) => {
+            if (event && event.id != null && !seen.has(event.id)) {
+                loadedEvents.push(event);
+                seen.add(event.id);
+            }
+        });
+
         activityHasMore = !!data.has_more;
 
         renderActivityList(loadedEvents);
@@ -430,9 +460,14 @@ async function onPushToggleChange(event) {
         // subscribe/unsubscribe failed (offline, browser quirk, etc.) -
         // put the toggle back to whatever's actually true rather than
         // trusting the click
-        await refreshPushToggleUI();
     } finally {
         toggle.disabled = false;
+        // Re-sync the toggle's visual state with the actual subscription
+        // after every change attempt — if subscribe/unsubscribe failed
+        // silently (e.g. offline, the subscription was already stale), the
+        // toggle otherwise stays stuck in the clicked state while the
+        // real subscription on the server hasn't changed.
+        await refreshPushToggleUI();
     }
 }
 

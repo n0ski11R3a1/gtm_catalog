@@ -17,9 +17,9 @@
     {% set palette_text = ['#fff', '#fff', '#fff', 'var(--ink)'] %}
 
     <div class="category-bar">
-        <button class="pill active cat-pill cat-all" onclick="setCategory('ALL', this)">All Items</button>
+        <button class="pill active cat-pill cat-all" data-category="ALL">All Items</button>
         {% for cat in categories %}
-        <button class="pill cat-pill" style="--tag-color:{{ palette[loop.index0 % 4] }}; --tag-text:{{ palette_text[loop.index0 % 4] }};" onclick="setCategory('{{ cat }}', this)">{{ cat }}</button>
+        <button class="pill cat-pill" data-category="{{ cat }}" style="--tag-color:{{ palette[loop.index0 % 4] }}; --tag-text:{{ palette_text[loop.index0 % 4] }};">{{ cat }}</button>
         {% endfor %}
     </div>
 
@@ -33,12 +33,12 @@
             <input type="text" id="searchBox" class="search-box" placeholder="Search item name, ID, category..." onkeyup="filterCatalog()">
         </div>
 
-        <button class="filter-toggle-btn bell-btn" type="button" onclick="openStatusPanel()" aria-label="Updates and status">
+        <button class="filter-toggle-btn bell-btn" type="button" id="statusPanelBtn" aria-label="Updates and status">
             <i class="bi bi-bell"></i>
             <span id="bellDot" class="bell-dot" style="display:none;"></span>
         </button>
 
-        <button class="filter-toggle-btn filters-button" type="button" onclick="toggleFilters()" aria-expanded="false" aria-controls="filterPanel" aria-label="Filters">
+        <button class="filter-toggle-btn filters-button" type="button" id="filterToggleBtn" aria-expanded="false" aria-controls="filterPanel" aria-label="Filters">
             <i class="bi bi-sliders"></i>
         </button>
     </div>
@@ -48,6 +48,7 @@
             <div class="sort-wrap">
                 <i class="bi bi-arrow-down-up sort-icon"></i>
                 <select id="sortSelect" class="sort-select" onchange="filterCatalog()">
+                    <option value="recent">Recently Updated</option>
                     <option value="default">Default</option>
                     <option value="price_asc">Price ↑</option>
                     <option value="price_desc">Price ↓</option>
@@ -56,9 +57,9 @@
             </div>
 
             <div class="status-group">
-                <button class="pill instock status-pill" onclick="setStatus('In Stock', this)">In Stock</button>
-                <button class="pill outofstock status-pill" onclick="setStatus('Out Of Stock', this)">OOS</button>
-                <button class="pill active status-pill" onclick="setStatus('ALL', this)">All</button>
+                <button class="pill instock status-pill active" data-status="In Stock">In Stock</button>
+                <button class="pill outofstock status-pill" data-status="Out Of Stock">OOS</button>
+                <button class="pill status-pill" data-status="ALL">All</button>
             </div>
         </div>
     </div>
@@ -77,7 +78,8 @@
              data-retail="{{ p['Retail'] }}"
              data-fullname="{{ p['Product Name'] }}"
              data-unit="{{ p['Unit'] }}"
-             data-wholesale="{{ p['Wholesale'] }}">
+             data-wholesale="{{ p['Wholesale'] }}"
+             data-last-change="{{ p['last_price_change'] or '' }}">
 
             <div class="tag-band" style="--tag-color:{{ palette[cat_idx % 4] }}; --tag-text:{{ palette_text[cat_idx % 4] }};">
                 <span class="tag-hole"></span>
@@ -88,12 +90,23 @@
             </div>
 
             <div class="tag-body">
-                <div class="card-top">
-                    <span class="sku">{{ p['Product ID'] }}</span>
-                    <span class="badge {% if p['Status']|lower == 'out of stock' %}badge-oos{% else %}badge-instock{% endif %}">
-                        {{ p['Status'] }}
+            <div class="card-top">
+                <span class="sku">
+                    {{ p['Product ID'] }}
+                    {% if p['last_price_change'] %}
+                    <span class="price-change-badge"
+                          data-timestamp="{{ p['last_price_change'] }}"
+                          data-direction="{{ p['last_price_direction'] or 'none' }}"
+                          title="Price updated {{ p['last_price_change']|sqlitedatetime }}">
+                        <span class="price-change-dot"></span>
+                        <span class="price-change-text"></span>
                     </span>
-                </div>
+                    {% endif %}
+                </span>
+                <span class="badge {% if p['Status']|lower == 'out of stock' %}badge-oos{% else %}badge-instock{% endif %}">
+                    {{ p['Status'] }}
+                </span>
+            </div>
                 <div class="item-title">{{ p['Product Name'] }}</div>
                 <div class="cat-tag">{{ p['Unit'] }} {% if p['UPC'] > 0 %}(Pack: {{ p['UPC'] }}){% endif %}</div>
 
@@ -110,15 +123,15 @@
                     </div>
                 </div>
 
-                <button class="copy-btn" onclick="copyPrice(this)">Copy Price</button>
+                <button class="copy-btn" type="button">Copy Price</button>
 
                 <div class="order-row">
                     <div class="qty-stepper">
-                        <button type="button" class="qty-btn" onclick="adjustQtyInput(this, -1)" aria-label="Decrease quantity">-</button>
+                        <button type="button" class="qty-btn qty-btn-dec" aria-label="Decrease quantity">-</button>
                         <input type="text" inputmode="numeric" class="qty-input" value="1" aria-label="Quantity">
-                        <button type="button" class="qty-btn" onclick="adjustQtyInput(this, 1)" aria-label="Increase quantity">+</button>
+                        <button type="button" class="qty-btn qty-btn-inc" aria-label="Increase quantity">+</button>
                     </div>
-                    <button class="add-order-btn" onclick="addToOrder(this)">
+                    <button class="add-order-btn" type="button">
                         <i class="bi bi-cart-plus"></i>
                         Add to Order
                     </button>
@@ -137,7 +150,7 @@
                 <div class="desktop-order-title">Order List</div>
                 <div class="desktop-order-count"><span id="desktopOrderCount">0</span> items</div>
             </div>
-            <button type="button" class="desktop-order-open-btn" onclick="openOrderPanel()">Open</button>
+            <button type="button" class="desktop-order-open-btn" id="desktopOrderOpenBtn">Open</button>
         </div>
 
         <div class="desktop-order-items" id="desktopOrderItems">
@@ -149,7 +162,7 @@
                 <span>Total</span>
                 <strong id="desktopOrderTotal">0 Ks</strong>
             </div>
-            <button type="button" class="desktop-order-submit-btn" onclick="openOrderPanel()">Review Order</button>
+            <button type="button" class="desktop-order-submit-btn" id="desktopOrderReviewBtn">Review Order</button>
         </div>
     </aside>
 </div>
@@ -182,7 +195,7 @@
                     </div>
                 </div>
 
-                <button type="button" id="hardRefreshBtn" class="btn-hard-refresh" onclick="hardRefresh()">
+                <button type="button" id="hardRefreshBtn" class="btn-hard-refresh">
                     <i class="bi bi-arrow-clockwise"></i>
                     Force Refresh
                 </button>

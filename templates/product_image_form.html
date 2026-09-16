@@ -70,7 +70,7 @@
                     </button>
 
                     {% if product.get('has_image') %}
-                    <button type="submit" name="delete_image" value="1" class="btn btn-outline-danger" onclick="return confirm('Delete this product image?');">
+                    <button type="submit" name="delete_image" value="1" class="btn btn-outline-danger" id="deleteImageBtn">
                         <i class="bi bi-trash"></i>
                         Delete Image
                     </button>
@@ -82,4 +82,19 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const deleteButton = document.getElementById('deleteImageBtn');
+    if (!deleteButton) return;
+
+    deleteButton.addEventListener('click', function (event) {
+        if (!window.confirm('Delete this product image?')) {
+            event.preventDefault();
+        }
+    });
+});
+</script>
 {% endblock %}

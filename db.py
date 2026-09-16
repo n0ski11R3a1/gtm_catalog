@@ -293,6 +293,8 @@ def _row_to_dict(row):
         "Description": row["description"] if "description" in row.keys() else "",
         "Supplier": row["supplier"] if "supplier" in row.keys() else "",
         "has_image": bool(row["has_image"]) if "has_image" in row.keys() else False,
+        "last_price_change": row["last_price_change"] if "last_price_change" in row.keys() else None,
+        "last_price_direction": row["last_price_direction"] if "last_price_direction" in row.keys() else None,
     }
 
 
@@ -448,7 +450,24 @@ def product_count():
 
 def get_all_products():
     conn = get_db_connection()
-    rows = conn.execute("SELECT * FROM products ORDER BY id ASC").fetchall()
+    rows = conn.execute("""
+        SELECT p.*,
+               (SELECT changed_at FROM price_history
+                WHERE product_id = p.product_id
+                ORDER BY changed_at DESC, id DESC LIMIT 1) as last_price_change,
+               (SELECT CASE
+                    WHEN COALESCE(new_retail, 0) > COALESCE(old_retail, 0) THEN 'up'
+                    WHEN COALESCE(new_retail, 0) < COALESCE(old_retail, 0) THEN 'down'
+                    WHEN COALESCE(new_wholesale, 0) > COALESCE(old_wholesale, 0) THEN 'up'
+                    WHEN COALESCE(new_wholesale, 0) < COALESCE(old_wholesale, 0) THEN 'down'
+                    ELSE 'none'
+                END
+                FROM price_history
+                WHERE product_id = p.product_id
+                ORDER BY changed_at DESC, id DESC LIMIT 1) as last_price_direction
+        FROM products p
+        ORDER BY p.id ASC
+    """).fetchall()
     conn.close()
     return [_row_to_dict(r) for r in rows]
 
@@ -464,7 +483,24 @@ def get_categories():
 
 def get_product(product_pk):
     conn = get_db_connection()
-    row = conn.execute("SELECT * FROM products WHERE id = ?", (product_pk,)).fetchone()
+    row = conn.execute("""
+        SELECT p.*,
+               (SELECT changed_at FROM price_history
+                WHERE product_id = p.product_id
+                ORDER BY changed_at DESC, id DESC LIMIT 1) as last_price_change,
+               (SELECT CASE
+                    WHEN COALESCE(new_retail, 0) > COALESCE(old_retail, 0) THEN 'up'
+                    WHEN COALESCE(new_retail, 0) < COALESCE(old_retail, 0) THEN 'down'
+                    WHEN COALESCE(new_wholesale, 0) > COALESCE(old_wholesale, 0) THEN 'up'
+                    WHEN COALESCE(new_wholesale, 0) < COALESCE(old_wholesale, 0) THEN 'down'
+                    ELSE 'none'
+                END
+                FROM price_history
+                WHERE product_id = p.product_id
+                ORDER BY changed_at DESC, id DESC LIMIT 1) as last_price_direction
+        FROM products p
+        WHERE p.id = ?
+    """, (product_pk,)).fetchone()
     conn.close()
     return _row_to_dict(row) if row else None
 
@@ -479,10 +515,24 @@ def get_product_by_business_id(product_id_slug):
         return None
 
     conn = get_db_connection()
-    row = conn.execute(
-        "SELECT * FROM products WHERE REPLACE(product_id, ' ', '') = ? COLLATE NOCASE",
-        (normalized,),
-    ).fetchone()
+    row = conn.execute("""
+        SELECT p.*,
+               (SELECT changed_at FROM price_history
+                WHERE product_id = p.product_id
+                ORDER BY changed_at DESC, id DESC LIMIT 1) as last_price_change,
+               (SELECT CASE
+                    WHEN COALESCE(new_retail, 0) > COALESCE(old_retail, 0) THEN 'up'
+                    WHEN COALESCE(new_retail, 0) < COALESCE(old_retail, 0) THEN 'down'
+                    WHEN COALESCE(new_wholesale, 0) > COALESCE(old_wholesale, 0) THEN 'up'
+                    WHEN COALESCE(new_wholesale, 0) < COALESCE(old_wholesale, 0) THEN 'down'
+                    ELSE 'none'
+                END
+                FROM price_history
+                WHERE product_id = p.product_id
+                ORDER BY changed_at DESC, id DESC LIMIT 1) as last_price_direction
+        FROM products p
+        WHERE REPLACE(p.product_id, ' ', '') = ? COLLATE NOCASE
+    """, (normalized,)).fetchone()
     conn.close()
     return _row_to_dict(row) if row else None
 

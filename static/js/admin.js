@@ -132,6 +132,11 @@ uploadBox.addEventListener("click", () => {
 
 });
 
+const uploadBoxFromMarkup = document.getElementById("uploadBox");
+if (uploadBoxFromMarkup) {
+    uploadBoxFromMarkup.addEventListener("click", () => fileInput.click());
+}
+
 // --------------------------------------
 // Change Event
 // --------------------------------------

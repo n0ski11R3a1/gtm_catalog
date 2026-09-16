@@ -22,7 +22,7 @@
             <input type="text" id="galleryThumbSearch" class="search-box" placeholder="Search item name, ID..." onkeyup="filterGalleryThumbs()">
         </div>
 
-        <button class="filter-toggle-btn" type="button" onclick="toggleGalleryFilters()" aria-expanded="false" aria-controls="galleryFilterPanel" aria-label="Filters">
+        <button class="filter-toggle-btn" type="button" id="galleryFilterToggleBtn" aria-expanded="false" aria-controls="galleryFilterPanel" aria-label="Filters">
             <i class="bi bi-sliders"></i>
         </button>
     </div>
@@ -30,9 +30,9 @@
     <div class="filter-panel" id="galleryFilterPanel">
         <div class="toolbar-row">
             <div class="status-group">
-                <button class="pill instock status-pill" onclick="setGalleryStatus('In Stock', this)">In Stock</button>
-                <button class="pill outofstock status-pill" onclick="setGalleryStatus('Out Of Stock', this)">OOS</button>
-                <button class="pill active status-pill" onclick="setGalleryStatus('ALL', this)">All</button>
+                <button class="pill instock status-pill" data-gallery-status="In Stock">In Stock</button>
+                <button class="pill outofstock status-pill" data-gallery-status="Out Of Stock">OOS</button>
+                <button class="pill active status-pill" data-gallery-status="ALL">All</button>
             </div>
         </div>
     </div>

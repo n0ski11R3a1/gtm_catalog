@@ -2,13 +2,14 @@ import io
 import os
 import zipfile
 from io import BytesIO
+from datetime import datetime, timedelta
 
 import pandas as pd
 import pytest
 from PIL import Image
 
 import db
-from app import build_product_image_filename, prepare_uploaded_product_image, product_photo_slug, validate_excel
+from app import build_product_image_filename, prepare_uploaded_product_image, product_photo_slug, validate_excel, timeago
 
 
 def test_send_to_all_skips_malformed_subscription(monkeypatch):
@@ -280,3 +281,51 @@ def test_bulk_zip_upload_processes_images_for_matching_products():
         ):
             if os.path.exists(path):
                 os.remove(path)
+
+
+def test_get_all_products_includes_last_price_change():
+    products = db.get_all_products()
+    assert len(products) > 0
+    assert "last_price_change" in products[0]
+    assert "last_price_direction" in products[0]
+    changed = [p for p in products if p["last_price_change"] is not None]
+    assert len(changed) > 0
+
+
+def test_get_product_includes_last_price_change():
+    products = db.get_all_products()
+    changed = [p for p in products if p["last_price_change"] is not None]
+    if changed:
+        pid = changed[0]["Product ID"]
+        fetched = db.get_product_by_business_id(pid.replace(" ", ""))
+        assert fetched is not None
+        assert "last_price_change" in fetched
+        assert fetched["last_price_change"] == changed[0]["last_price_change"]
+
+
+def test_timeago_formats_relative_times():
+    now = datetime.now()
+
+    recent = (now - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+    assert "m ago" in timeago(recent)
+
+    today = now.strftime("%Y-%m-%d %H:%M:%S")
+    assert timeago(today) == "just now"
+
+    older = (now - timedelta(days=3)).strftime("%Y-%m-%d %H:%M:%S")
+    assert "d ago" in timeago(older)
+
+    assert timeago("") == ""
+    assert timeago(None) == ""
+    assert timeago("garbage") == ""
+
+
+def test_catalog_page_renders_price_change_markers():
+    from app import app
+    client = app.test_client()
+    response = client.get("/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "price-change-badge" in html
+    assert "data-timestamp" in html
+    assert "data-direction" in html
