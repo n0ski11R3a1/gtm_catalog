@@ -26,7 +26,7 @@
                   <div class="fw-semibold">{{ item.id }}</div>
                   <div class="small text-muted">{{ item.message }}</div>
                   <div class="mt-2 small">
-                    {% for value in item.values %}
+                    {% for value in item["values"] %}
                       <span class="badge bg-light text-dark border me-1 mb-1">{{ value }}</span>
                     {% endfor %}
                   </div>
@@ -63,9 +63,9 @@
                   <li class="list-group-item">
                     <div class="fw-semibold">{{ issue.id }}</div>
                     <div class="small text-muted">{{ issue.message }}</div>
-                    {% if issue.values %}
+                    {% if issue["values"] %}
                       <div class="mt-2 small">
-                        {% for value in issue.values %}
+                        {% for value in issue["values"] %}
                           <span class="badge bg-light text-dark border me-1 mb-1">{{ value }}</span>
                         {% endfor %}
                       </div>

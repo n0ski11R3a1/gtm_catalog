@@ -1,5 +1,12 @@
 Flask
-pandas
-openpyxl
-Werkzeug
 gunicorn
+openpyxl
+pandas
+Pillow
+py-vapid
+pywebpush
+cryptography
+Werkzeug
+
+# Development and testing
+pytest

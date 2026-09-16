@@ -85,7 +85,11 @@
 // v27->v28: included the split catalog modules in the static asset cache.
 // Without this, existing installations could keep stale or missing code
 // for the notification toggle after the frontend refactor.
-const CACHE_NAME = 'gtm-catalog-v28';
+// v28->v29: price-change badges now use clear status text instead of a
+// pulsing dot and an unexplained abbreviated number.
+// v29->v30: moved the price status below the price panel and restored
+// normal sentence casing for the card presentation.
+const CACHE_NAME = 'gtm-catalog-v30';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';

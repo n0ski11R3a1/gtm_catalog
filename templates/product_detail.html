@@ -38,15 +38,6 @@
             <div class="card-top">
                 <span class="sku">
                     {{ p['Product ID'] }}
-                    {% if p['last_price_change'] %}
-                    <span class="price-change-badge"
-                          data-timestamp="{{ p['last_price_change'] }}"
-                          data-direction="{{ p['last_price_direction'] or 'none' }}"
-                          title="Price updated {{ p['last_price_change']|sqlitedatetime }}">
-                        <span class="price-change-dot"></span>
-                        <span class="price-change-text"></span>
-                    </span>
-                    {% endif %}
                 </span>
                 <span class="badge {% if p['Status']|lower == 'out of stock' %}badge-oos{% else %}badge-instock{% endif %}">
                     {{ p['Status'] }}
@@ -57,13 +48,6 @@
 
              <div class="item-title detail-title">{{ p['Product Name'] }}</div>
              <div class="cat-tag">{{ p['Unit'] }} {% if p['UPC'] > 0 %}(Pack: {{ p['UPC'] }}){% endif %}</div>
-
-             {% if p['last_price_change'] %}
-             <div class="detail-price-history-note">
-                 <i class="bi bi-graph-up-arrow"></i>
-                 Price last changed on {{ p['last_price_change']|sqlitedatetime }}
-             </div>
-             {% endif %}
 
              <div class="tag-perf"></div>
 
@@ -87,6 +71,15 @@
                     <span class="wholesale-val">{% if p['Wholesale'] > 0 %}{{ "{:,.0f}".format(p['Wholesale']) }} Ks{% else %}-{% endif %}</span>
                 </div>
             </div>
+
+            {% if p['last_price_change'] %}
+            <span class="price-change-badge"
+                  data-timestamp="{{ p['last_price_change'] }}"
+                  data-direction="{{ p['last_price_direction'] or 'none' }}"
+                  title="Price updated {{ p['last_price_change']|sqlitedatetime }}">
+                <span class="price-change-text"></span>
+            </span>
+            {% endif %}
 
             <button class="copy-btn" type="button">Copy Price</button>
 
