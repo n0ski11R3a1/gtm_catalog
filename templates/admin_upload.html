@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Import Catalog{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="fw-bold mb-1"><i class="bi bi-file-earmark-arrow-up text-primary"></i> Import Catalog</h2>
+        <p class="text-muted mb-0">Upload an Excel file to refresh the product catalog.</p>
+    </div>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-speedometer2"></i> Dashboard
+    </a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="dashboard-card h-100">
+            <div class="card-header-custom">
+                <i class="bi bi-file-earmark-spreadsheet-fill text-primary"></i>
+                <span>Upload Excel</span>
+            </div>
+            <hr>
+
+            <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Excel File</label>
+                    <input type="file" name="excel" accept=".xlsx" class="form-control" required id="excelInput">
+                    <div class="form-text">Select a .xlsx file with the <strong>Product Catalog</strong> sheet.</div>
+                </div>
+
+                <div class="alert alert-light border mb-3 small">
+                    <strong>Required columns (exact names):</strong>
+                    <ul class="mb-0 mt-2 ps-3 columns-2">
+                        <li>Product ID</li>
+                        <li>Product Name</li>
+                        <li>UPC</li>
+                        <li>Unit</li>
+                        <li>Retail</li>
+                        <li>Wholesale</li>
+                        <li>Category</li>
+                        <li>Status</li>
+                        <li>Base Price</li>
+                        <li>B2C</li>
+                        <li>Supplier</li>
+                    </ul>
+                    <div class="mt-2">
+                        <strong>Rules:</strong>
+                        <ul class="mb-0 mt-1 ps-3">
+                            <li>Product IDs must be unique (spaces and case are ignored)</li>
+                            <li>No blank Product IDs allowed</li>
+                            <li>Status must be "In Stock" or "Out Of Stock"</li>
+                            <li>Upload replaces the entire catalog</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-grow-1" id="submitBtn">
+                        <i class="bi bi-upload"></i> Upload & Import
+                    </button>
+                    <a href="{{ url_for('admin_catalog_audit') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-search"></i> Audit First
+                    </a>
+                </div>
+            </form>
+
+            {% if upload_result %}
+            <div class="mt-4">
+                <div class="card-header-custom">
+                    <i class="bi bi-list-check"></i>
+                    <span>Import Result</span>
+                </div>
+                <hr>
+                <div class="d-flex gap-2 flex-wrap mb-3">
+                    <span class="badge bg-success fs-6">{{ upload_result.products_imported }} products imported</span>
+                    {% if upload_result.reused_warnings %}
+                    <span class="badge bg-warning text-dark fs-6">{{ upload_result.reused_warnings|length }} ID reuse warnings</span>
+                    {% endif %}
+                </div>
+
+                {% if upload_result.reused_warnings %}
+                <div class="alert alert-warning small">
+                    <strong>Product ID Reuse Detected:</strong>
+                    <ul class="mb-0 mt-2 ps-3">
+                        {% for warning in upload_result.reused_warnings %}
+                        <li>{{ warning }}</li>
+                        {% endfor %}
+                    </ul>
+                    <div class="mt-2 text-muted small">
+                        These Product IDs were previously assigned to different (now discontinued) products.
+                        Their history (notifications, price changes) will now display under the new products.
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="dashboard-card h-100">
+            <div class="card-header-custom">
+                <i class="bi bi-download text-success"></i>
+                <span>Download Template</span>
+            </div>
+            <hr>
+            <p class="text-muted small mb-3">Download the current catalog as a template, edit it, and re-upload.</p>
+            <a href="{{ url_for('export_prices_excel') }}" class="btn btn-outline-primary w-100 mb-2">
+                <i class="bi bi-download"></i> Download Current Catalog
+            </a>
+            <a href="{{ url_for('export_price_history_excel') }}" class="btn btn-outline-secondary w-100">
+                <i class="bi bi-clock-history"></i> Download Price History
+            </a>
+        </div>
+
+        <div class="dashboard-card h-100 mt-4">
+            <div class="card-header-custom">
+                <i class="bi bi-info-circle text-info"></i>
+                <span>Quick Help</span>
+            </div>
+            <hr>
+            <ul class="list-unstyled small text-muted mb-0">
+                <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Use <strong>Product Catalog</strong> sheet name</li>
+                <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Keep column headers exactly as shown</li>
+                <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Product IDs auto-trim spaces & normalize case</li>
+                <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Use "In Stock" or "Out Of Stock" for Status</li>
+                <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Upload replaces entire catalog (not incremental)</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

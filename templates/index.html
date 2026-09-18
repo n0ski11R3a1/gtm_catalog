@@ -175,6 +175,12 @@
 
 {% include "_glass_tabbar.html" %}
 
+<button type="button" class="mobile-cart-fab" data-order-open="true" aria-label="Open order list">
+    <i class="bi bi-cart3"></i>
+    <span><strong id="mobileCartCount">0 items</strong><small id="mobileCartTotal">0 Ks</small></span>
+    <i class="bi bi-arrow-right"></i>
+</button>
+
 {% include "_order_modal.html" %}
 
 <div class="modal fade" id="statusModal" tabindex="-1" aria-hidden="true">

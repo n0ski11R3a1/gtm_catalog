@@ -2011,6 +2011,18 @@ background and the generic input styling above. */
     .gallery-viewer-nav { display: none; }
 }
 
+/* Phone catalog: fast list lookup and ordering, not squeezed desktop cards. */
+.mobile-cart-fab { display: none; }
+@media (max-width: 767px) {
+    body:has(#catalogGrid) > .container { padding: 14px 14px 150px; }
+    .hero-block { display: none; }
+    .desktop-filter-rail { display: block; position: static; margin: 0 -14px 10px; padding: 0 14px; overflow: hidden; border: 0; background: transparent; box-shadow: none; }.desktop-rail-heading { display: none; }.desktop-filter-rail .category-bar { display: flex; width: max-content; gap: 7px; overflow-x: auto; padding-bottom: 5px; scrollbar-width: none; }.desktop-filter-rail .category-bar::-webkit-scrollbar { display: none; }.desktop-filter-rail .cat-pill { width: auto; min-height: 34px; padding: 7px 11px; border: 1px solid #e1e6f0; border-radius: 999px; background: #fff; font-size: 10px; }
+    .glass-topbar { top: 6px; margin: 0 0 11px; padding: 7px; border-radius: 15px; }.search-wrap { min-height: 40px; }.filter-toggle-btn { width: 40px; height: 40px; }.filter-panel { max-height: none; }
+    body:has(#catalogGrid) .product-grid { grid-template-columns: 1fr !important; gap: 10px; }.product-card { display: grid !important; grid-template-columns: 104px minmax(0,1fr); min-height: 142px; border-radius: 15px; }.product-card .tag-band { display: none !important; }.product-card .tag-body { display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto auto 1fr auto; gap: 0 9px; padding: 12px; }.product-card .card-top { grid-column: 1 / -1; margin: 0 0 5px; }.product-card .item-title { grid-column: 1 / -1; min-height: 0; font-size: 13px; }.product-card .cat-tag { grid-column: 1 / -1; margin: 3px 0 0; font-size: 9px; }.product-card .price-change-badge, .product-card .tag-perf, .product-card .copy-btn { display: none; }.product-card .price-box { grid-column: 1; align-self: end; margin-top: 8px; padding: 5px 7px; }.product-card .price-row { padding: 1px 0; }.product-card .price-label { font-size: 7px; }.product-card .retail-val { font-size: 12px; }.product-card .wholesale-val { display: none; }.product-card .order-row { grid-column: 2; align-self: end; margin: 8px 0 0; }.product-card .qty-stepper { display: none; }.product-card .add-order-btn { min-width: 86px; min-height: 35px; padding: 7px 8px; font-size: 9px; }.product-card .add-order-btn i { display: none; }
+    #glassTabbar .tab-item:nth-child(3) { display: none; }.glass-tabbar { width: min(330px, calc(100% - 28px)); grid-template-columns: repeat(3, 1fr); bottom: 12px; }.glass-tabbar .tab-item { min-width: 0; }.glass-tabbar .tab-label { font-size: 9px; }
+    .mobile-cart-fab { position: fixed; right: 16px; bottom: 73px; z-index: 95; display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 7px 10px; border: 1px solid rgba(255,255,255,.32); border-radius: 15px; color: #fff; background: linear-gradient(135deg, #233c83, #4261dc); box-shadow: 0 13px 25px rgba(34,57,141,.28); }.mobile-cart-fab > i:first-child { font-size: 17px; }.mobile-cart-fab span { display: grid; text-align: left; }.mobile-cart-fab strong { font-size: 10px; }.mobile-cart-fab small { color: #d7e0ff; font-size: 9px; }.mobile-cart-fab > i:last-child { margin-left: 3px; font-size: 12px; }
+}
+
 /* =====================================================
    CATALOG COMMAND CENTER — public shopping experience
 ===================================================== */

@@ -67,6 +67,14 @@ function updateCartBadge() {
     } else {
         badge.style.display = 'none';
     }
+
+    const mobileCount = document.getElementById('mobileCartCount');
+    const mobileTotal = document.getElementById('mobileCartTotal');
+    if (mobileCount && mobileTotal) {
+        const totalRetail = cart.reduce((sum, item) => sum + ((Number(item.retail) || 0) * item.quantity), 0);
+        mobileCount.textContent = totalQty + (totalQty === 1 ? ' item' : ' items');
+        mobileTotal.textContent = formatKs(totalRetail);
+    }
 }
 
 function renderDesktopOrderSummary() {

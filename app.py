@@ -1725,6 +1725,16 @@ def admin_catalog_audit():
 # Upload Excel (bulk import into the database)
 # ------------------------
 
+@app.route("/upload", methods=["GET"])
+def upload_page():
+
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+
+    return render_template("admin_upload.html")
+
+
 @app.route("/upload", methods=["POST"])
 def upload():
 
@@ -1736,7 +1746,7 @@ def upload():
 
         flash("No file selected.", "danger")
 
-        return redirect(url_for("admin"))
+        return render_template("admin_upload.html")
 
     file = request.files["excel"]
 
@@ -1744,13 +1754,15 @@ def upload():
 
         flash("No file selected.", "danger")
 
-        return redirect(url_for("admin"))
+        return render_template("admin_upload.html")
 
     fd, temp_path = tempfile.mkstemp(
         suffix=".xlsx"
     )
 
     os.close(fd)
+
+    upload_result = None
 
     try:
 
@@ -1766,7 +1778,7 @@ def upload():
 
             flash(error, "danger")
 
-            return redirect(url_for("admin"))
+            return render_template("admin_upload.html")
 
         shutil.move(
             temp_path,
@@ -1789,6 +1801,11 @@ def upload():
         for warning in reused_id_warnings:
             flash(warning, "warning")
 
+        upload_result = {
+            "products_imported": row_count,
+            "reused_warnings": reused_id_warnings,
+        }
+
     except Exception as e:
 
         if os.path.exists(temp_path):
@@ -1796,7 +1813,7 @@ def upload():
 
         flash(str(e), "danger")
 
-    return redirect(url_for("admin"))
+    return render_template("admin_upload.html", upload_result=upload_result)
 
 
 @app.template_filter("cleannum")
