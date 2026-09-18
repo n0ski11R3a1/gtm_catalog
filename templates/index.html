@@ -4,15 +4,20 @@
 
 {% block content %}
 
-<div class="hero-block">
-    <span class="eyebrow"><span class="live-dot"></span> Live Price List</span>
-    <h1>Master Product Catalog</h1>
-    <p>Live inventory feed &amp; pricing lookup</p>
-</div>
+<section class="catalog-command-hero">
+    <div class="catalog-brand-lockup">
+        <span class="catalog-orb"><i class="bi bi-box-seam"></i></span>
+        <div><span class="catalog-kicker"><i></i> GTM LIVE CATALOG</span><h1>Find what moves.</h1><p>Live prices, availability, and fast ordering in one place.</p></div>
+    </div>
+    <div class="catalog-hero-actions">
+        <a href="{{ url_for('gallery_home') }}" class="catalog-gallery-link"><i class="bi bi-grid-3x3-gap"></i><span>Browse visually</span><i class="bi bi-arrow-up-right"></i></a>
+        <div class="catalog-live-stat"><strong>{{ items|length }}</strong><span>products<br>in catalog</span></div>
+    </div>
+</section>
 
 <div class="desktop-catalog-layout">
     <aside class="desktop-filter-rail" aria-label="Catalog categories">
-        <div class="desktop-rail-heading">Browse catalog</div>
+        <div class="desktop-rail-heading"><span>Explore</span>Browse catalog</div>
     {% set palette = ['var(--ocean)', 'var(--leaf)', 'var(--aqua)', 'var(--mint)'] %}
     {% set palette_text = ['#fff', '#fff', '#fff', 'var(--ink)'] %}
 
@@ -26,11 +31,11 @@
     </aside>
     <main class="desktop-catalog-main">
 
-<div class="glass-topbar" id="glassTopbar">
+<div class="glass-topbar catalog-search-command" id="glassTopbar">
     <div class="topbar-row">
         <div class="search-wrap">
             <i class="bi bi-search search-icon"></i>
-            <input type="text" id="searchBox" class="search-box" placeholder="Search item name, ID, category..." onkeyup="filterCatalog()">
+            <input type="text" id="searchBox" class="search-box" placeholder="Search products, IDs, categories..." onkeyup="filterCatalog()">
         </div>
 
         <button class="filter-toggle-btn bell-btn" type="button" id="statusPanelBtn" aria-label="Updates and status">
@@ -65,7 +70,8 @@
     </div>
 </div>
 
-<div class="catalog-container">
+    <div class="catalog-results-bar"><div><span class="catalog-results-label">Catalog inventory</span><strong>Shop products</strong></div><span class="catalog-results-note"><i class="bi bi-lightning-charge-fill"></i> Prices update live</span></div>
+    <div class="catalog-container">
 
     <div class="product-grid" id="catalogGrid">
         {% for p in items %}
