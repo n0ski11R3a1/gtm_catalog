@@ -59,9 +59,20 @@
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Product ID</label>
                         {% if mode == 'add' %}
-                        <input type="text" class="form-control" value="{{ next_product_id }}" readonly>
-                        <input type="hidden" name="product_id" value="{{ next_product_id }}">
-                        <div class="form-text">Auto-generated, follows the gtm-#### pattern.</div>
+                        <div class="mb-2">
+                            <select name="reuse_product_id" class="form-select" id="reuseProductIdSelect">
+                                <option value="">-- Generate new ID ({{ next_product_id }}) --</option>
+                                {% for aid in available_ids %}
+                                <option value="{{ aid.product_id }}">{{ aid.product_id }} — {{ aid.product_name }} (was Out Of Stock)</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Select a discontinued product's ID to reuse it, or leave blank to generate a new ID.</div>
+                        </div>
+                        <div id="newIdDisplay">
+                            <input type="text" class="form-control" value="{{ next_product_id }}" readonly>
+                            <input type="hidden" name="product_id" value="{{ next_product_id }}">
+                            <div class="form-text">Auto-generated, follows the gtm-#### pattern.</div>
+                        </div>
                         {% else %}
                         <input type="text" name="product_id" class="form-control"
                                value="{{ values.get('Product ID') if values.get('Product ID') is not none else values.get('product_id', '') }}">
@@ -340,6 +351,36 @@
                 }
             }
         });
+    })();
+</script>
+
+<script>
+    // Toggle between "reuse existing ID" and "generate new ID" in Add Product mode
+    (function () {
+        const select = document.getElementById('reuseProductIdSelect');
+        const newIdDisplay = document.getElementById('newIdDisplay');
+        const productIdHidden = document.querySelector('input[name="product_id"]');
+
+        if (!select || !newIdDisplay) return;
+
+        function updateDisplay() {
+            if (select.value) {
+                // User selected a reusable ID - use that
+                newIdDisplay.style.display = 'none';
+                if (productIdHidden) {
+                    productIdHidden.value = select.value;
+                }
+            } else {
+                // User wants a new auto-generated ID
+                newIdDisplay.style.display = '';
+                if (productIdHidden) {
+                    // The hidden input already has the next_product_id value
+                }
+            }
+        }
+
+        select.addEventListener('change', updateDisplay);
+        updateDisplay(); // Initial state
     })();
 </script>
 
