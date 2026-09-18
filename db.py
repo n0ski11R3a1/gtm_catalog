@@ -50,7 +50,8 @@ def init_db():
             retail REAL DEFAULT 0,
             wholesale REAL DEFAULT 0,
             category TEXT DEFAULT 'General',
-            status TEXT DEFAULT 'In Stock'
+            status TEXT DEFAULT 'In Stock',
+            generation INTEGER DEFAULT 1
         )
     """)
 
@@ -58,10 +59,12 @@ def init_db():
     # the business key ("GTM - 0001"), NOT the products.id autoincrement pk -
     # that way history survives even if a product is deleted and re-added
     # under the same catalog ID.
+    # generation distinguishes different products that reused the same Product ID.
     conn.execute("""
         CREATE TABLE IF NOT EXISTS price_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_id TEXT NOT NULL,
+            generation INTEGER NOT NULL DEFAULT 1,
             product_name TEXT DEFAULT '',
             old_retail REAL,
             new_retail REAL,
@@ -72,24 +75,46 @@ def init_db():
         )
     """)
 
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_price_history_product_id
-        ON price_history(product_id)
-    """)
-
     # Activity feed for the notification bell: new products added + price
     # changes, in one unified stream so the UI only has to query one
-    # table. product_id is the business key (like price_history), not the
-    # products.id pk, for the same "survives delete/re-add" reasoning.
+    # table. product_id + generation is the composite key.
     conn.execute("""
         CREATE TABLE IF NOT EXISTS activity_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_type TEXT NOT NULL,
             product_id TEXT NOT NULL,
+            generation INTEGER NOT NULL DEFAULT 1,
             product_name TEXT DEFAULT '',
             details TEXT DEFAULT '',
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
+    """)
+
+    # MIGRATION: generation column for products - distinguishes different
+    # products that reused the same Product ID. Default 1 for existing rows.
+    product_columns = [row["name"] for row in conn.execute("PRAGMA table_info(products)").fetchall()]
+    if "generation" not in product_columns:
+        conn.execute("ALTER TABLE products ADD COLUMN generation INTEGER DEFAULT 1")
+
+    # MIGRATION: generation column for price_history - matches products.generation
+    ph_columns = [row["name"] for row in conn.execute("PRAGMA table_info(price_history)").fetchall()]
+    if "generation" not in ph_columns:
+        conn.execute("ALTER TABLE price_history ADD COLUMN generation INTEGER DEFAULT 1")
+
+    # MIGRATION: generation column for activity_log - matches products.generation
+    al_columns = [row["name"] for row in conn.execute("PRAGMA table_info(activity_log)").fetchall()]
+    if "generation" not in al_columns:
+        conn.execute("ALTER TABLE activity_log ADD COLUMN generation INTEGER DEFAULT 1")
+
+    # Now create indexes after migrations ensure columns exist
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_price_history_product_id_gen
+        ON price_history(product_id, generation)
+    """)
+
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_activity_log_product_id_gen
+        ON activity_log(product_id, generation)
     """)
 
     conn.execute("""
@@ -298,17 +323,17 @@ def _row_to_dict(row):
     }
 
 
-def _log_activity(conn, event_type, product_id, product_name, details):
+def _log_activity(conn, event_type, product_id, product_name, details, generation=1):
     """Insert an activity_log row - the single source the notification
     bell reads from. Caller is responsible for commit/close (shares a
     transaction with whatever write triggered it)."""
 
     conn.execute(
         """
-        INSERT INTO activity_log (event_type, product_id, product_name, details)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO activity_log (event_type, product_id, generation, product_name, details)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (event_type, product_id, product_name, details),
+        (event_type, product_id, generation, product_name, details),
     )
 
 
@@ -329,7 +354,7 @@ def _format_price_change_details(old_retail, new_retail, old_wholesale, new_whol
 
 
 def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
-                       old_wholesale, new_wholesale, source,
+                       old_wholesale, new_wholesale, source, generation=1,
                        old_base_price=None, new_base_price=None,
                        old_b2c=None, new_b2c=None):
     """Insert a price_history row only when a real price change occurred.
@@ -347,12 +372,13 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
     conn.execute(
         """
         INSERT INTO price_history
-            (product_id, product_name, old_retail, new_retail,
+            (product_id, generation, product_name, old_retail, new_retail,
              old_wholesale, new_wholesale, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             product_id,
+            generation,
             product_name,
             old_retail,
             new_retail,
@@ -367,6 +393,7 @@ def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
             conn,
             event_type="price_changed",
             product_id=product_id,
+            generation=generation,
             product_name=product_name,
             details=_format_price_change_details(old_retail, new_retail, old_wholesale, new_wholesale),
         )
@@ -408,7 +435,7 @@ def get_all_push_subscriptions():
     return [dict(r) for r in rows]
 
 
-def _log_status_change(conn, product_id, product_name, old_status, new_status):
+def _log_status_change(conn, product_id, product_name, old_status, new_status, generation=1):
     """Logs an activity_log entry when a product's Status actually changes
     (e.g. 'In Stock' -> 'Out Of Stock'). Same "only if it actually
     changed" guard as _log_price_change, and shares its transaction with
@@ -432,6 +459,7 @@ def _log_status_change(conn, product_id, product_name, old_status, new_status):
         conn,
         event_type=event_type,
         product_id=product_id,
+        generation=generation,
         product_name=product_name,
         details=f"{old_status or 'Unknown'} \u2192 {new_status}",
     )
@@ -539,16 +567,25 @@ def get_product_by_business_id(product_id_slug):
 
 def get_price_history(product_id, limit=100):
     """All logged price changes for a given catalog Product ID (business
-    key, e.g. 'GTM - 0001'), most recent first."""
+    key, e.g. 'GTM - 0001'), most recent first. Filters by current generation
+    to avoid showing history from previous products that reused the same ID."""
     conn = get_db_connection()
+
+    # Get current generation for this product_id
+    gen_row = conn.execute(
+        "SELECT generation FROM products WHERE product_id = ?",
+        (product_id,)
+    ).fetchone()
+    generation = gen_row["generation"] if gen_row and "generation" in gen_row.keys() else 1
+
     rows = conn.execute(
         """
         SELECT * FROM price_history
-        WHERE product_id = ?
+        WHERE product_id = ? AND generation = ?
         ORDER BY changed_at DESC, id DESC
         LIMIT ?
         """,
-        (product_id, limit),
+        (product_id, generation, limit),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -556,12 +593,13 @@ def get_price_history(product_id, limit=100):
 
 def get_recent_price_changes(limit=50):
     """Most recent price changes across all products - handy for an admin
-    'recent activity' feed."""
+    'recent activity' feed. Shows only current generation history."""
     conn = get_db_connection()
     rows = conn.execute(
         """
-        SELECT * FROM price_history
-        ORDER BY changed_at DESC, id DESC
+        SELECT ph.* FROM price_history ph
+        JOIN products p ON ph.product_id = p.product_id AND ph.generation = p.generation
+        ORDER BY ph.changed_at DESC, ph.id DESC
         LIMIT ?
         """,
         (limit,),
@@ -578,15 +616,19 @@ def get_recent_activity(limit=30, before_id=None):
     page-number OFFSET) so that a new activity_log row inserted between
     two "See more" clicks can't shift already-seen rows into view again
     or skip one - each page just asks for "everything older than the
-    last id I already have"."""
+    last id I already have".
+
+    Only shows activity for current generation of each product (filters out
+    history from previous products that reused the same Product ID)."""
     conn = get_db_connection()
 
     if before_id:
         rows = conn.execute(
             """
-            SELECT * FROM activity_log
-            WHERE id < ?
-            ORDER BY id DESC
+            SELECT al.* FROM activity_log al
+            JOIN products p ON al.product_id = p.product_id AND al.generation = p.generation
+            WHERE al.id < ?
+            ORDER BY al.id DESC
             LIMIT ?
             """,
             (before_id, limit),
@@ -594,8 +636,9 @@ def get_recent_activity(limit=30, before_id=None):
     else:
         rows = conn.execute(
             """
-            SELECT * FROM activity_log
-            ORDER BY id DESC
+            SELECT al.* FROM activity_log al
+            JOIN products p ON al.product_id = p.product_id AND al.generation = p.generation
+            ORDER BY al.id DESC
             LIMIT ?
             """,
             (limit,),
@@ -620,13 +663,16 @@ def get_latest_activity_id():
 def get_activity_after(after_id, limit=500):
     """Everything logged after a given id, oldest first - pairs with
     get_latest_activity_id() to tell app.py exactly what a write just
-    produced, so it can decide what to push."""
+    produced, so it can decide what to push.
+
+    Only shows activity for current generation of each product."""
     conn = get_db_connection()
     rows = conn.execute(
         """
-        SELECT * FROM activity_log
-        WHERE id > ?
-        ORDER BY id ASC
+        SELECT al.* FROM activity_log al
+        JOIN products p ON al.product_id = p.product_id AND al.generation = p.generation
+        WHERE al.id > ?
+        ORDER BY al.id ASC
         LIMIT ?
         """,
         (after_id, limit),
@@ -843,6 +889,116 @@ def get_next_product_id(conn=None):
         conn.close()
 
     return f"GTM - {str(next_num).zfill(4)}"
+
+
+def get_available_product_ids():
+    """Return Product IDs of Out Of Stock products that can be reused.
+
+    These are products with status 'Out Of Stock' that still exist in the
+    products table. Reusing their Product ID for a new product avoids
+    incrementing the ID counter and keeps history attached to the same
+    business key.
+    """
+    conn = get_db_connection()
+    rows = conn.execute(
+        """
+        SELECT product_id, product_name, id
+        FROM products
+        WHERE status = 'Out Of Stock' AND TRIM(product_id) != ''
+        ORDER BY product_id
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def reuse_product_id(product_id, data):
+    """Update an existing Out Of Stock product with new data, reusing its Product ID.
+
+    This is used when adding a "new" product that replaces a discontinued one.
+    Instead of creating a new Product ID (which increments the counter),
+    we update the existing Out Of Stock product's fields, increment the generation,
+    and log a 'product_replaced' activity event with the NEW generation.
+
+    Args:
+        product_id: The business Product ID to reuse (e.g., 'GTM - 0001')
+        data: Dict with new product data (product_name, retail, wholesale, etc.)
+
+    Returns:
+        The internal products.id (pk) of the updated product
+    """
+    conn = get_db_connection()
+
+    existing = conn.execute(
+        "SELECT * FROM products WHERE product_id = ?", (product_id,)
+    ).fetchone()
+
+    if existing is None:
+        conn.close()
+        raise ValueError(f"Product ID {product_id} not found")
+
+    if existing["status"] != "Out Of Stock":
+        conn.close()
+        raise ValueError(f"Product ID {product_id} is not Out Of Stock (cannot reuse)")
+
+    old_name = existing["product_name"]
+    old_gen = existing["generation"] if "generation" in existing.keys() else 1
+    new_gen = old_gen + 1
+
+    # Delete old image files since this is a new product reusing the ID
+    # Import here to avoid circular imports
+    try:
+        from services import delete_product_image_files
+        delete_product_image_files(product_id)
+    except Exception:
+        pass  # Ignore if services not available or no files to delete
+
+    conn.execute(
+        """
+        UPDATE products SET
+            product_name = ?,
+            upc = ?,
+            unit = ?,
+            retail = ?,
+            wholesale = ?,
+            category = ?,
+            status = ?,
+            description = ?,
+            supplier = ?,
+            has_image = ?,
+            generation = ?
+        WHERE product_id = ?
+        """,
+        (
+            data.get("product_name", ""),
+            data.get("upc", 0),
+            data.get("unit", "-"),
+            data.get("retail", 0),
+            data.get("wholesale", 0),
+            data.get("category", "General"),
+            data.get("status", "In Stock"),
+            data.get("description", ""),
+            data.get("supplier", ""),
+            1 if data.get("has_image") else 0,
+            new_gen,
+            product_id,
+        ),
+    )
+
+    _log_activity(
+        conn,
+        event_type="product_replaced",
+        product_id=product_id,
+        generation=new_gen,
+        product_name=data.get("product_name", ""),
+        details=f"Replaced \"{old_name}\" with \"{data.get('product_name', '')}\"",
+    )
+
+    conn.commit()
+
+    product_pk = existing["id"]
+    conn.close()
+    return product_pk
 
 
 # ------------------------
@@ -1171,8 +1327,8 @@ def add_product(data):
     conn.execute(
         """
         INSERT INTO products
-            (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier, has_image)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier, has_image, generation)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             data.get("product_id", ""),
@@ -1186,6 +1342,7 @@ def add_product(data):
             data.get("description", ""),
             data.get("supplier", ""),
             1 if data.get("has_image") else 0,
+            1,  # generation = 1 for new products
         ),
     )
 
@@ -1201,6 +1358,7 @@ def add_product(data):
         conn,
         event_type="product_added",
         product_id=data.get("product_id", ""),
+        generation=1,
         product_name=data.get("product_name", ""),
         details="New product added",
     )
@@ -1254,6 +1412,7 @@ def update_product(product_pk, data):
     )
 
     if existing is not None:
+        gen = existing["generation"] if "generation" in existing.keys() else 1
         _log_price_change(
             conn,
             product_id=data.get("product_id", "") or existing["product_id"],
@@ -1263,6 +1422,7 @@ def update_product(product_pk, data):
             old_wholesale=existing["wholesale"],
             new_wholesale=data.get("wholesale", 0),
             source="manual",
+            generation=gen,
         )
 
         _log_status_change(
@@ -1271,6 +1431,7 @@ def update_product(product_pk, data):
             product_name=data.get("product_name", "") or existing["product_name"],
             old_status=existing["status"],
             new_status=data.get("status", "In Stock"),
+            generation=gen,
         )
 
     conn.commit()
@@ -1477,6 +1638,7 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
             ).fetchone()
 
         if existing is not None:
+            gen = existing["generation"] if "generation" in existing.keys() else 1
             _log_price_change(
                 conn,
                 product_id=product_id,
@@ -1486,6 +1648,7 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                 old_wholesale=existing["wholesale"],
                 new_wholesale=wholesale,
                 source=source,
+                generation=gen,
             )
 
             if log_activity:
@@ -1495,6 +1658,7 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                     product_name=product_name,
                     old_status=existing["status"],
                     new_status=status,
+                    generation=gen,
                 )
 
             # Optional columns (Description, Supplier): if this sheet
@@ -1547,10 +1711,10 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
             conn.execute(
                 """
                 INSERT INTO products
-                    (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier, generation)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier),
+                (product_id, product_name, upc, unit, retail, wholesale, category, status, description, supplier, 1),
             )
 
             if log_activity:
@@ -1558,6 +1722,7 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
                     conn,
                     event_type="product_added",
                     product_id=product_id,
+                    generation=1,
                     product_name=product_name,
                     details="New product added via catalog upload",
                 )
@@ -1573,7 +1738,7 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
         # statement with no per-row hook to log from otherwise.
         about_to_go_oos = conn.execute(
             f"""
-            SELECT product_id, product_name, status FROM products
+            SELECT product_id, product_name, status, generation FROM products
             WHERE product_id NOT IN ({placeholders})
               AND status != 'Out Of Stock'
             """,
@@ -1592,12 +1757,14 @@ def import_excel_into_db(path, replace=True, source="excel_upload", log_activity
 
         if log_activity:
             for row in about_to_go_oos:
+                gen = row["generation"] if "generation" in row.keys() else 1
                 _log_status_change(
                     conn,
                     product_id=row["product_id"],
                     product_name=row["product_name"],
                     old_status=row["status"],
                     new_status="Out Of Stock",
+                    generation=gen,
                 )
 
     conn.commit()

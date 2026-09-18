@@ -1001,6 +1001,7 @@ def admin_product_add():
         return redirect_response
 
     categories = db.get_categories()
+    available_ids = db.get_available_product_ids()
 
     if request.method == "POST":
 
@@ -1017,35 +1018,77 @@ def admin_product_add():
                 mode="add",
                 form_data=data,
                 next_product_id=db.peek_next_product_id(),
+                available_ids=available_ids,
                 categories=categories
             )
 
-        next_id = db.get_next_product_id()
-        data["product_id"] = next_id
+        reuse_id = request.form.get("reuse_product_id", "").strip()
 
-        uploaded_image = request.files.get("product_image")
-        if uploaded_image and uploaded_image.filename:
+        if reuse_id:
+            # Reusing an existing Out Of Stock product's ID
             try:
-                _, expected_filename = prepare_uploaded_product_image(uploaded_image, next_id)
-                save_product_image(uploaded_image, next_id)
-                data["has_image"] = True
-                flash(f"Image saved as {expected_filename}.", "success")
-            except Exception as exc:
-                flash(f"Image upload failed: {exc}", "danger")
+                before_id = db.get_latest_activity_id()
+                product_pk = db.reuse_product_id(reuse_id, data)
+                notify_activity_since(before_id)
+
+                # Handle image upload for reused product
+                uploaded_image = request.files.get("product_image")
+                if uploaded_image and uploaded_image.filename:
+                    try:
+                        expected_filename = save_product_image(uploaded_image, reuse_id)
+                        # Update has_image flag
+                        conn = db.get_db_connection()
+                        conn.execute(
+                            "UPDATE products SET has_image = 1 WHERE product_id = ?",
+                            (reuse_id,)
+                        )
+                        conn.commit()
+                        conn.close()
+                        flash(f"Image saved as {expected_filename}.", "success")
+                    except Exception as exc:
+                        flash(f"Image upload failed: {exc}", "danger")
+
+                flash(f"Replaced product with \"{data['product_name']}\" using {reuse_id}.", "success")
+            except ValueError as e:
+                flash(str(e), "danger")
                 return render_template(
                     "product_form.html",
                     product=None,
                     mode="add",
                     form_data=data,
-                    next_product_id=next_id,
+                    next_product_id=db.peek_next_product_id(),
+                    available_ids=available_ids,
                     categories=categories
                 )
+        else:
+            # Normal new product - generate new ID
+            next_id = db.get_next_product_id()
+            data["product_id"] = next_id
 
-        before_id = db.get_latest_activity_id()
-        db.add_product(data)
-        notify_activity_since(before_id)
+            uploaded_image = request.files.get("product_image")
+            if uploaded_image and uploaded_image.filename:
+                try:
+                    _, expected_filename = prepare_uploaded_product_image(uploaded_image, next_id)
+                    save_product_image(uploaded_image, next_id)
+                    data["has_image"] = True
+                    flash(f"Image saved as {expected_filename}.", "success")
+                except Exception as exc:
+                    flash(f"Image upload failed: {exc}", "danger")
+                    return render_template(
+                        "product_form.html",
+                        product=None,
+                        mode="add",
+                        form_data=data,
+                        next_product_id=next_id,
+                        available_ids=available_ids,
+                        categories=categories
+                    )
 
-        flash(f"Added \"{data['product_name']}\" as {next_id}.", "success")
+            before_id = db.get_latest_activity_id()
+            db.add_product(data)
+            notify_activity_since(before_id)
+
+            flash(f"Added \"{data['product_name']}\" as {next_id}.", "success")
 
         return redirect(url_for("admin_products"))
 
@@ -1062,6 +1105,7 @@ def admin_product_add():
         mode="add",
         form_data=None,
         next_product_id=next_id,
+        available_ids=available_ids,
         categories=categories
     )
 
