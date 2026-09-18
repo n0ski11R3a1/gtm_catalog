@@ -823,6 +823,9 @@ def admin():
         return redirect_response
 
     stats = db.get_stats()
+    today = datetime.now().date().isoformat()
+    today_orders = db.get_order_summary(today)
+    recent_orders = db.get_all_orders()[:5]
 
     last_updated = None
 
@@ -832,6 +835,9 @@ def admin():
     return render_template(
         "admin.html",
         stats=stats,
+        today=today,
+        today_orders=today_orders,
+        recent_orders=recent_orders,
         last_updated=last_updated,
         filename=os.path.basename(EXCEL_FILE)
     )
