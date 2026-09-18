@@ -1571,6 +1571,133 @@ background and the generic input styling above. */
 }
 
 /* =====================================================
+   ACTIVITY SUMMARY (grouped by event type)
+   ===================================================== */
+
+.activity-tabs {
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+}
+
+.activity-tabs .nav-link {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border: none;
+    background: transparent;
+    transition: color .15s, background .15s;
+}
+
+.activity-tabs .nav-link:hover {
+    color: var(--ink);
+    background: rgba(0, 0, 0, .03);
+}
+
+.activity-tabs .nav-link.active {
+    color: var(--ocean);
+    background: transparent;
+    border-bottom: 2px solid var(--ocean);
+}
+
+.activity-tabs .nav-link i {
+    margin-right: 6px;
+    font-size: 14px;
+}
+
+.activity-summary-group {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.activity-summary-header {
+    background: var(--surface);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+}
+
+.activity-summary-header:hover {
+    background: rgba(37, 99, 235, .05);
+}
+
+.activity-summary-icon {
+    flex-shrink: 0;
+}
+
+.activity-summary-name {
+    font-size: 13.5px;
+    color: var(--ink);
+}
+
+.activity-summary-count {
+    font-size: 11px;
+    padding: 3px 8px;
+}
+
+.activity-summary-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .25s ease;
+}
+
+.activity-summary-body:not([style*="display: none"]) {
+    max-height: 500px;
+}
+
+.activity-summary-list {
+    padding: 0;
+}
+
+.activity-summary-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+}
+
+.activity-summary-item:last-child {
+    border-bottom: none;
+}
+
+.activity-summary-item:hover {
+    background: rgba(37, 99, 235, .05);
+}
+
+.activity-summary-text {
+    min-width: 0;
+}
+
+.activity-summary-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 1px;
+}
+
+.activity-summary-meta {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.activity-summary-time {
+    font-size: 10.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* =====================================================
    GALLERY MODE (List/Gallery toggle, browsing-only)
    ===================================================== */
 

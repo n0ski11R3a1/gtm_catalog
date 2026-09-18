@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 
 from PIL import Image
@@ -615,6 +615,99 @@ def _sanitize_price_history_for_public_api(rows):
     ]
 
 
+def _format_activity_event(event):
+    """Format an activity event with human-readable title and message.
+    
+    Transforms raw activity_log entries into user-friendly notifications
+    with clear titles and descriptive messages.
+    """
+    if not event:
+        return event
+    
+    event_type = event.get("event_type")
+    product_name = event.get("product_name") or "Unknown Product"
+    product_id = event.get("product_id", "")
+    details = event.get("details", "")
+    created_at = event.get("created_at", "")
+    generation = event.get("generation", 1)
+    
+    # Generate human-readable title and message based on event type
+    if event_type == "product_added":
+        # Check if it was from excel upload
+        if "excel" in details.lower() or "catalog upload" in details.lower():
+            title = f"New product added: {product_name}"
+            message = "Added via catalog upload"
+        else:
+            title = f"New product added: {product_name}"
+            message = "Added manually"
+    
+    elif event_type == "product_replaced":
+        # Extract old product name from details if available
+        old_name = "previous product"
+        if "Replaced" in details and "with" in details:
+            try:
+                old_name = details.split('Replaced "')[1].split('" with')[0]
+            except:
+                pass
+        title = f"Product replaced: {product_name}"
+        message = f"Replaced \"{old_name}\""
+    
+    elif event_type == "price_changed":
+        # Use the existing details which already has formatted price changes
+        title = f"Price updated: {product_name}"
+        message = details or "Price changed"
+    
+    elif event_type == "out_of_stock":
+        title = f"Out of stock: {product_name}"
+        message = "Marked as Out of Stock"
+    
+    elif event_type == "back_in_stock":
+        title = f"Back in stock: {product_name}"
+        message = "Now available (In Stock)"
+    
+    else:
+        title = f"Catalog update: {product_name}"
+        message = details or "Updated"
+    
+    # Return enhanced event with formatted fields
+    return {
+        **event,
+        "formatted_title": title,
+        "formatted_message": message,
+        "display_time": _format_relative_time(created_at),
+        "product_link": f"/product/{product_id.replace(' ', '')}" if product_id else None,
+    }
+
+
+def _format_relative_time(sqlite_string):
+    """Format SQLite timestamp as relative time (e.g., '2h ago', '3d ago')."""
+    if not sqlite_string:
+        return "Unknown time"
+    
+    try:
+        # SQLite timestamps are in UTC but without timezone marker
+        iso = sqlite_string.replace(" ", "T") + "Z"
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        
+        if diff.total_seconds() < 60:
+            return "just now"
+        elif diff.total_seconds() < 3600:
+            mins = int(diff.total_seconds() / 60)
+            return f"{mins}m ago"
+        elif diff.total_seconds() < 86400:
+            hours = int(diff.total_seconds() / 3600)
+            return f"{hours}h ago"
+        elif diff.total_seconds() < 604800:
+            days = int(diff.total_seconds() / 86400)
+            return f"{days}d ago"
+        else:
+            return dt.strftime("%b %d, %Y")
+    except Exception:
+        return sqlite_string
+
+
 @app.route("/api/price-history")
 def api_price_history():
 
@@ -654,6 +747,9 @@ def api_activity():
 
     events = db.get_recent_activity(limit=limit, before_id=before_id)
 
+    # Format events with human-readable titles and messages
+    formatted_events = [_format_activity_event(e) for e in events]
+
     # latest_id reflects the true current max regardless of pagination -
     # a "See more" request (before_id set) still needs the real latest_id
     # so the client's unread check stays correct, not the id of the
@@ -662,7 +758,64 @@ def api_activity():
 
     return jsonify({
         "latest_id": latest_id,
-        "events": events,
+        "events": formatted_events,
+        "has_more": len(events) == limit,
+    })
+
+
+@app.route("/api/activity/summary")
+def api_activity_summary():
+    """Grouped activity summary for the Changes Summary page.
+    
+    Returns activities grouped by event_type with counts, for a quick
+    overview of what changed without scrolling through individual items.
+    """
+    limit = request.args.get("limit", default=100, type=int)
+    limit = max(1, min(limit, 500))
+    before_id = request.args.get("before_id", type=int)
+
+    events = db.get_recent_activity(limit=limit, before_id=before_id)
+    
+    # Group by event_type
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for event in events:
+        event_type = event.get("event_type", "unknown")
+        formatted = _format_activity_event(event)
+        groups[event_type].append(formatted)
+    
+    # Build summary with counts and sample items per group
+    summary = []
+    for event_type, items in groups.items():
+        # Sort by time descending within each group
+        items.sort(key=lambda x: x.get("id", 0), reverse=True)
+        
+        # Get human-readable group name
+        group_names = {
+            "product_added": "New Products",
+            "product_replaced": "Products Replaced",
+            "price_changed": "Price Changes",
+            "out_of_stock": "Out of Stock",
+            "back_in_stock": "Back in Stock",
+        }
+        group_name = group_names.get(event_type, event_type.replace("_", " ").title())
+        
+        summary.append({
+            "event_type": event_type,
+            "group_name": group_name,
+            "count": len(items),
+            "items": items[:5],  # Show first 5 items in each group
+        })
+    
+    # Sort groups by most recent activity
+    summary.sort(key=lambda g: g["items"][0].get("id", 0) if g["items"] else 0, reverse=True)
+    
+    latest_id = db.get_latest_activity_id()
+    
+    return jsonify({
+        "latest_id": latest_id,
+        "groups": summary,
+        "total_count": len(events),
         "has_more": len(events) == limit,
     })
 

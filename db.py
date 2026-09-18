@@ -106,6 +106,10 @@ def init_db():
     if "generation" not in al_columns:
         conn.execute("ALTER TABLE activity_log ADD COLUMN generation INTEGER DEFAULT 1")
 
+    # MIGRATION: source column for activity_log - tracks where the event originated
+    if "source" not in al_columns:
+        conn.execute("ALTER TABLE activity_log ADD COLUMN source TEXT DEFAULT 'manual'")
+
     # Now create indexes after migrations ensure columns exist
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_price_history_product_id_gen
@@ -323,17 +327,17 @@ def _row_to_dict(row):
     }
 
 
-def _log_activity(conn, event_type, product_id, product_name, details, generation=1):
+def _log_activity(conn, event_type, product_id, product_name, details, generation=1, source="manual"):
     """Insert an activity_log row - the single source the notification
     bell reads from. Caller is responsible for commit/close (shares a
     transaction with whatever write triggered it)."""
 
     conn.execute(
         """
-        INSERT INTO activity_log (event_type, product_id, generation, product_name, details)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO activity_log (event_type, product_id, generation, product_name, details, source)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (event_type, product_id, generation, product_name, details),
+        (event_type, product_id, generation, product_name, details, source),
     )
 
 
@@ -351,6 +355,65 @@ def _format_price_change_details(old_retail, new_retail, old_wholesale, new_whol
     if old_wholesale != new_wholesale:
         parts.append(f"Wholesale: {old_wholesale:,.0f} \u2192 {new_wholesale:,.0f} Ks")
     return " \u2022 ".join(parts)
+
+
+def _format_activity_message(event_type, product_name, **kwargs):
+    """Format human-readable activity messages for the notification bell.
+    
+    Returns a dict with 'title' and 'message' for consistent formatting.
+    """
+    name = product_name or "a product"
+    
+    if event_type == "product_added":
+        source = kwargs.get("source", "manual")
+        if source == "excel_upload":
+            return {
+                "title": f"Added: {name}",
+                "message": "Added via catalog upload"
+            }
+        return {
+            "title": f"Added: {name}",
+            "message": "New product added"
+        }
+    
+    elif event_type == "product_replaced":
+        old_name = kwargs.get("old_name", "previous product")
+        return {
+            "title": f"Replaced: {name}",
+            "message": f"Replaced \"{old_name}\""
+        }
+    
+    elif event_type == "price_changed":
+        retail_change = kwargs.get("retail_change")
+        wholesale_change = kwargs.get("wholesale_change")
+        parts = []
+        if retail_change:
+            direction = "increased" if retail_change > 0 else "decreased"
+            parts.append(f"Retail {direction} to {kwargs.get('new_retail', 0):,.0f} Ks")
+        if wholesale_change:
+            direction = "increased" if wholesale_change > 0 else "decreased"
+            parts.append(f"Wholesale {direction} to {kwargs.get('new_wholesale', 0):,.0f} Ks")
+        return {
+            "title": f"Price updated: {name}",
+            "message": " \u2022 ".join(parts) if parts else "Price updated"
+        }
+    
+    elif event_type == "out_of_stock":
+        return {
+            "title": f"Out of stock: {name}",
+            "message": "Marked as Out of Stock"
+        }
+    
+    elif event_type == "back_in_stock":
+        return {
+            "title": f"Back in stock: {name}",
+            "message": "Now available (In Stock)"
+        }
+    
+    return {
+        "title": f"Update: {name}",
+        "message": "Catalog updated"
+    }
 
 
 def _log_price_change(conn, product_id, product_name, old_retail, new_retail,
@@ -1361,6 +1424,7 @@ def add_product(data):
         generation=1,
         product_name=data.get("product_name", ""),
         details="New product added",
+        source="manual",
     )
 
     conn.commit()

@@ -202,15 +202,45 @@
 
                 <hr>
 
-                <h6 class="activity-heading">Recent Activity</h6>
+                <!-- Activity Tabs -->
+                <ul class="nav nav-tabs activity-tabs" id="activityTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="tab-summary" data-bs-toggle="tab" data-bs-target="#panel-summary" type="button" role="tab" aria-controls="panel-summary" aria-selected="true">
+                            <i class="bi bi-graph-up"></i> Summary
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tab-details" data-bs-toggle="tab" data-bs-target="#panel-details" type="button" role="tab" aria-controls="panel-details" aria-selected="false">
+                            <i class="bi bi-list-ul"></i> Details
+                        </button>
+                    </li>
+                </ul>
 
-                <div id="activityList"></div>
-                <div id="activityEmpty" class="text-muted text-center py-4" style="display:none;">
-                    No recent activity yet.
+                <div class="tab-content" id="activityTabContent">
+                    <!-- Summary Panel -->
+                    <div class="tab-pane fade show active" id="panel-summary" role="tabpanel" aria-labelledby="tab-summary">
+                        <div id="activitySummary" class="activity-summary mt-3"></div>
+                        <div id="activitySummaryEmpty" class="text-muted text-center py-4" style="display:none;">
+                            No recent changes.
+                        </div>
+                        <button type="button" id="summarySeeMoreBtn" class="btn-hard-refresh" style="display:none;">
+                            Load More
+                        </button>
+                    </div>
+
+                    <!-- Details Panel -->
+                    <div class="tab-pane fade" id="panel-details" role="tabpanel" aria-labelledby="tab-details">
+                        <h6 class="activity-heading">Recent Activity</h6>
+
+                        <div id="activityList"></div>
+                        <div id="activityEmpty" class="text-muted text-center py-4" style="display:none;">
+                            No recent activity yet.
+                        </div>
+                        <button type="button" id="activitySeeMoreBtn" class="btn-hard-refresh" style="display:none;">
+                            See More
+                        </button>
+                    </div>
                 </div>
-                <button type="button" id="activitySeeMoreBtn" class="btn-hard-refresh" style="display:none;">
-                    See More
-                </button>
 
             </div>
         </div>

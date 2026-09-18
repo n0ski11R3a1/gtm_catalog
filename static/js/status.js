@@ -36,6 +36,11 @@ let loadedEvents = [];
 let activityHasMore = false;
 let loadingMoreActivity = false;
 
+// Summary pagination state
+let loadedSummary = null;
+let summaryHasMore = false;
+let loadingMoreSummary = false;
+
 // Groups activity rows under "Today" / "Yesterday" / a short date, same
 // idea as most notification-tray UIs, so a rep skimming the expanded
 // list can tell at a glance which batch of changes happened when.
@@ -262,6 +267,163 @@ function renderActivityList(events) {
     }
 }
 
+
+// --------------------------------------
+// Summary rendering (grouped by event type)
+// --------------------------------------
+
+function summaryIconFor(eventType) {
+    switch (eventType) {
+        case 'product_added':
+            return 'bi-plus-circle-fill';
+        case 'product_replaced':
+            return 'bi-arrow-repeat';
+        case 'back_in_stock':
+            return 'bi-check-circle-fill';
+        case 'out_of_stock':
+            return 'bi-x-circle-fill';
+        case 'price_changed':
+        default:
+            return 'bi-graph-up-arrow';
+    }
+}
+
+function summaryGroupNameFor(eventType) {
+    const names = {
+        'product_added': 'New Products',
+        'product_replaced': 'Products Replaced',
+        'price_changed': 'Price Changes',
+        'out_of_stock': 'Out of Stock',
+        'back_in_stock': 'Back in Stock',
+    };
+    return names[eventType] || eventType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function renderActivitySummary(groups) {
+    const container = document.getElementById('activitySummary');
+    const emptyEl = document.getElementById('activitySummaryEmpty');
+    const seeMoreBtn = document.getElementById('summarySeeMoreBtn');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (!groups || !groups.length) {
+        if (emptyEl) emptyEl.style.display = '';
+        if (seeMoreBtn) seeMoreBtn.style.display = 'none';
+        return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    groups.forEach((group) => {
+        const eventType = group.event_type;
+        const items = group.items || [];
+        const count = group.count || items.length;
+
+        // Group card
+        const card = document.createElement('div');
+        card.className = 'activity-summary-group card mb-3';
+
+        // Group header with icon, name, count
+        const header = document.createElement('div');
+        header.className = 'activity-summary-header card-header d-flex align-items-center justify-content-between';
+        header.style.cursor = 'pointer';
+
+        const iconName = document.createElement('div');
+        iconName.className = 'd-flex align-items-center gap-2';
+
+        const icon = document.createElement('i');
+        icon.className = 'bi ' + summaryIconFor(eventType) + ' activity-summary-icon activity-icon-' + escapeHtml(eventType);
+        icon.style.fontSize = '1.25rem';
+
+        const name = document.createElement('span');
+        name.className = 'activity-summary-name fw-semibold';
+        name.textContent = summaryGroupNameFor(eventType);
+
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-secondary activity-summary-count';
+        badge.textContent = count;
+
+        iconName.appendChild(icon);
+        iconName.appendChild(name);
+        header.appendChild(iconName);
+        header.appendChild(badge);
+
+        // Collapsible body with items
+        const body = document.createElement('div');
+        body.className = 'activity-summary-body card-body p-0';
+        body.style.display = 'none'; // collapsed by default
+
+        if (items.length > 0) {
+            const list = document.createElement('div');
+            list.className = 'activity-summary-list';
+
+            items.forEach((ev) => {
+                const slug = slugifyProductId(ev.product_id);
+                const when = ev.display_time || formatRelativeTime(parseSqliteUtc(ev.created_at));
+
+                const item = document.createElement('div');
+                item.className = 'activity-summary-item d-flex align-items-center justify-content-between py-2 px-3 border-bottom';
+                item.style.cursor = 'pointer';
+
+                const textWrap = document.createElement('div');
+                textWrap.className = 'activity-summary-text flex-grow-1 me-2';
+
+                const title = document.createElement('div');
+                title.className = 'activity-summary-title fw-medium small';
+                title.textContent = ev.formatted_title || ev.product_name || 'Catalog update';
+
+                const meta = document.createElement('div');
+                meta.className = 'activity-summary-meta text-muted small';
+                meta.textContent = ev.formatted_message || ev.details || 'Updated';
+
+                const time = document.createElement('div');
+                time.className = 'activity-summary-time text-muted small text-nowrap ms-2';
+                time.textContent = when;
+
+                textWrap.appendChild(title);
+                textWrap.appendChild(meta);
+                item.appendChild(textWrap);
+                item.appendChild(time);
+
+                if (slug) {
+                    item.classList.add('activity-row-clickable');
+                    item.style.cursor = 'pointer';
+                    item.addEventListener('click', () => {
+                        const modalEl = document.getElementById('statusModal');
+                        if (modalEl && typeof bootstrap !== 'undefined') {
+                            const modal = bootstrap.Modal.getInstance(modalEl);
+                            if (modal) modal.hide();
+                        }
+                        window.location.href = '/product/' + encodeURIComponent(slug);
+                    });
+                }
+
+                list.appendChild(item);
+            });
+
+            body.appendChild(list);
+        }
+
+        // Toggle collapse on header click
+        header.addEventListener('click', () => {
+            const isOpen = body.style.display !== 'none';
+            body.style.display = isOpen ? 'none' : 'block';
+            header.classList.toggle('collapsed', isOpen);
+        });
+
+        card.appendChild(header);
+        card.appendChild(body);
+        container.appendChild(card);
+    });
+
+    if (seeMoreBtn) {
+        seeMoreBtn.style.display = summaryHasMore ? '' : 'none';
+        seeMoreBtn.disabled = false;
+        seeMoreBtn.textContent = 'Load More';
+    }
+}
+
 // --------------------------------------
 // "See more": fetches the next page (cursor = oldest id already loaded)
 // and re-renders the full accumulated list, so date headings stay
@@ -308,6 +470,82 @@ async function loadMoreActivity() {
 }
 
 // --------------------------------------
+// Summary "Load More": fetches next page from /api/activity/summary
+// --------------------------------------
+
+async function loadMoreSummary() {
+    if (loadingMoreSummary || !loadedSummary) return;
+
+    const seeMoreBtn = document.getElementById('summarySeeMoreBtn');
+    loadingMoreSummary = true;
+    if (seeMoreBtn) {
+        seeMoreBtn.disabled = true;
+        seeMoreBtn.textContent = 'Loading...';
+    }
+
+    try {
+        // Use the oldest id from all loaded groups as cursor
+        let oldestId = null;
+        for (const group of loadedSummary.groups) {
+            for (const item of group.items) {
+                if (oldestId === null || item.id < oldestId) {
+                    oldestId = item.id;
+                }
+            }
+        }
+
+        if (oldestId === null) {
+            summaryHasMore = false;
+            return;
+        }
+
+        const res = await fetch('/api/activity/summary?limit=100&before_id=' + oldestId);
+        const data = await res.json();
+
+        const incomingGroups = data.groups || [];
+
+        // Merge incoming groups with existing loaded groups
+        const existingByType = new Map();
+        loadedSummary.groups.forEach(g => existingByType.set(g.event_type, g));
+
+        incomingGroups.forEach((incomingGroup) => {
+            const existing = existingByType.get(incomingGroup.event_type);
+            if (existing) {
+                // Append new items, avoiding duplicates by id
+                const existingIds = new Set(existing.items.map(i => i.id));
+                incomingGroup.items.forEach(item => {
+                    if (!existingIds.has(item.id)) {
+                        existing.items.push(item);
+                    }
+                });
+                existing.count = existing.items.length;
+            } else {
+                existingByType.set(incomingGroup.event_type, incomingGroup);
+            }
+        });
+
+        // Rebuild groups array sorted by most recent item
+        loadedSummary.groups = Array.from(existingByType.values()).sort((a, b) => {
+            const aLatest = a.items[0]?.id || 0;
+            const bLatest = b.items[0]?.id || 0;
+            return bLatest - aLatest;
+        });
+
+        summaryHasMore = !!data.has_more;
+
+        renderActivitySummary(loadedSummary.groups);
+    } catch (e) {
+        if (seeMoreBtn) {
+            seeMoreBtn.disabled = false;
+            seeMoreBtn.textContent = 'Load More';
+        }
+    } finally {
+        loadingMoreSummary = false;
+    }
+}
+
+
+// --------------------------------------
 // Panel open: refresh everything, mark as read
 // --------------------------------------
 
@@ -338,6 +576,18 @@ async function updateStatusPanelContent() {
         hideBellDot();
     } catch (e) {
         // offline - leave whatever was rendered before, fail quietly
+    }
+
+    // Load summary for the Summary tab
+    try {
+        const summaryRes = await fetch('/api/activity/summary?limit=100');
+        const summaryData = await summaryRes.json();
+
+        loadedSummary = summaryData;
+        summaryHasMore = !!summaryData.has_more;
+        renderActivitySummary(summaryData.groups || []);
+    } catch (e) {
+        // offline - fail quietly
     }
 }
 
@@ -537,6 +787,11 @@ window.addEventListener('load', () => {
     const seeMoreBtn = document.getElementById('activitySeeMoreBtn');
     if (seeMoreBtn) {
         seeMoreBtn.addEventListener('click', loadMoreActivity);
+    }
+
+    const summarySeeMoreBtn = document.getElementById('summarySeeMoreBtn');
+    if (summarySeeMoreBtn) {
+        summarySeeMoreBtn.addEventListener('click', loadMoreSummary);
     }
 
     const pushToggle = document.getElementById('pushToggle');
