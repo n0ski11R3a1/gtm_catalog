@@ -5,14 +5,7 @@ this plus your current files into a new chat and say "here's my current
 app, continue from here" — it should be enough to pick up with zero
 missing context.
 
-Last regenerated after: the admin UX was split into a dedicated image
-management flow, the dashboard's "Current Catalog" and "Upload New
-Catalog" cards were aligned side by side so the upload panel no longer
-drops below the status card, and the separate image panel was upgraded
-with summary stats and quick product search. This keeps the original
-dashboard intact while giving image management a focused, cleaner
-workflow. `sw.js` remains at v21, and the product image logic continues
-to use the canonical Product ID naming convention with WebP conversion.
+Last regenerated after: **generation-based notification history isolation** and **Product ID reuse** were added to the backend. When a Product ID (e.g., `GTM - 0001`) is reused for a different product, the `generation` column increments (1→2). All history queries (`price_history`, `activity_log`) now filter by `(product_id, generation)` so old history doesn't mix with new. The `reuse_product_id()` function handles the swap, auto-deletes old image files, and logs a `product_replaced` activity event.
 
 Recent admin improvements:
 
@@ -181,31 +174,36 @@ gtm_catalog/
 | `product_id` | TEXT - business ID, format **`GTM - ####`** (uppercase, spaced, e.g. `GTM - 0226`). Auto-generated on manual Add; free text preserved on Excel import |
 | `product_name`, `upc`, `unit`, `retail`, `wholesale`, `category`, `status` | `status` is `"In Stock"` / `"Out Of Stock"` |
 | `description` | TEXT, optional, defaults to `''`. Free text (Burmese or any Unicode needs zero special handling). Admin-editable via `product_form.html`; optional column on Excel upload - **a sheet without this column never wipes existing descriptions**, only a sheet that actually includes it updates them. Shown on the public product detail page. |
+| `generation` | INTEGER, defaults to `1`. **Increments when a Product ID is reused for a different product.** All history queries filter by `(product_id, generation)` so old history stays isolated. Managed by `reuse_product_id()` - not directly editable in admin. |
 
 ### `price_history`
 Append-only log of retail/wholesale changes, keyed on the **business**
-`product_id` (survives product deletion/recreation). `changed_at` is a
+`product_id` (survives product deletion/recreation). **Now includes `generation`** to match `products.generation`. `changed_at` is a
 SQLite timestamp **string** (`'2026-07-23 09:12:01'`) - not a Unix
 timestamp. `source` is `"manual"` or `"excel_upload"`. Only logged when a
 price actually changes.
 
 ### `activity_log`
-Powers the notification bell. Unified feed of two event types -
-`product_added` and `price_changed` - so the UI only queries one table.
+Powers the notification bell. Unified feed of three event types -
+`product_added`, `price_changed`, and **`product_replaced`** - so the UI
+only queries one table. **Now includes `generation`** to match
+`products.generation`.
 | Column | Notes |
 |---|---|
-| `event_type` | `"product_added"` or `"price_changed"` |
+| `event_type` | `"product_added"`, `"price_changed"`, or `"product_replaced"` |
 | `product_id` | Business key (survives delete/re-add, same reasoning as `price_history`) |
-| `product_name`, `details` | `details` is a short human-readable summary, e.g. `"Retail: 5,000 → 5,500 Ks • Wholesale: 4,500 → 4,800 Ks"` |
+| `generation` | Integer - filters activity to current product incarnation only |
+| `product_name`, `details` | `details` is a short human-readable summary, e.g. `"Retail: 5,000 → 5,500 Ks • Wholesale: 4,500 → 4,800 Ks"` or `"Replaced \"Old Product\" with \"New Product\""` |
 | `created_at` | SQLite timestamp string |
 
 Logged automatically from `_log_price_change()` (reuses its existing
 "did retail/wholesale actually change" check - one source of truth for
-both `price_history` and this table) and from `add_product()` /
-`import_excel_into_db()`'s new-row branch. The one-time bootstrap import
-on a fresh database passes `log_activity=False` deliberately - without
-it, a brand new install would flood the feed with 200+ "product added"
-entries on day one instead of starting clean.
+both `price_history` and this table), from `add_product()` /
+`import_excel_into_db()`'s new-row branch, and from `reuse_product_id()`
+for ID swaps. The one-time bootstrap import on a fresh database passes
+`log_activity=False` deliberately - without it, a brand new install would
+flood the feed with 200+ "product added" entries on day one instead of
+starting clean.
 
 ### `sales_reps`
 Managed list — reps pick from this at order time, **never type a name**.
@@ -253,7 +251,7 @@ product's price later never rewrites what was actually ordered.
 | `/login`, `/logout` | GET/POST, GET | Auth |
 | `/admin` | GET | Dashboard |
 | `/admin/products` | GET | List/search products |
-| `/admin/products/add` | GET/POST | Add product (auto `GTM - ####` ID) |
+| `/admin/products/add` | GET/POST | Add product (auto `GTM - ####` ID). POST accepts optional `reuse_product_id` form field to swap an Out Of Stock product's ID |
 | `/admin/products/<id>/edit` | GET/POST | Edit product + view price history |
 | `/admin/products/<id>/delete` | POST | Delete product |
 | `/admin/reps` | GET | List sales reps |
@@ -352,7 +350,27 @@ product's price later never rewrites what was actually ordered.
   appears. Filename = business Product ID with spaces stripped
   (`GTM-0001.jpg`), checked at *render time* against a small list of
   extensions (`.jpg`/`.jpeg`/`.png`/`.webp`). No match = a clean
-  placeholder, never a broken-image icon.
+  placeholder, never a broken-image icon. **On Product ID reuse
+  (`reuse_product_id()`), old image files are auto-deleted and
+  `has_image` is reset to 0.**
+
+- **Generation-based notification history isolation (NEW).** When a
+  Product ID is reused for a different product, the `generation` column
+  on `products` increments (1→2→3...). The `price_history` and
+  `activity_log` tables also have a `generation` column. All history
+  queries join with `products.generation` so the UI only shows history
+  for the **current** incarnation of that Product ID. Old history remains
+  in the database (audit trail) but is hidden from the notification bell
+  and product detail pages. Implemented in `db.py`:
+  - `reuse_product_id(product_id, data)` - increments generation,
+    updates product fields, deletes old image files, logs
+    `product_replaced` activity with new generation
+  - `get_available_product_ids()` - returns Out Of Stock products
+    available for reuse
+  - `get_price_history()`, `get_recent_activity()`, `get_activity_after()`
+    - all filter by current generation
+  - Migration-safe `init_db()` - adds `generation` column with default 1
+    on existing DBs, creates indexes after migration
 
 - **Product detail pages are keyed by business Product ID in the URL
   (`/product/GTM-0001`), not the internal `id`.** Chosen for
@@ -865,18 +883,8 @@ Paste this file plus:
 - **Never suggest re-tracking `gtm_catalog.db`, `uploads/`, or
   `__pycache__/` in git** - see §12 for exactly why that's dangerous,
   not just inconvenient.
-<<<<<<< HEAD
 - If you're extending `db.py` with a new function that logs a
   side-effect (activity, audit, etc.) alongside a real INSERT, watch the
   `last_insert_rowid()` ordering - see §6.14 for exactly how this bit
   the project once already.
 - The specific feature or bug you want to tackle next.
-=======
-- If extending `db.py` with a new function that logs a side-effect
-  (activity, audit, etc.) alongside a real INSERT, watch the
-  `last_insert_rowid()` ordering — see §7 gotcha #12 for exactly how
-  this bit the project once already.
-- State the specific feature or bug to tackle next — this doc is
-  context, not a task list.
-/home/noskillreal/Downloads/MIGRATION_COMPLETE.md
->>>>>>> my-fixed-version

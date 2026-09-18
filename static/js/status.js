@@ -139,6 +139,8 @@ function activityIconFor(eventType) {
     switch (eventType) {
         case 'product_added':
             return 'bi-plus-circle-fill';
+        case 'product_replaced':
+            return 'bi-arrow-repeat';
         case 'back_in_stock':
             return 'bi-check-circle-fill';
         case 'out_of_stock':
