@@ -24,6 +24,12 @@ Recent admin improvements:
 - **Canonical auto-rename remains enforced**: all uploaded product image
   files are ignored by client filename and saved under the server's
   Product-ID-based naming rule.
+- **Full UI reboot**: the public catalog, gallery/product views, login,
+  and admin workspace now share a responsive warm-neutral/forest-green
+  design system in `static/css/ui-reboot.css`. Desktop catalog uses a
+  category rail, product grid, and order summary; mobile keeps its
+  compact product list, cart action, and bottom navigation. Existing
+  templates, routes, and workflows remain in place.
 
 ---
 
@@ -72,20 +78,15 @@ gtm_catalog/
 │                                    backup_db.py - NOT tracked in git
 │
 ├── templates/
-│   ├── base.html                    Shared layout: navbar (admin pages
-│   │                                  only - see §5, deliberately hidden
-│   │                                  on the catalog page now), flash
-│   │                                  messages, PWA meta, fonts
+│   ├── base.html                    Shared layout, flash messages, PWA
+│   │                                  meta/fonts, and the UI reboot layer
 │   ├── index.html                   Public catalog + order/cart UI.
-│   │                                  Header is a single-row glass topbar
-│   │                                  (brand + search + filter toggle)
-│   │                                  over category chips; primary nav is
-│   │                                  a bottom glass tab bar
-│   │                                  (Catalog/Cart/Admin) that shrinks on
-│   │                                  scroll-down, expands on scroll-up
-│   │                                  (mobile only). Each card has an eye
-│   │                                  icon linking to that product's
-│   │                                  detail page. Loads precache.js.
+│   │                                  Responsive category rail, search,
+│   │                                  product grid, and desktop order
+│   │                                  summary; mobile uses category chips
+│   │                                  and a bottom tab bar. Each card has
+│   │                                  an eye link to product details.
+│   │                                  Loads precache.js.
 │   ├── product_detail.html          Product detail page (NEW). Image (or
 │   │                                  placeholder), description, same
 │   │                                  price/order UI as a catalog card -
@@ -93,11 +94,9 @@ gtm_catalog/
 │   │                                  via matching data-* attributes.
 │   ├── product_not_found.html       404-style page for an unmatched
 │   │                                  product slug (NEW)
-│   ├── _glass_tabbar.html           Bottom tab bar, extracted into a
-│   │                                  shared partial (NEW) - included
-│   │                                  from both index.html and
-│   │                                  product_detail.html so they can't
-│   │                                  drift out of sync
+│   ├── _glass_tabbar.html           Responsive public navigation shared
+│   │                                  by catalog, gallery, and detail
+│   │                                  pages
 │   ├── _order_modal.html            Order/cart modal, same reasoning -
 │   │                                  shared partial (NEW)
 │   ├── login.html                   Admin login (yours, untouched by me)
@@ -114,16 +113,12 @@ gtm_catalog/
 │
 ├── static/
 │   ├── css/
-│   │   ├── style.css                Public catalog + product detail
-│   │   │                              page. Ocean/Leaf/Aqua/Mint palette,
-│   │   │                              Space Grotesk/Plus Jakarta
-│   │   │                              Sans/JetBrains Mono fonts,
-│   │   │                              price-tag product cards, "Liquid
-│   │   │                              Glass" (backdrop-filter blur) on
-│   │   │                              the topbar + bottom tab bar
-│   │   └── admin.css                Admin panel styling (unchanged
-│   │                                  visual style from before the
-│   │                                  catalog redesign, on purpose)
+│   │   ├── style.css                Legacy catalog and detail styles;
+│   │   │                              loaded before the shared UI layer
+│   │   ├── admin.css                Legacy admin components and layout;
+│   │   │                              loaded before the shared UI layer
+│   │   └── ui-reboot.css            Shared responsive design system
+│   │                                  for public pages, login, and admin
 │   ├── js/
 │   │   ├── app.js                   Catalog search/filter/sort/copy-price
 │   │   │                              (filterCatalog() no-ops safely on
@@ -156,7 +151,7 @@ gtm_catalog/
 │   │                                  instead, not a broken image.
 │   ├── manifest.json                 PWA manifest
 │   └── sw.js                        Service worker - YOU own/maintain
-│                                       this file. Currently v21.
+│                                       this file. Static cache v36.
 │
 └── uploads/
     └── sale_price_catalog.xlsx      Last uploaded Excel (backup/import
@@ -788,19 +783,20 @@ ceiling."
 
 ---
 
-## 11. Open item: "web/desktop view sucks"
+## 11. UI reboot
 
-Reported the same session as the animation fixes above, **no specifics
-gathered yet** - not diagnosed, not fixed. Worth a screenshot next round
-rather than guessing at a redesign blind.
+The earlier open report that the desktop view "sucks" has been addressed
+with a coherent responsive redesign across the public catalog, gallery,
+product detail, login, and admin surfaces. At wide sizes, the catalog
+uses a category rail, multi-column product grid, and a persistent order
+summary, with its navigation moved out of the viewport overlay. On phones,
+the category chips, compact product cards, cart action, and bottom tabs
+remain optimized for touch.
 
-One known, real tradeoff already flagged earlier (§5) that's a plausible
-part of this: the bottom tab bar's `>=768px` override turns it into a
-plain static horizontal row of 3 items (Catalog/Cart/Admin) sitting right
-under the search bar - a "bottom nav" pattern awkwardly repurposed for
-desktop rather than something actually designed for a wide screen. That's
-a real candidate, but shouldn't be assumed as *the* answer without seeing
-what's actually happening.
+`static/css/ui-reboot.css` is loaded after the legacy stylesheets and
+overrides presentation only; templates, routes, and existing interactions
+were intentionally preserved. The service-worker static cache was bumped
+to v36 to distribute the new stylesheet to installed PWAs.
 
 ---
 

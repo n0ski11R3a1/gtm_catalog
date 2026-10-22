@@ -91,7 +91,7 @@
 // normal sentence casing for the card presentation.
 // v30->v31: moved the price status below the product name as the quieter
 // option 3 card placement.
-const CACHE_NAME = 'gtm-catalog-v34';
+const CACHE_NAME = 'gtm-catalog-v36';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
@@ -99,6 +99,7 @@ const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
 const STATIC_ASSETS = [
     '/static/css/style.css',
     '/static/css/admin.css',
+    '/static/css/ui-reboot.css',
     '/static/js/app.js',
     '/static/js/admin.js',
     '/static/js/order.js',

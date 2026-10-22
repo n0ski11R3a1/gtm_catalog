@@ -9,7 +9,7 @@
 
     <!-- PWA -->
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    <meta name="theme-color" content="#4f46e5">
+    <meta name="theme-color" content="#173d32">
 
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -45,6 +45,7 @@
     {% if admin_ui %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css', v='33') }}">
     {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ui-reboot.css', v='2') }}">
 </head>
 
 <body>
