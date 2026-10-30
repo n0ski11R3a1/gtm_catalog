@@ -1,5 +1,10 @@
 from datetime import datetime, timezone
 from io import BytesIO
+import hashlib
+import re
+import secrets
+import sqlite3
+import uuid
 
 from PIL import Image
 
@@ -22,7 +27,7 @@ import shutil
 import tempfile
 import pandas as pd
 
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import (
     SECRET_KEY,
@@ -154,6 +159,16 @@ def get_json_payload():
     """Return a JSON body as a dict, or an empty dict when the body is missing or invalid."""
     payload = request.get_json(silent=True) or {}
     return payload if isinstance(payload, dict) else {}
+
+
+def get_mobile_rep():
+    """Resolve the active rep represented by a mobile Bearer token."""
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return db.get_mobile_rep_by_token_hash(token_hash)
 
 
 # Product images live in static/product-images/, named to match the
@@ -857,11 +872,146 @@ def api_push_unsubscribe():
     return jsonify({"ok": True})
 
 
+@app.route("/api/mobile/login", methods=["POST"])
+def api_mobile_login():
+    """Authenticate a rep and issue a single-active-device bearer token."""
+    payload = get_json_payload()
+    raw_username = payload.get("username")
+    password = payload.get("password")
+    if not isinstance(raw_username, str) or not isinstance(password, str):
+        return jsonify({"error": "Username and password are required."}), 400
+    username = raw_username.strip().lower()
+    if not username or not password:
+        return jsonify({"error": "Username and password are required."}), 400
+
+    rep = db.get_mobile_rep_by_username(username)
+    if (
+        rep is None
+        or not rep.get("active")
+        or not rep.get("mobile_password_hash")
+        or not check_password_hash(rep["mobile_password_hash"], password)
+    ):
+        return jsonify({"error": "Invalid username or password."}), 401
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    db.set_mobile_token_hash(rep["id"], token_hash)
+    return jsonify({
+        "access_token": token,
+        "rep": {
+            "id": rep["id"],
+            "code": rep["code"],
+            "name": rep["name"],
+        },
+    })
+
+
+@app.route("/api/mobile/catalog")
+def api_mobile_catalog():
+    rep = get_mobile_rep()
+    if rep is None:
+        return jsonify({"error": "Authentication required."}), 401
+    return jsonify(db.create_mobile_catalog_snapshot())
+
+
+@app.route("/api/mobile/sync", methods=["POST"])
+def api_mobile_sync():
+    """Accept an authenticated batch; each client order is independently retry-safe."""
+    rep = get_mobile_rep()
+    if rep is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    payload = get_json_payload()
+    orders = payload.get("orders")
+    if not isinstance(orders, list) or not orders or len(orders) > 50:
+        return jsonify({"error": "Provide between 1 and 50 orders."}), 400
+
+    results = []
+    for order in orders:
+        if not isinstance(order, dict):
+            results.append({"ok": False, "error": "Invalid order payload."})
+            continue
+
+        client_order_id = order.get("client_order_id")
+        try:
+            parsed_id = uuid.UUID(str(client_order_id))
+            if str(parsed_id) != str(client_order_id).lower():
+                raise ValueError
+        except (ValueError, AttributeError):
+            results.append({
+                "client_order_id": client_order_id,
+                "ok": False,
+                "error": "Order ID must be a UUID.",
+            })
+            continue
+
+        snapshot_id = order.get("catalog_snapshot_id")
+        if not isinstance(snapshot_id, str) or not re.fullmatch(r"[a-f0-9]{64}", snapshot_id):
+            results.append({
+                "client_order_id": client_order_id,
+                "ok": False,
+                "error": "Invalid catalog snapshot.",
+            })
+            continue
+
+        raw_outlet_name = order.get("outlet_name")
+        outlet_name = raw_outlet_name.strip() if isinstance(raw_outlet_name, str) else ""
+        if not outlet_name or len(outlet_name) > 200:
+            results.append({
+                "client_order_id": client_order_id,
+                "ok": False,
+                "error": "Outlet name is required and must be 200 characters or fewer.",
+            })
+            continue
+
+        raw_collected_at = order.get("collected_at")
+        try:
+            if not isinstance(raw_collected_at, str):
+                raise ValueError
+            collected = datetime.fromisoformat(str(raw_collected_at).replace("Z", "+00:00"))
+            if collected.tzinfo is None:
+                raise ValueError
+            collected_at = collected.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            results.append({
+                "client_order_id": client_order_id,
+                "ok": False,
+                "error": "Order collection time must be an ISO 8601 timestamp with timezone.",
+            })
+            continue
+
+        try:
+            result = db.create_mobile_order(
+                rep_id=rep["id"],
+                rep_name=db.rep_label(rep),
+                client_order_id=str(parsed_id),
+                snapshot_id=snapshot_id,
+                outlet_name=outlet_name,
+                collected_at=collected_at,
+                items=order.get("items"),
+            )
+        except ValueError as exc:
+            results.append({
+                "client_order_id": client_order_id,
+                "ok": False,
+                "error": str(exc),
+            })
+            continue
+
+        results.append({
+            "client_order_id": str(parsed_id),
+            "ok": True,
+            **result,
+        })
+
+    return jsonify({"results": results})
+
+
 @app.route("/order/submit", methods=["POST"])
 def order_submit():
 
-    # Deliberately public - reps use this straight from the catalog page,
-    # no login required (matches the "no rep accounts" decision).
+    # Deliberately public for the browser cart; mobile orders use the
+    # authenticated endpoints above.
     payload = get_json_payload()
 
     rep_name = (payload.get("rep_name") or "").strip()
@@ -1443,12 +1593,33 @@ def admin_rep_add():
 
         code = request.form.get("code", "").strip()
         name = request.form.get("name", "").strip()
+        username = request.form.get("mobile_username", "").strip().lower() or None
+        password = request.form.get("mobile_password", "")
 
         if not code or not name:
             flash("Both Code and Name are required.", "danger")
             return render_template("rep_form.html", mode="add", rep=None)
 
-        db.add_rep(code, name)
+        if bool(username) != bool(password):
+            flash("Provide both a mobile username and password, or leave both blank.", "danger")
+            return render_template("rep_form.html", mode="add", rep=None)
+        if username and not re.fullmatch(r"[a-z0-9._-]{3,64}", username):
+            flash("Mobile username must be 3–64 characters: letters, numbers, dot, underscore, or hyphen.", "danger")
+            return render_template("rep_form.html", mode="add", rep=None)
+        if password and len(password) < 8:
+            flash("Mobile passwords must be at least 8 characters.", "danger")
+            return render_template("rep_form.html", mode="add", rep=None)
+
+        try:
+            db.add_rep(
+                code,
+                name,
+                username=username,
+                password_hash=generate_password_hash(password) if password else None,
+            )
+        except sqlite3.IntegrityError:
+            flash("That mobile username is already assigned to another rep.", "danger")
+            return render_template("rep_form.html", mode="add", rep=None)
 
         flash(f"Added sales rep \"{code} ({name})\".", "success")
 
@@ -1475,12 +1646,38 @@ def admin_rep_edit(rep_id):
         code = request.form.get("code", "").strip()
         name = request.form.get("name", "").strip()
         active = request.form.get("active") == "on"
+        username = request.form.get("mobile_username", "").strip().lower() or None
+        password = request.form.get("mobile_password", "")
 
         if not code or not name:
             flash("Both Code and Name are required.", "danger")
             return render_template("rep_form.html", mode="edit", rep=rep)
 
-        db.update_rep(rep_id, code, name, active)
+        if username and not re.fullmatch(r"[a-z0-9._-]{3,64}", username):
+            flash("Mobile username must be 3–64 characters: letters, numbers, dot, underscore, or hyphen.", "danger")
+            return render_template("rep_form.html", mode="edit", rep=rep)
+        if password and len(password) < 8:
+            flash("Mobile passwords must be at least 8 characters.", "danger")
+            return render_template("rep_form.html", mode="edit", rep=rep)
+        if username and username != (rep.get("mobile_username") or "") and not password:
+            flash("Set a new password when changing the mobile username.", "danger")
+            return render_template("rep_form.html", mode="edit", rep=rep)
+        if password and not username:
+            flash("Set a mobile username before setting its password.", "danger")
+            return render_template("rep_form.html", mode="edit", rep=rep)
+
+        try:
+            db.update_rep(
+                rep_id,
+                code,
+                name,
+                active,
+                username=username,
+                password_hash=generate_password_hash(password) if password else None,
+            )
+        except sqlite3.IntegrityError:
+            flash("That mobile username is already assigned to another rep.", "danger")
+            return render_template("rep_form.html", mode="edit", rep=rep)
 
         flash(f"Updated sales rep \"{code} ({name})\".", "success")
 

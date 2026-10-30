@@ -17,6 +17,8 @@ to change.
 import os
 import re
 import sqlite3
+import hashlib
+import json
 
 import pandas as pd
 
@@ -207,8 +209,26 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT NOT NULL,
             name TEXT NOT NULL,
-            active INTEGER DEFAULT 1
+            active INTEGER DEFAULT 1,
+            mobile_username TEXT,
+            mobile_password_hash TEXT,
+            mobile_token_hash TEXT
         )
+    """)
+
+    rep_columns = [row["name"] for row in conn.execute("PRAGMA table_info(sales_reps)").fetchall()]
+    for column, definition in (
+        ("mobile_username", "TEXT"),
+        ("mobile_password_hash", "TEXT"),
+        ("mobile_token_hash", "TEXT"),
+    ):
+        if column not in rep_columns:
+            conn.execute(f"ALTER TABLE sales_reps ADD COLUMN {column} {definition}")
+
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_reps_mobile_username
+        ON sales_reps(LOWER(mobile_username))
+        WHERE mobile_username IS NOT NULL AND mobile_username != ''
     """)
 
     # MIGRATION: orders.outlet_name didn't exist in earlier deploys.
@@ -228,6 +248,31 @@ def init_db():
         conn.execute("ALTER TABLE orders ADD COLUMN idempotency_key TEXT DEFAULT NULL")
 
     conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_idempotency_key ON orders(idempotency_key)")
+
+    order_columns = [row["name"] for row in conn.execute("PRAGMA table_info(orders)").fetchall()]
+    for column, definition in (
+        ("rep_id", "INTEGER"),
+        ("client_order_id", "TEXT"),
+        ("catalog_snapshot_id", "TEXT"),
+        ("price_mismatch", "INTEGER NOT NULL DEFAULT 0"),
+        ("sync_received_at", "TEXT"),
+    ):
+        if column not in order_columns:
+            conn.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
+
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_rep_client_order
+        ON orders(rep_id, client_order_id)
+        WHERE rep_id IS NOT NULL AND client_order_id IS NOT NULL AND client_order_id != ''
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS catalog_snapshots (
+            snapshot_id TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
     # Each line item snapshots the product name + price AT ORDER TIME, so
     # editing a product's price later never rewrites history of what was
@@ -768,6 +813,206 @@ def get_stats():
     }
 
 
+def create_mobile_catalog_snapshot():
+    """Persist and return an immutable, public-safe catalog price snapshot."""
+    conn = get_db_connection()
+    rows = conn.execute("""
+        SELECT id, product_id, product_name, upc, unit, retail, wholesale,
+               category, status, description, generation
+        FROM products
+        ORDER BY id ASC
+    """).fetchall()
+    products = [dict(row) for row in rows]
+    payload_json = json.dumps(products, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    snapshot_id = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+    conn.execute(
+        "INSERT OR IGNORE INTO catalog_snapshots (snapshot_id, payload_json) VALUES (?, ?)",
+        (snapshot_id, payload_json),
+    )
+    conn.commit()
+    conn.close()
+
+    public_products = [
+        {key: value for key, value in product.items() if key != "generation"}
+        for product in products
+    ]
+    return {
+        "snapshot_id": snapshot_id,
+        "products": public_products,
+    }
+
+
+def get_mobile_rep_by_username(username):
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT * FROM sales_reps WHERE LOWER(mobile_username) = LOWER(?)",
+        (username,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_mobile_rep_by_token_hash(token_hash):
+    conn = get_db_connection()
+    row = conn.execute(
+        """
+        SELECT id, code, name, active, mobile_username
+        FROM sales_reps
+        WHERE mobile_token_hash = ? AND active = 1
+        """,
+        (token_hash,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def set_mobile_token_hash(rep_id, token_hash):
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE sales_reps SET mobile_token_hash = ? WHERE id = ? AND active = 1",
+        (token_hash, rep_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def create_mobile_order(rep_id, rep_name, client_order_id, snapshot_id, outlet_name, collected_at, items):
+    """Create one authenticated mobile order using prices from a stored snapshot.
+
+    Client order IDs are unique per rep so retries after an interrupted
+    upload return the original order rather than creating a duplicate.
+    """
+    conn = get_db_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            """
+            SELECT id, total_retail, total_wholesale, price_mismatch
+            FROM orders
+            WHERE rep_id = ? AND client_order_id = ?
+            """,
+            (rep_id, client_order_id),
+        ).fetchone()
+        if existing:
+            conn.commit()
+            return {
+                "order_id": existing["id"],
+                "total_retail": existing["total_retail"],
+                "total_wholesale": existing["total_wholesale"],
+                "price_mismatch": bool(existing["price_mismatch"]),
+                "already_synced": True,
+            }
+
+        snapshot_row = conn.execute(
+            "SELECT payload_json FROM catalog_snapshots WHERE snapshot_id = ?",
+            (snapshot_id,),
+        ).fetchone()
+        if snapshot_row is None:
+            raise ValueError("Catalog snapshot is no longer available. Sync the catalog and retry.")
+
+        snapshot_products = json.loads(snapshot_row["payload_json"])
+        snapshot_by_pk = {int(product["id"]): product for product in snapshot_products}
+        if not isinstance(items, list) or not items:
+            raise ValueError("Order must contain at least one item.")
+
+        line_items = []
+        total_retail = 0.0
+        total_wholesale = 0.0
+        price_mismatch = False
+        quantities = {}
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError("Invalid order item.")
+            pk = item.get("product_pk")
+            quantity = item.get("quantity")
+            if isinstance(pk, bool) or isinstance(quantity, bool):
+                raise ValueError("Invalid product or quantity.")
+            try:
+                pk = int(pk)
+                quantity = int(quantity)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid product or quantity.") from None
+            if quantity < 1 or quantity > 999:
+                raise ValueError("Order quantities must be between 1 and 999.")
+            if pk not in snapshot_by_pk:
+                raise ValueError("An ordered product is not in the selected catalog snapshot.")
+            quantities[pk] = quantities.get(pk, 0) + quantity
+
+        for pk, quantity in quantities.items():
+            saved_product = snapshot_by_pk[pk]
+            current = conn.execute(
+                "SELECT product_id, product_name, retail, wholesale, status, generation FROM products WHERE id = ?",
+                (pk,),
+            ).fetchone()
+            if (
+                current is None
+                or current["product_id"] != saved_product["product_id"]
+                or current["generation"] != saved_product["generation"]
+                or current["retail"] != saved_product["retail"]
+                or current["wholesale"] != saved_product["wholesale"]
+                or current["status"] != saved_product["status"]
+            ):
+                price_mismatch = True
+
+            unit_retail = float(saved_product["retail"] or 0)
+            unit_wholesale = float(saved_product["wholesale"] or 0)
+            line_retail = unit_retail * quantity
+            line_wholesale = unit_wholesale * quantity
+            line_items.append({
+                "product_id": saved_product["product_id"],
+                "product_name": saved_product["product_name"],
+                "unit_retail": unit_retail,
+                "unit_wholesale": unit_wholesale,
+                "quantity": quantity,
+                "line_retail": line_retail,
+                "line_wholesale": line_wholesale,
+            })
+            total_retail += line_retail
+            total_wholesale += line_wholesale
+
+        conn.execute(
+            """
+            INSERT INTO orders
+                (rep_id, rep_name, outlet_name, total_retail, total_wholesale,
+                 client_order_id, catalog_snapshot_id, price_mismatch, created_at,
+                 sync_received_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                rep_id, rep_name, outlet_name, total_retail, total_wholesale,
+                client_order_id, snapshot_id, int(price_mismatch), collected_at,
+            ),
+        )
+        order_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+        for item in line_items:
+            conn.execute(
+                """
+                INSERT INTO order_items
+                    (order_id, product_id, product_name, unit_retail, unit_wholesale,
+                     quantity, line_retail, line_wholesale)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id, item["product_id"], item["product_name"],
+                    item["unit_retail"], item["unit_wholesale"], item["quantity"],
+                    item["line_retail"], item["line_wholesale"],
+                ),
+            )
+        conn.commit()
+        return {
+            "order_id": order_id,
+            "total_retail": total_retail,
+            "total_wholesale": total_wholesale,
+            "price_mismatch": price_mismatch,
+            "already_synced": False,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def detect_duplicate_product_ids(rows):
     """Return normalized duplicate IDs seen in a list of rows/dicts.
 
@@ -1071,7 +1316,13 @@ def reuse_product_id(product_id, data):
 def get_all_reps():
     """All reps, active and inactive - for the admin management page."""
     conn = get_db_connection()
-    rows = conn.execute("SELECT * FROM sales_reps ORDER BY code ASC, name ASC").fetchall()
+    rows = conn.execute(
+        """
+        SELECT id, code, name, active, mobile_username
+        FROM sales_reps
+        ORDER BY code ASC, name ASC
+        """
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -1080,7 +1331,12 @@ def get_active_reps():
     """Only active reps - this is what populates the order-form picker."""
     conn = get_db_connection()
     rows = conn.execute(
-        "SELECT * FROM sales_reps WHERE active = 1 ORDER BY code ASC, name ASC"
+        """
+        SELECT id, code, name, active
+        FROM sales_reps
+        WHERE active = 1
+        ORDER BY code ASC, name ASC
+        """
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -1088,7 +1344,14 @@ def get_active_reps():
 
 def get_rep(rep_id):
     conn = get_db_connection()
-    row = conn.execute("SELECT * FROM sales_reps WHERE id = ?", (rep_id,)).fetchone()
+    row = conn.execute(
+        """
+        SELECT id, code, name, active, mobile_username
+        FROM sales_reps
+        WHERE id = ?
+        """,
+        (rep_id,),
+    ).fetchone()
     conn.close()
     return dict(row) if row else None
 
@@ -1103,21 +1366,56 @@ def rep_label(rep):
     return code or name
 
 
-def add_rep(code, name):
+def add_rep(code, name, username=None, password_hash=None):
     conn = get_db_connection()
     conn.execute(
-        "INSERT INTO sales_reps (code, name, active) VALUES (?, ?, 1)",
-        (code, name),
+        """
+        INSERT INTO sales_reps
+            (code, name, active, mobile_username, mobile_password_hash)
+        VALUES (?, ?, 1, ?, ?)
+        """,
+        (code, name, username, password_hash),
     )
     conn.commit()
     conn.close()
 
 
-def update_rep(rep_id, code, name, active):
+_UNSET = object()
+
+
+def update_rep(rep_id, code, name, active, username=_UNSET, password_hash=None):
     conn = get_db_connection()
+    existing = conn.execute(
+        "SELECT mobile_username, mobile_password_hash, mobile_token_hash FROM sales_reps WHERE id = ?",
+        (rep_id,),
+    ).fetchone()
+    if existing is None:
+        conn.close()
+        return
+
+    if username is _UNSET:
+        username = existing["mobile_username"]
+        password_hash = existing["mobile_password_hash"]
+        token_hash = existing["mobile_token_hash"] if active else None
+    else:
+        if username:
+            password_hash = password_hash or existing["mobile_password_hash"]
+        else:
+            password_hash = None
+        credentials_changed = (
+            username != existing["mobile_username"]
+            or (password_hash is not None and password_hash != existing["mobile_password_hash"])
+        )
+        token_hash = None if credentials_changed or not active else existing["mobile_token_hash"]
+
     conn.execute(
-        "UPDATE sales_reps SET code = ?, name = ?, active = ? WHERE id = ?",
-        (code, name, 1 if active else 0, rep_id),
+        """
+        UPDATE sales_reps
+        SET code = ?, name = ?, active = ?, mobile_username = ?,
+            mobile_password_hash = ?, mobile_token_hash = ?
+        WHERE id = ?
+        """,
+        (code, name, 1 if active else 0, username, password_hash, token_hash, rep_id),
     )
     conn.commit()
     conn.close()

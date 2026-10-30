@@ -22,6 +22,13 @@ Browser / installed PWA
              ├── SQLite database (db.py -> gtm_catalog.db)
              ├── Product image files (static/product-images/)
              └── Web Push provider (push.py -> pywebpush)
+
+Flutter Android client (`mobile/`)
+  ├── explicit offline order capture from an encrypted local SQLCipher DB
+  ├── device-credential unlock and Android secure storage
+  └── authenticated HTTPS login/catalog/manual-sync APIs
+             │
+             └── Flask mobile API -> SQLite orders/catalog snapshots
 ```
 
 ### Main user-facing areas
@@ -35,7 +42,11 @@ Browser / installed PWA
   offline page/image support. It is browsing-only; the List and detail
   pages are the order-entry surfaces.
 - **Order submission (`/order/submit`)**: public endpoint used by sales
-  reps; server validates the rep and obtains prices from SQLite.
+  reps using the browser/PWA cart; server validates the rep and obtains
+  current prices from SQLite.
+- **Field Orders (`mobile/`)**: separate Flutter Android-first client for
+  individual rep accounts, encrypted offline order capture, and explicit
+  manual sync after connectivity returns.
 - **Admin (`/admin/...`)**: login-protected catalog, image, order, sales
   rep, export, audit, and bulk-import management.
 - **Updates & Status**: public catalog modal showing the activity feed,
@@ -63,8 +74,10 @@ Browser / installed PWA
    scoped to `(product_id, generation)` for the current product.
 6. **Order prices are server-authoritative.** The browser cart may keep
    price/name snapshots for display, but only sends internal product PK
-   and quantity. `db.create_order()` reads current prices from SQLite
-   and snapshots them into order items.
+   and quantity. `db.create_order()` reads current prices from SQLite.
+   The mobile client sends a catalog snapshot ID and product PK/quantity;
+   the server loads immutable saved snapshot data, never client prices,
+   for order-time totals.
 7. **Order history is snapshot-based.** Orders store a rep label and
    outlet string; order items store business ID, name, unit prices,
    quantity, and line totals as submitted at order time.
@@ -72,10 +85,11 @@ Browser / installed PWA
    `static/product-images/<NORMALIZED-ID>.webp`; generated gallery
    thumbnails live under `static/product-images/thumbnails/`. The DB
    `has_image` field is metadata; routes also resolve the file on disk.
-9. **Admin auth is a session flag.** Admin pages check
-   `session["admin"] is True` through `require_admin()`. Sales reps do
-   not have accounts; public order submission validates the selected rep
-   against active managed reps.
+9. **Web and mobile rep identity differ.** Admin pages check
+   `session["admin"] is True` through `require_admin()`. The browser
+   cart remains public and validates the selected active rep. The
+   separate mobile API authenticates admin-provisioned rep credentials
+   and a revocable bearer token.
 10. **The service worker must not cache authenticated HTML.** Product,
     gallery, and public catalog pages have offline support; login/admin
     navigations are sent to the network. Static asset changes require
@@ -124,10 +138,10 @@ All HTML views extend `templates/base.html` unless otherwise noted.
 | `admin_upload.html` | Excel import instructions, required columns, audit/export links, and import-result/reused-ID warnings. |
 | `admin_upload_images.html` | ZIP image upload rules and per-file processing results. |
 | `admin_catalog_audit.html` | Duplicate Product ID checks for SQLite and an uploaded workbook, cleaned preview, and cleaned-workbook download. |
-| `admin_reps.html` | Managed sales-rep list with active status and edit/delete actions. |
-| `rep_form.html` | Add/edit sales rep code/name and active toggle. |
-| `admin_orders.html` | Order list, date filter, summary statistics, per-rep totals, and view/delete actions. |
-| `admin_order_detail.html` | One order's rep/outlet/time/status, line snapshots/totals, and status update form. |
+| `admin_reps.html` | Managed sales-rep list with active status, mobile-account configured state, and edit/delete actions. |
+| `rep_form.html` | Add/edit sales rep code/name, active toggle, and optional mobile username/password. |
+| `admin_orders.html` | Order list, date filter, summary statistics, per-rep totals, view/delete actions, and mobile price-review flags. |
+| `admin_order_detail.html` | One order's rep/outlet/time/status, line snapshots/totals, mobile price-review metadata, and status update form. |
 
 ### Browser assets
 
@@ -148,6 +162,18 @@ All HTML views extend `templates/base.html` unless otherwise noted.
 | `static/css/admin.css` | Legacy admin component/layout styles. |
 | `static/css/ui-reboot.css` | Current final design-system layer: shared tokens/base, public catalog, gallery/product details, dialogs/status panels, admin workspace, responsive breakpoints, and reduced-motion handling. Loaded after legacy styles to override them. |
 | `static/icon-192.png`, `static/icon-512.png` | PWA/app and push-notification icons. |
+
+### Flutter mobile client
+
+| File | Responsibility |
+|---|---|
+| `mobile/pubspec.yaml` | Flutter package manifest; `local_auth` handles device unlock, `flutter_secure_storage` stores secrets, `sqflite_sqlcipher` provides encrypted SQLite, and `http`, `path_provider`, `path`, and `uuid` support API/persistence. |
+| `mobile/lib/main.dart` | App UI and state flow: HTTPS rep enrollment, screen-lock gate on launch/resume, local catalog search, cart/order persistence, manual queued-order sync, response validation, and receipt/review status display. |
+| `mobile/lib/api.dart` | `MobileApi` sends JSON login/catalog/sync requests, applies bearer auth where required, enforces request timeout, and converts non-2xx responses into `MobileApiException`. |
+| `mobile/lib/local_store.dart` | `LocalStore` creates the encrypted local database; securely provisions its random key; binds the DB to one rep; saves catalog snapshots and order-time item snapshots transactionally; searches products; returns queued batches; and applies per-order sync outcomes. |
+| `mobile/README.md` | Android host generation, device/build setup, admin credential provisioning, endpoint overview, and pre-rollout validation requirements. |
+| `mobile/tool/prepare_android.py` | Idempotently configures a generated Android host for local auth and disables Android app backups. |
+| `mobile/tool/setup_kali_android.sh` | Resumable/retry-oriented Kali setup for Flutter, Android command-line SDK, Android host preparation, app checks, and optional debug APK build. |
 
 ### Runtime and local data
 
@@ -178,9 +204,10 @@ startup. SQLite access is centralized in `db.py`.
 | `price_history` | Append-only retail/wholesale price changes keyed by business Product ID and generation, with old/new values, timestamp, and source (`manual` or import source). |
 | `activity_log` | Unified public notification/activity rows: product added/replaced, price changed, out of stock, back in stock. Has Product ID, generation, name, details, source, and timestamp. Current-feed queries join to the current product generation. |
 | `id_counter` | One-row, monotonically increasing `next_number` for auto-generated GTM IDs. |
-| `sales_reps` | Admin-managed rep `code`, `name`, and active flag. Orders save the formatted rep label as a snapshot. |
-| `orders` | Order header: rep label, outlet name, status, retail/wholesale totals, timestamp, optional idempotency key. |
+| `sales_reps` | Admin-managed rep `code`, `name`, and active flag. Mobile login adds nullable `mobile_username`, Werkzeug `mobile_password_hash`, and SHA-256 `mobile_token_hash`; API reads do not return password/token hashes. |
+| `orders` | Order header: rep label, outlet name, status, retail/wholesale totals, timestamp, browser `idempotency_key`, and mobile `rep_id`, `client_order_id`, `catalog_snapshot_id`, `price_mismatch`, and `sync_received_at`. The partial unique index on `(rep_id, client_order_id)` makes mobile retries idempotent. |
 | `order_items` | Order line snapshots: order ID, Product ID/name, unit retail/wholesale, quantity, and line totals. |
+| `catalog_snapshots` | Immutable JSON catalog payloads keyed by SHA-256 `snapshot_id`. Mobile orders resolve their prices against this saved payload rather than trusting client-supplied prices. Snapshots must be retained while offline devices may still have queued orders against them. |
 | `push_subscriptions` | One row per browser push endpoint, with endpoint and public subscription keys. Endpoint is unique and the keys are refreshed on conflict. |
 
 ### Schema and history notes
@@ -198,6 +225,15 @@ startup. SQLite access is centralized in `db.py`.
 - Orders and line items are not live foreign-key snapshots of current
   product/rep labels; deleting or renaming a product/rep does not rewrite
   historical order content.
+- Mobile snapshots include the internal product PK, product identity,
+  order-time retail/wholesale values, status, and generation; the public
+  API omits Supplier and generation. Sync flags `price_mismatch` when the
+  current product is missing/replaced or its price/status/generation
+  differs from the saved snapshot.
+- One active bearer token is stored per rep; re-login replaces its prior
+  token. Deactivation, credential changes, and mobile-account removal
+  revoke the token. The rep's mobile username is case-insensitively
+  unique.
 - Product import's `replace=True` behavior marks products absent from the
   workbook as Out Of Stock, rather than deleting them.
 - The configured Excel required headers include Base Price, B2C, and
@@ -282,6 +318,17 @@ are:
 - `order_submit()`: validates rep/outlet/items, checks submitted rep
   against active rep labels, delegates price calculation and persistence
   to `db.create_order()`, and returns order ID and totals.
+- `get_mobile_rep()`: extracts a bearer token, hashes it with SHA-256,
+  and resolves only an active rep with a matching stored token hash.
+- `api_mobile_login()`: validates username/password types, checks the
+  admin-provisioned password hash and active rep status, generates a
+  random bearer token, and stores only its SHA-256 hash.
+- `api_mobile_catalog()`: requires a valid mobile bearer token and
+  returns a public-safe catalog snapshot from `db.create_mobile_catalog_snapshot()`.
+- `api_mobile_sync()`: authenticates rep, validates a batch of at most
+  50 orders and each UUID/snapshot/outlet/time, then delegates each order
+  to snapshot-priced `db.create_mobile_order()` and returns per-order
+  results.
 - `sw()`: serves `static/sw.js` at `/sw.js` with service-worker scope
   allowed at `/`.
 - `login()` / `logout()`: verify configured username/password hash,
@@ -414,6 +461,18 @@ the module owns schema access and transactions.
 - `rep_label(rep)`: formats exact saved/display label, normally
   `CODE (Name)`.
 - `add_rep(...)` / `update_rep(...)` / `delete_rep(...)`: CRUD for reps.
+- `create_mobile_catalog_snapshot()`: canonicalizes the full catalog,
+  hashes/persists its immutable JSON snapshot, and returns product data
+  without Supplier or generation.
+- `get_mobile_rep_by_username(username)` /
+  `get_mobile_rep_by_token_hash(token_hash)`: resolve mobile credentials
+  or active token identity.
+- `set_mobile_token_hash(rep_id, token_hash)`: persist one active token
+  hash for the rep.
+- `create_mobile_order(...)`: transactionally resolves products against
+  a saved catalog snapshot, aggregates quantities, saves snapshot prices,
+  compares product generation/price/status to current catalog, stores
+  review metadata, and returns the existing order on a repeated rep/UUID.
 - `create_order(rep_name, cart_items, outlet_name="", idempotency_key=None)`:
   returns an existing order for a repeated key, otherwise validates each
   PK/quantity, loads current prices, inserts order and line snapshots,
@@ -508,6 +567,9 @@ the endpoint has per-rep identity or access control.
 | POST | `/api/push/subscribe` | Public | Validates/stores endpoint and browser keys. |
 | POST | `/api/push/unsubscribe` | Public | Removes endpoint if supplied. |
 | POST | `/order/submit` | Public | Validates rep/outlet/cart then creates or returns idempotent order. |
+| POST | `/api/mobile/login` | Public credentials | Rep username/password → bearer token and rep identity; a new login replaces the rep's previous token. |
+| GET | `/api/mobile/catalog` | Mobile bearer | Creates/reuses and returns public-safe catalog data plus immutable SHA-256 snapshot ID. |
+| POST | `/api/mobile/sync` | Mobile bearer | Accepts 1–50 orders; each order gets an independent result. Order prices are looked up from the referenced saved snapshot. |
 | GET | `/sw.js` | Public | Serves worker with root scope header. |
 | GET/POST | `/login` | Public | Admin username/password-hash login. |
 | GET | `/logout` | Session | Clears session. |
@@ -533,7 +595,46 @@ the endpoint has per-rep identity or access control.
 | GET/POST | `/admin/catalog-audit` | Admin | DB/Excel duplicate audit and cleaned workbook download. |
 | GET/POST | `/upload` | Admin | Excel catalog upload/import. |
 
-## 7. Browser behavior and offline strategy
+## 7. Flutter offline field-order flow
+
+The app is a separate Android-first Flutter client under `mobile/`; it
+does not copy the server SQLite database and does not rely on the browser
+service worker. It requires a working HTTPS URL for initial enrollment
+and later manual sync; catalog browsing and saved-order entry are local
+after enrollment/catalog download.
+
+1. An admin creates an active sales rep and optionally assigns a unique
+   mobile username/password in the web rep form.
+2. The rep signs in online in Flutter. The server issues a random bearer
+   token (only its SHA-256 hash is stored server-side); the app stores the
+   token and server URL in Android secure storage.
+3. Before enrollment completes, the app verifies the phone screen lock.
+   The same device credential is required on app launch/resume. The
+   encrypted local database key is held in Android secure storage.
+4. Catalog response data is saved locally in a SQLCipher database.
+   Local identity binds this database to a single rep, preventing another
+   rep enrolled on the same app data from seeing the stored orders. Clear
+   Android app data before assigning the app data to another rep.
+5. Orders are saved transactionally with a UUID, outlet, collection time,
+   catalog snapshot ID, quantities, and local order-time names/prices.
+   They remain queued and available as receipts without a network.
+6. The rep explicitly presses Sync. The app uploads queued batches
+   (maximum 50), validates that each server result corresponds to exactly
+   one queued order, marks successful orders synced/review, then refreshes
+   catalog. Failed orders remain queued and retain an error for retry.
+7. The server calculates totals using immutable snapshot prices, not
+   prices in the request. A mismatch against the current product price,
+   status, generation, or existence is recorded as `price_mismatch` for
+   admin review. A repeated UUID for the same rep returns the already
+   created order rather than duplicating it.
+
+`mobile/README.md` documents the Android project generation steps. The
+repository currently has Flutter Dart sources but no generated Android
+Gradle host, and no Flutter/Dart analysis, APK build, or physical-device
+test has been run. This must not be described as field-ready until those
+checks and a staging-server sync test pass.
+
+## 8. Browser behavior and offline strategy
 
 ### Local/session state
 
@@ -569,7 +670,7 @@ Offline support remains subject to browser storage eviction and platform
 behavior. iOS Home Screen installation and real-device testing are
 particularly important; older handoff notes discuss known iOS limitations.
 
-## 8. Configuration and operation
+## 9. Configuration and operation
 
 `config.py` derives data paths from the repository directory. Relevant
 environment names include:
@@ -599,9 +700,13 @@ the Flask `app` object in `app.py`; Gunicorn is included as a dependency.
 PythonAnywhere deployment may serve `/static/` directly using its static
 file mapping while `/sw.js` remains a Flask route.
 
-## 9. Tests
+## 10. Tests
 
-Current test file: `tests/test_image_upload_helpers.py`. It covers:
+`tests/test_mobile_sync.py` covers mobile login/auth, Supplier exclusion,
+snapshot-price preservation, price-mismatch flags, idempotent retry, and
+token revocation when a rep is disabled or changes credentials.
+
+`tests/test_image_upload_helpers.py` covers:
 
 - malformed push-subscription pruning/delivery continuation;
 - admin image and product quick-filter rendering;
@@ -620,7 +725,7 @@ use the app/database should be mindful that `app.py` calls `db.init_db()`
 on import and the configured DB path is the repository-local database
 unless test setup overrides it.
 
-## 10. Source-of-truth caveats for a future assistant
+## 11. Source-of-truth caveats for a future assistant
 
 These are observations about the checked-out code, not instructions to
 silently change behavior:
@@ -660,7 +765,7 @@ silently change behavior:
   A future assistant should inspect `git status` before modifying or
   reverting anything.
 
-## 11. Suggested feature tracing
+## 12. Suggested feature tracing
 
 - **Catalog card/filter behavior:** `templates/index.html` →
   `static/js/catalog-filters.js` / `catalog-state.js` →
@@ -676,6 +781,11 @@ silently change behavior:
   `order.js` localStorage payload → `/order/submit` →
   active-rep validation → `db.create_order()` → `orders` and
   `order_items`; admin views use `db.get_all_orders()`/`get_order()`.
+- **Offline mobile orders:** `mobile/lib/main.dart` → `LocalStore` in
+  `mobile/lib/local_store.dart` → `MobileApi` in `mobile/lib/api.dart` →
+  `/api/mobile/login`, `/api/mobile/catalog`, `/api/mobile/sync` →
+  mobile helpers in `app.py`/`db.py` → `catalog_snapshots`,
+  `orders`, and `order_items` → admin order review screens.
 - **Activity bell:** product writes in `db.py` →
   `activity_log` → `/api/activity` or `/api/activity/summary` →
   `status.js`; optional OS notification flows through `push.py` and

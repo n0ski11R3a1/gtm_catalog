@@ -120,6 +120,9 @@
                         <span class="badge {% if o['status'] == 'Fulfilled' %}badge-instock{% elif o['status'] == 'Cancelled' %}badge-oos{% else %}bg-primary{% endif %}">
                             {{ o['status'] }}
                         </span>
+                        {% if o.get('price_mismatch') %}
+                        <span class="badge bg-warning text-dark">Price review</span>
+                        {% endif %}
                     </td>
                     <td class="text-end">
                         <a href="{{ url_for('admin_order_detail', order_id=o['id']) }}" class="btn btn-sm btn-outline-primary">

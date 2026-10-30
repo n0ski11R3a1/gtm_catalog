@@ -40,13 +40,31 @@
                                value="{{ rep['name'] if rep else '' }}">
                     </div>
 
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Mobile app username</label>
+                        <input type="text" name="mobile_username" class="form-control" autocomplete="off"
+                               placeholder="e.g. myu.latt" value="{{ rep['mobile_username'] if rep else '' }}">
+                        <div class="form-text">Optional. Leave blank if this rep only uses the web catalog.</div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">
+                            {% if mode == 'edit' %}New mobile app password{% else %}Mobile app password{% endif %}
+                        </label>
+                        <input type="password" name="mobile_password" class="form-control" autocomplete="new-password"
+                               minlength="8" {% if mode == 'add' %}placeholder="At least 8 characters"{% else %}placeholder="Leave blank to keep current password"{% endif %}>
+                        <div class="form-text">
+                            {% if mode == 'edit' %}Changing the username requires a new password. Saving a password revokes the existing phone login.{% else %}The password is stored as a one-way hash, never as plain text.{% endif %}
+                        </div>
+                    </div>
+
                     {% if mode == 'edit' %}
                     <div class="col-12">
                         <div class="form-check">
                             <input type="checkbox" name="active" id="activeCheck" class="form-check-input"
                                    {% if rep['active'] %}checked{% endif %}>
                             <label class="form-check-label" for="activeCheck">
-                                Active (shows up in the order-form picker)
+                                Active (shows up in the order-form picker and can sync)
                             </label>
                         </div>
                     </div>

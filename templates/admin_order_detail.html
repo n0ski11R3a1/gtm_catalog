@@ -59,6 +59,13 @@
     </div>
 </div>
 
+{% if order.get('price_mismatch') %}
+<div class="alert alert-warning">
+    <strong>Price review required.</strong>
+    This offline order was collected using an older catalog snapshot. The saved order prices are preserved below; compare them with the current catalog before processing.
+</div>
+{% endif %}
+
 <div class="dashboard-card">
 
     <div class="table-responsive">
