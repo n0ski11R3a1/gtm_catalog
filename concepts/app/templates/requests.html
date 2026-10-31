@@ -1,0 +1,37 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}{{ t('အမှာ (Order Requests)') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs(strip_active|default('req'), perms, flowcounts|default(none), buy_group|default('demand')) }}
+{% if open_only %}
+<h1>{{ t('အမှာ စာရင်း (Order Requests)') }}</h1>
+<p class="hint">{{ t('ဖွင့်ထားတဲ့ အမှာတွေပဲ ပြထားတယ်') }} · <a href="/requests">{{ t('အမှာ စာရင်း အကုန် ကြည့်') }}</a></p>
+{% elif view_kind == 'direct' %}
+<h1>{{ t('ကြို အမှာ စာရင်း (Direct)') }}</h1>
+{% elif view_kind == 'demand' %}
+<h1>{{ t('အမှာ စာရင်း (Demand)') }}</h1>
+{% else %}
+<h1>{{ t('အမှာ စာရင်း (Order Requests)') }}</h1>
+{% endif %}
+{% if not open_only %}
+{# v59: the kind views — the two ways a purchase starts, kept apart.
+   The current view is always the filled one, so nobody has to guess
+   which kind they are looking at. #}
+<p class="kindswitch">
+  <a class="btn sm{{ ' on' if view_kind == 'demand' }}" href="/requests?kind=demand">{{ t('အမှာ (Demand)') }}</a>
+  <a class="btn sm{{ ' on' if view_kind == 'direct' }}" href="/requests?kind=direct">{{ t('ကြို အမှာ (Direct)') }}</a>
+  <a class="btn sm{{ ' on' if view_kind == 'all' }}" href="/requests?kind=all">{{ t('အားလုံး') }}</a>
+</p>
+{% endif %}
+<p class="hint">{{ t('အမှာ ဆိုတာ supplier ဆီ မှာထားတဲ့ ') }}<b>{{ t('အစီအစဉ်') }}</b>{{ t(' ပဲ — stock မဝင်သေးဘူး။ ကုန် တကယ် ရောက်မှ အမှာပေါ်ကနေ ကုန်ရောက် သွင်း (PUR) လုပ်ရမယ်။') }}</p>
+{% if can('requests.create') %}{% if view_kind == 'direct' %}<a class="btn" href="/requests/new?kind=direct">{{ t('+ ကြို အမှာ အသစ်') }}</a>{% elif view_kind == 'demand' %}<a class="btn" href="/requests/new?kind=demand">{{ t('+ အမှာ အသစ်') }}</a>{% else %}<a class="btn" href="/requests/new">{{ t('+ အမှာ အသစ်') }}</a>{% endif %} <a class="btn alt" href="/buy-list">{{ t('ဝယ်ရန် စာရင်း ကနေ လုပ်ရန်') }}</a>{% endif %}
+<table>
+<tr><th>{{ t('အမှာ') }}</th><th>Supplier</th><th>{{ t('မှာတဲ့ အရေအတွက်') }}</th><th>{{ t('ရောက်ပြီး') }}</th><th>{{ t('တင်သူ') }}</th><th>{{ t('အခြေအနေ') }}</th><th></th></tr>
+{% for r in rows %}
+<tr><td><a href="/requests/{{ r.id }}">{{ r.code }}</a>{% if open_only or view_kind == 'all' %} {% if r.kind == 'direct' %}<span class="pill amber">{{ t('ကြို · Direct') }}</span>{% else %}<span class="pill blue">{{ t('Demand') }}</span>{% endif %}{% endif %}</td><td>{{ r.supplier or '' }}</td>
+<td>{{ r.tq|int if r.tq == r.tq|int else r.tq }}</td><td>{{ r.trc|int if r.trc == r.trc|int else r.trc }}</td>
+<td>{{ r.byname or '' }}</td><td>{{ t(OR_STATUS[r.status]) }}</td>
+<td>{% if r.status in ('open','partial') and can('requests.receive') %}<div class="rowacts"><a class="btn sm" href="/requests/{{ r.id }}/receive">{{ t('🚚 ကုန်ရောက် သွင်း') }}</a><form method="post" action="/requests/{{ r.id }}/close" onsubmit="return confirm('{{ t('ကျန်တဲ့ {n} ခု မရောက်တော့ဘူးလို့ မှတ်ပြီး ပိတ်မလား?', n='%g' % (r.tq - r.trc)) }}')"><button class="btn sm alt" type="submit">{{ t('ကျန်တာ မရောက်တော့ — ပိတ်မယ်') }}</button></form></div>{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="7" class="muted">{% if open_only %}{{ t('ကုန်ရောက် သွင်းရန် ကျန်တဲ့ အမှာ မရှိသေးဘူး') }} {% if can('requests.create') %}<a href="/requests/new">{{ t('+ အမှာ အသစ်') }}</a> · {% endif %}<a href="/requests">{{ t('အမှာ စာရင်း အကုန် ကြည့်') }}</a>{% else %}{{ t('အမှာ မရှိသေးဘူး') }}{% endif %}</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,59 @@
+{# v47: shared type-to-search product picker (Ko — the old 355-row dropdown
+   forced scrolling; now: type a name or SKU, tap the right row).
+   Usage: {{ picker_field('pid') }} inside the form, and
+   {{ picker_assets(prods) }} once per page. Submitting with typed text but
+   no picked product is blocked with a plain message. #}
+{% macro picker_field(name, required=0) %}
+<span class="ppick" data-ppick data-msg="{{ t('ပစ္စည်းကို စာရင်းထဲက ရွေးပါ') }}">
+  <input type="text" class="ppick-q" autocomplete="off" placeholder="{{ t('ပစ္စည်း ရှာရန် (နာမည် / SKU)') }}"{% if required %} data-req="1"{% endif %}>
+  <input type="hidden" name="{{ name }}" class="ppick-id">
+  <span class="ppick-list"></span>
+</span>
+{% endmacro %}
+
+{% macro picker_assets(prods) %}
+<span class="ppick-src" hidden data-none="{{ t('မတွေ့ဘူး — နာမည် / SKU ပြန် စစ်ပါ') }}">{% for p in prods %}<i data-id="{{ p.id }}" data-sku="{{ p.sku }}" data-name="{{ p.name }}" data-unit="{{ p.unit or '' }}"></i>{% endfor %}</span>
+<script>
+(function(){
+  var SRC=[], NONE='';
+  document.querySelectorAll('.ppick-src').forEach(function(s){
+    NONE = s.getAttribute('data-none') || '';
+    s.querySelectorAll('i').forEach(function(el){ SRC.push({id:el.getAttribute('data-id'), sku:el.getAttribute('data-sku'), name:el.getAttribute('data-name'), unit:el.getAttribute('data-unit')}); });
+  });
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+  function label(p){ return p.sku + ' — ' + p.name + (p.unit ? ' (' + p.unit + ')' : ''); }
+  function box(el){ return el.closest('[data-ppick]'); }
+  document.addEventListener('input', function(e){
+    if(!e.target.classList || !e.target.classList.contains('ppick-q')) return;
+    var w = box(e.target), list = w.querySelector('.ppick-list'), hid = w.querySelector('.ppick-id');
+    hid.value = '';
+    var q = e.target.value.trim().toLowerCase();
+    if(!q){ list.style.display = 'none'; list.innerHTML = ''; return; }
+    var hits = SRC.filter(function(p){ return (p.sku + ' ' + p.name).toLowerCase().indexOf(q) >= 0; }).slice(0, 12);
+    if(!hits.length){ list.innerHTML = '<div class="ppick-none">' + esc(NONE) + '</div>'; list.style.display = 'block'; return; }
+    list.innerHTML = hits.map(function(p){ return '<button type="button" class="ppick-it" data-id="' + p.id + '">' + esc(label(p)) + '</button>'; }).join('');
+    list.style.display = 'block';
+  });
+  document.addEventListener('click', function(e){
+    if(e.target.classList && e.target.classList.contains('ppick-it')){
+      var w = box(e.target);
+      w.querySelector('.ppick-id').value = e.target.getAttribute('data-id');
+      w.querySelector('.ppick-q').value = e.target.textContent;
+      w.querySelector('.ppick-list').style.display = 'none';
+    } else if(!(e.target.closest && e.target.closest('[data-ppick]'))){
+      document.querySelectorAll('.ppick-list').forEach(function(l){ l.style.display = 'none'; });
+    }
+  });
+  document.querySelectorAll('form').forEach(function(f){
+    f.addEventListener('submit', function(ev){
+      var bad = null;
+      f.querySelectorAll('[data-ppick]').forEach(function(w){
+        var inp = w.querySelector('.ppick-q'), hid = w.querySelector('.ppick-id');
+        if(!hid.value && (inp.value.trim() || inp.getAttribute('data-req'))) bad = w;
+      });
+      if(bad){ ev.preventDefault(); alert(bad.getAttribute('data-msg')); bad.querySelector('.ppick-q').focus(); }
+    });
+  });
+})();
+</script>
+{% endmacro %}

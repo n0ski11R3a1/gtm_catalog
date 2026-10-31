@@ -1,0 +1,13 @@
+{% extends 'base.html' %}{% from '_tabs.html' import ord_tabs %}{% block title %}{{ t('Orders') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ ord_tabs('ord', perms) }}
+<h1>{{ t('Orders') }}</h1>
+{% if can('orders.create') %}<a class="btn" href="/orders/new">{{ t('+ ဘောက်ချာ အသစ်') }}</a>{% endif %}
+<table>
+<tr><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('နေရာ') }}</th><th>{{ t('Rep') }}</th><th>{{ t('ရက်') }}</th><th>{{ t('စုစုပေါင်း') }}</th><th>{{ t('အခြေအနေ') }}</th><th>{{ t('ငွေ') }}</th></tr>
+{% for o,tot,recv in rows %}
+<tr><td><a href="/orders/{{ o.id }}">{{ o.code }}</a></td><td>{{ o.outlet }}</td><td>{{ o.area or '' }}</td><td>{{ o.rep or '' }}{% if o.team %} ({{ o.team }}){% endif %}</td><td>{{ o.odate }}</td>
+<td>{{ fmt_money(tot) }}</td><td>{{ o.status }}{% if o.overstock %} ⚠️ {{ t('stock မလောက်') }}{% endif %}{% if o.offline %} 📴{% endif %}</td><td>{% if o.paid %}{{ t('ရပြီး') }}{% elif recv > 0 %}{{ t('တစ်ပိုင်း (ကျန် {amt})', amt=fmt_money(tot - recv)) }}{% else %}{{ t('မရသေး') }}{% endif %}</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

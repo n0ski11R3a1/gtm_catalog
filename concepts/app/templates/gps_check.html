@@ -1,0 +1,45 @@
+{% extends 'base.html' %}{% block title %}{{ t('📍 နေရာ စစ် စာရင်း') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('📍 နေရာ စစ် စာရင်း') }}</h1>
+<p class="hint">{{ t('ရောင်း တဲ့ နေရာ နဲ့ ပို့ တဲ့ နေရာ သတ် မှတ် ထား တာ ထက် ခြား သွား တဲ့ ပို့ ချက် တွေ ပါ — ကြည့် ပြီး ရင် ✓ စစ် ပြီး နှိပ် ပါ။') }}</p>
+<form method="get" class="row">
+  <label>{{ t('ပို့သူ') }} <select name="deliverer"><option value="0">{{ t('အားလုံး') }}</option>
+    {% for u in deliverers %}<option value="{{ u.id }}" {{ 'selected' if du == u.id else '' }}>{{ u.name }}</option>{% endfor %}</select></label>
+  <label>{{ t('ရက် အစ') }} <input type="date" name="from" value="{{ df }}"></label>
+  <label>{{ t('ရက် အဆုံး') }} <input type="date" name="to" value="{{ dt }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+</form>
+{% if open_rows %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('အချိန်') }}</th><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('ပို့သူ') }}</th><th>{{ t('အကွာအဝေး') }}</th><th>{{ t('ရောင်း တဲ့ နေရာ') }}</th><th>{{ t('ပို့ တဲ့ နေရာ') }}</th><th></th></tr>
+{% for r in open_rows %}
+<tr><td>{{ (r.a.created_at or '')[:16] }}</td>
+<td><a href="/orders/{{ r.a.order_id }}">{{ r.a.code }}</a></td>
+<td>{{ r.a.outlet }}</td>
+<td>{{ r.a.byname or '' }}</td>
+<td><b>~{{ r.dist }}</b></td>
+<td>{% if r.sale %}<a href="https://www.google.com/maps?q={{ r.sale[0] }},{{ r.sale[1] }}" target="_blank" rel="noopener">📍 {{ t('နေရာ ကြည့်ရန်') }}</a>{% else %}{{ t('မရှိ') }}{% endif %}</td>
+<td>{% if r.del %}<a href="https://www.google.com/maps?q={{ r.del[0] }},{{ r.del[1] }}" target="_blank" rel="noopener">📍 {{ t('နေရာ ကြည့်ရန်') }}</a>{% else %}{{ t('မရှိ') }}{% endif %}</td>
+<td><form method="post" action="/attempts/{{ r.a.id }}/gps-check"><input type="hidden" name="back" value="gps-check"><button class="btn alt" type="submit">{{ t('✓ စစ်ပြီး') }}</button></form></td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="muted">{{ t('✅ စစ် ရန် ကျန် နေရာ မရှိဘူး။') }}</p>{% endif %}
+{% if done_rows %}
+<h2>{{ t('✓ စစ် ပြီး မှတ်တမ်း') }}</h2>
+<div class="table-scroll"><table>
+<tr><th>{{ t('အချိန်') }}</th><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('ပို့သူ') }}</th><th>{{ t('အကွာအဝေး') }}</th><th>{{ t('ရောင်း တဲ့ နေရာ') }}</th><th>{{ t('ပို့ တဲ့ နေရာ') }}</th><th>{{ t('စစ် တဲ့ သူ') }}</th><th>{{ t('စစ် တဲ့ အချိန်') }}</th></tr>
+{% for r in done_rows %}
+<tr><td>{{ (r.a.created_at or '')[:16] }}</td>
+<td><a href="/orders/{{ r.a.order_id }}">{{ r.a.code }}</a></td>
+<td>{{ r.a.outlet }}</td>
+<td>{{ r.a.byname or '' }}</td>
+<td>~{{ r.dist }}</td>
+<td>{% if r.sale %}<a href="https://www.google.com/maps?q={{ r.sale[0] }},{{ r.sale[1] }}" target="_blank" rel="noopener">📍 {{ t('နေရာ ကြည့်ရန်') }}</a>{% else %}{{ t('မရှိ') }}{% endif %}</td>
+<td>{% if r.del %}<a href="https://www.google.com/maps?q={{ r.del[0] }},{{ r.del[1] }}" target="_blank" rel="noopener">📍 {{ t('နေရာ ကြည့်ရန်') }}</a>{% else %}{{ t('မရှိ') }}{% endif %}</td>
+<td>{{ r.a.checker or '' }}</td>
+<td>{{ (r.a.checked_at or '')[:16] }}</td></tr>
+{% endfor %}
+</table></div>
+{% if done_trunc %}<p class="muted">{{ t('နောက် ဆုံး ၅၀ ခု ပဲ ပြ ထား တယ်') }}</p>{% endif %}
+{% endif %}
+{% endblock %}

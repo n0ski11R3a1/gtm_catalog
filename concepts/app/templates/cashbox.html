@@ -1,0 +1,31 @@
+{% extends 'base.html' %}{% block title %}{{ t('🧰 Cashbox') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🧰 Cashbox') }} — {{ t('ငွေသား သေတ္တာ') }}</h1>
+<p class="hint">{{ t('တစ်လုံး တည်း — ဝင် စာရင်း တစ်ခု, ထွက် စာရင်း တစ်ခု။ အဖွင့် = အရင် နေ့ အပိတ် (ရေတွက် ပြီး သား) ကနေ အလို ဆက်; လ အကူး မှာ ဘာမှ ပြန် စ စရာ မရှိ။') }}</p>
+<form method="get" class="row">
+  <label>{{ t('လ') }} <input type="month" name="m" value="{{ m }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+  <a class="btn alt" href="/cashbox/{{ today_s }}">{{ t('ဒီနေ့ Cashbox ပိတ်') }}</a>
+</form>
+<div class="card">
+  <h3 style="margin-top:0">{{ t('လ ချုပ်') }} — {{ m }}</h3>
+  <p style="margin:.2rem 0">{{ t('အဝင်') }}: <b>{{ fmt_money(summ.total_in) }} Ks</b> · {{ t('အထွက်') }}: <b>{{ fmt_money(summ.total_out) }} Ks</b>
+  {% if summ.end_bal is not none %}<br>{{ t('လကုန် လက်ကျန်') }}: <b>{{ fmt_money(summ.end_bal) }} Ks</b>{% else %}<br><span class="hint">{{ t('ဒီလ မှာ ပိတ်/ရေတွက် ထား တဲ့ နေ့ မရှိ သေးဘူး။') }}</span>{% endif %}</p>
+  {% if summ.missing %}<p class="hint">{{ t('box မဖွင့် ရသေးတဲ့ ရက် (auto ငွေ ရှိ)') }}: {% for dt in summ.missing %}<a href="/cashbox/{{ dt }}">{{ dt }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+</div>
+{% if disp %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('ရက်') }}</th><th>{{ t('အခြေအနေ') }}</th><th style="text-align:right">{{ t('အဖွင့်') }}</th><th style="text-align:right">{{ t('အပိတ် (စာရင်း)') }}</th><th style="text-align:right">{{ t('ရေတွက် အပိတ်') }}</th><th style="text-align:right">{{ t('ကွာခြားချက်') }}</th></tr>
+{% for item in disp %}
+{% if item.gap %}<tr><td colspan="6" class="hint">⏭ {{ t('ရက် ကျော် (box မဖွင့်)') }}: {{ item.gap }} {{ t('ရက်') }}</td></tr>{% endif %}
+{% set r = item.row %}
+<tr><td><a href="/cashbox/{{ r.cdate }}">{{ r.cdate }}</a></td>
+<td>{% if r.status == 'closed' %}<span class="pill green">{{ t('ပိတ်ပြီးပြီ ✅') }}</span>{% elif r.status == 'counted' %}<span class="pill amber">{{ t('ရေတွက် ပြီးပြီ — အတည်ပြု စောင့် နေ တယ်') }}</span>{% else %}<span class="pill blue">{{ t('ဖွင့် ထား တယ်') }}</span>{% endif %}</td>
+<td class="num">{% if r.opening is not none %}{{ fmt_money(r.opening) }} Ks{% else %}—{% endif %}</td>
+<td class="num">{% if r.status == 'closed' and r.book_closing is not none %}{{ fmt_money(r.book_closing) }} Ks{% else %}—{% endif %}</td>
+<td class="num">{% if r.counted is not none %}{{ fmt_money(r.counted) }} Ks{% else %}—{% endif %}</td>
+<td class="num">{% if r.diff is not none and (r.diff|abs > 0.5) %}<b style="color:#c62828">{{ fmt_money(r.diff) }} Ks</b>{% elif r.diff is not none %}0 Ks{% else %}—{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="hint">{{ t('ဒီလ မှာ Cashbox နေ့ မရှိ သေးဘူး။') }}</p>{% endif %}
+{% endblock %}

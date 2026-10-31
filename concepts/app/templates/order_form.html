@@ -1,0 +1,97 @@
+{% extends 'base.html' %}{% block title %}{{ t('Order အသစ်') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('Order အသစ်') }}</h1>
+{% if ambig %}
+<div class="card" style="border:2px solid #b45309">
+  <h3 style="margin-top:0">❓ {{ t('ဘယ် ဆိုင် လဲ?') }}</h3>
+  <p class="hint">{{ t('ဆိုင် နာမည် တူတာ နှစ်ဆိုင် ရှိတယ် — ဘယ် ဆိုင် လဲ ရွေးပါ') }}</p>
+  {% for c in ambig.candidates %}
+  <form method="post" action="/orders/pick" style="margin:6px 0">
+    {% for k, v in ambig.form.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    {% for k in ('pid', 'qty', 'price', 'tier', 'disc') %}{% for v in ambig.lists[k] %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endfor %}
+    <input type="hidden" name="outlet_id" value="{{ c.id }}">
+    <button class="btn" type="submit">{{ c.label }}{% if c.dist %} · ~{{ c.dist }}{% endif %}</button>
+  </form>
+  {% endfor %}
+  <form method="post" action="/orders/pick-cancel" style="margin:6px 0"><button class="btn alt" type="submit">{{ t('မရွေးတော့') }}</button></form>
+</div>
+{% endif %}
+<form method="post" action="/orders/create" class="card">
+  <div class="row">
+    <label>{{ t('Outlet (ဆိုင်နာမည်) *') }} <input name="outlet" required list="outletlist" autocomplete="off"><span class="hint" id="outletmatches"></span></label><datalist id="outletlist">{% for o in orows %}<option value="{{ o.name }}" label="{{ o.label }}">{% endfor %}</datalist><input type="hidden" name="outlet_id" id="outlet_id">
+    <label>{{ t('နေရာ / ရပ်ကွက်') }} <input name="area" list="areas"><datalist id="areas">{% for a in areas %}<option>{{ a }}</option>{% endfor %}</datalist></label>
+    <label>{{ t('ဆိုင် အမျိုးအစား (သိရင်)') }} <select name="shop_type"><option value="">{{ t('မရွေး') }}</option>{% for k, lbl in shop_types %}<option value="{{ k }}">{{ t(lbl) }}</option>{% endfor %}</select></label>
+  </div>
+  <div id="cart"></div>
+  <p>{{ t('စုစုပေါင်း') }}: <b id="grand">0</b> Ks</p>
+  <div class="row">
+    <label>{{ t('လျှော့ဈေး စုစုပေါင်း') }} <b id="discsum">0</b> Ks <span class="muted">{{ t('(ပစ္စည်း အတန်း ချင်းမှာ ထည့်)') }}</span></label>
+    <label>{{ t('မှတ်ချက်') }} <input name="note"></label>
+  </div>
+  <button class="btn" type="submit">{{ t('Order တင်မယ်') }}</button>
+</form>
+<h2>{{ t('ပစ္စည်း ရွေးရန်') }}</h2>
+<input id="search" placeholder="{{ t('ရှာရန် (နာမည်/SKU)') }}" oninput="render()">
+<div id="plist" class="plist"></div>
+<script>
+/* v67: the pick carries the shop's id. When the typed name matches
+   exactly ONE outlet, its id rides along in the hidden field (the
+   server verifies it against the name); when it matches 2+, the id
+   stays empty — on submit the server asks which shop (never guesses),
+   and the matching shops are listed under the field, always as
+   name + ward (+ note).
+   v68: matching consults each shop's ALIAS spellings too, with the
+   same normalisation the server uses (case-insensitive, whitespace
+   collapsed) — typing a shop's other spelling fills its id the same
+   way, and the hint shows the official label it resolves to. */
+const OJ = {{ outlets_js|safe }};
+const _oi=document.querySelector('input[name="outlet"]'), _oh=document.getElementById('outlet_id'), _om=document.getElementById('outletmatches');
+const _normT = s => (s||'').trim().replace(/\s+/g,' ').toLowerCase();
+function outletFormSync(){
+  const v=_normT(_oi.value);
+  const ms=v? OJ.filter(o=> _normT(o.name)===v || (o.aliases||[]).some(a=>_normT(a)===v)) : [];
+  _oh.value = ms.length===1? ms[0].id : '';
+  _om.textContent = (v && ms.length)? ms.map(o=>o.label).join('  ·  ') : '';
+}
+if(_oi){ _oi.addEventListener('input', outletFormSync); _oi.addEventListener('change', outletFormSync); }
+let PRODS=[], CART={};
+fetch('/api/products').then(r=>r.json()).then(d=>{PRODS=d; render();});
+function render(){
+  const q=(document.getElementById('search').value||'').toLowerCase();
+  const el=document.getElementById('plist'); el.innerHTML='';
+  PRODS.filter(p=>!q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0,80).forEach(p=>{
+    const div=document.createElement('div'); div.className='pitem';
+    div.innerHTML = (p.image?`<img src="/static/product-images/${p.image}">`:'') +
+      `<div class="pinfo"><b>${p.sku}</b> ${p.name}<br><small>Stock: ${p.qty} · ${tf('လက်လီ')} ${p.retail.toLocaleString()} · ${tf('လက်ကား')} ${p.wholesale.toLocaleString()}</small></div>
+       <button type="button" onclick="add(${p.id},'retail')">+${tf('လက်လီ')}</button>
+       <button type="button" onclick="add(${p.id},'wholesale')">+${tf('လက်ကား')}</button>`;
+    el.appendChild(div);
+  });
+}
+function add(id,tier){
+  const p=PRODS.find(x=>x.id===id); const key=id+'_'+tier;
+  if(!CART[key]) CART[key]={pid:id,name:p.name,sku:p.sku,tier:tier,price:tier==='retail'?p.retail:p.wholesale,qty:0,disc:0};
+  CART[key].qty++; drawCart();
+}
+function drawCart(){
+  const el=document.getElementById('cart'); el.innerHTML='';
+  Object.entries(CART).forEach(([k,c])=>{
+    if(c.qty<=0) return;
+    const row=document.createElement('div'); row.className='row';
+    row.innerHTML=`<span>${c.sku} ${c.name} (${c.tier==='retail'?tf('လက်လီ'):tf('လက်ကား')})</span>
+      <input type="hidden" name="pid" value="${c.pid}"><input type="hidden" name="tier" value="${c.tier}"><input type="hidden" name="price" value="${c.price}">
+      <input name="qty" type="number" value="${c.qty}" min="0" onchange="CART['${k}'].qty=+this.value; drawCart()">
+      <span>${(c.qty*c.price).toLocaleString()} Ks</span>
+      ${tf('လျှော့')} <input name="disc" type="number" value="${c.disc||0}" min="0" style="width:90px" onchange="CART['${k}'].disc=+this.value; drawCart()"> Ks`;
+    el.appendChild(row);
+  });
+  calc();
+}
+function calc(){
+  let t=0, dsum=0; Object.values(CART).forEach(c=>{ const g=c.qty*c.price, dc=Math.min(Math.max(+c.disc||0,0), g); t+=g-dc; dsum+=dc; });
+  document.getElementById('discsum').textContent=dsum.toLocaleString();
+  document.getElementById('grand').textContent=t.toLocaleString();
+}
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+</script>
+{% endblock %}

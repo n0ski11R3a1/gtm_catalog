@@ -1,0 +1,32 @@
+{% extends 'base.html' %}{% from '_picker.html' import picker_field, picker_assets %}{% block title %}Market Prices — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('ဈေးကွက် ဈေး ထည့်ရန်') }}</h1>
+<p class="hint">{{ t('ကိုယ် ကိုယ်တိုင် သိ ထား တဲ့၊ သေချာ စစ် ပြီး သား ဈေးကွက် ဈေး ပဲ ထည့်ပါ — "Ai မေးကြည့်" က ဒီ ဈေး တွေ နဲ့ ပဲ ယှဉ် ဖြေ မယ်။ ဘယ် သူ ဆီ က၊ ဘယ် နေ့ က ဈေး လဲ ဆို တာ မှတ်ချက် မှာ ရေးထား ပါ။') }}</p>
+<form method="post" class="card">
+  <div class="row">
+    <label>{{ t('ပစ္စည်း') }} {{ picker_field('product_id', 1) }}</label>
+    <label>{{ t('မြို့') }} <input name="town" value="{{ t('မြစ်ကြီးနား') }}"></label>
+  </div>
+  <div class="row">
+    <label>{{ t('ဈေး အမျိုးအစား') }} <select name="kind"><option value="sell">{{ t('ဈေးကွက် ရောင်းဈေး') }}</option><option value="buy">{{ t('ဝယ် လို့ ရတဲ့ ဈေး (ပေါက်ဈေး)') }}</option></select></label>
+    <label>{{ t('ဈေး (Ks)') }} <input name="price" inputmode="decimal" required></label>
+    <label>{{ t('ဈေး ရက်') }} <input type="date" name="pdate" value="{{ today_s }}"></label>
+  </div>
+  <div class="row">
+    <label>{{ t('ဘယ် သူ ဆီ က ဈေး လဲ') }} <input name="source" placeholder="{{ t('ဥပမာ — ဆိုင် နာမည် / ဖုန်း ပို့စ်') }}"></label>
+    <label>{{ t('မှတ်ချက်') }} <input name="note"></label>
+  </div>
+  <button class="btn" type="submit">{{ t('မှတ်မယ်') }}</button>
+</form>
+<h2>{{ t('ထည့်ထား တဲ့ ဈေးများ') }}</h2>
+<div class="table-scroll"><table>
+<tr><th>{{ t('ရက်') }}</th><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('မြို့') }}</th><th>{{ t('အမျိုးအစား') }}</th><th style="text-align:right">{{ t('ဈေး') }}</th><th>{{ t('ဘယ် သူ ဆီ က') }}</th><th>{{ t('ထည့်သူ') }}</th><th></th></tr>
+{% for r in rows %}
+<tr><td>{{ r.pdate }}</td><td>{{ r.sku }} {{ r.name }}</td><td>{{ r.town or '' }}</td>
+<td>{{ t('ရောင်းဈေး') if r.kind == 'sell' else t('ဝယ်ဈေး') }}</td>
+<td class="num">{{ fmt_money(r.price) }} Ks</td><td>{{ r.source or '' }}{% if r.note %} · {{ r.note }}{% endif %}</td><td>{{ r.byname or '' }}</td>
+<td><form method="post" action="/ask/prices/{{ r.id }}/delete" onsubmit="return confirm('{{ t('ဖျက်မှာ သေချာလား?') }}')"><button type="submit">{{ t('ဖျက်') }}</button></form></td></tr>
+{% endfor %}
+</table></div>
+{{ picker_assets(prods) }}
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends 'base.html' %}{% from '_denom.html' import denom_counter %}{% block title %}{{ t('အသုံးစရိတ်') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('💸 အသုံးစရိတ်') }}</h1>
+<p class="muted">{{ t('မှတ်ခွင့်ရှိသူ: Owner + Finance ပဲ။ Category က ကိုယ်တိုင် ရိုက်ထည့်ရတာ — အရင် သုံးဖူးတဲ့ category တွေ အကြံပြု ပြပေးမယ်၊ အသစ်လည်း ရိုက်ထည့်လို့ရတယ်။') }}</p>
+<form method="get" class="row">
+  <label>{{ t('လ') }} <input type="month" name="m" value="{{ m }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+</form>
+<div class="card">
+  <h3 style="margin-top:0">{{ t('➕ အသစ် မှတ်မယ်') }}</h3>
+  <form method="post" action="/expenses/add" class="row">
+    <label>{{ t('ရက်') }} <input type="date" name="edate" value="{{ today_s }}" required></label>
+    <label>{{ t('Category') }} * <input name="category" list="catlist" autocomplete="off" required placeholder="{{ t('ဥပမာ ဆီ ဖိုး') }}"><datalist id="catlist">{% for c in allcats %}<option value="{{ c }}">{% endfor %}</datalist></label>
+    <label>{{ t('အကြောင်းအရာ') }} <input name="detail" placeholder="{{ t('အကျဉ်း ရေး ပါ') }}"></label>
+    <label>{{ t('ပမာဏ (Ks) *') }} <input name="amount" type="number" step="any" min="0" required></label>
+    <label>{{ t('ငွေ ပေးတဲ့ နည်း') }} <select name="method">{% for k, lbl in PAY_METHODS %}<option value="{{ k }}">{{ t(lbl) }}</option>{% endfor %}</select></label>
+    {{ denom_counter('ea_', 'amount', gate='method') }}
+    <button class="btn" type="submit">{{ t('မှတ်မယ်') }}</button>
+  </form>
+</div>
+<div class="grid-cards">
+  <div class="card"><div class="muted">{{ t('ဒီလ စုစုပေါင်း ({n} ကြောင်း)', n=rows|length) }}</div><h2>{{ fmt_money(total) }}</h2></div>
+  {% for c in cats %}<div class="card"><div class="muted">{{ c.category }} {{ t('({n} ကြောင်း)', n=c.c) }}</div><h2>{{ fmt_money(c.v) }}</h2></div>{% endfor %}
+</div>
+<table>
+<tr><th>{{ t('ရက်') }}</th><th>{{ t('Category') }}</th><th>{{ t('အကြောင်းအရာ') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th>{{ t('ငွေ ပေးတဲ့ နည်း') }}</th><th>{{ t('မှတ်သူ') }}</th><th></th></tr>
+{% for e in rows %}
+<tr><td>{{ e.edate }}</td><td>{{ e.category }}</td><td>{{ e.detail or '' }}{% if e.denom %}<br><span class="denom-line">🧮 {{ e.denom | denom }}</span>{% endif %}</td>
+<td class="num"><b>{{ fmt_money(e.amount) }}</b></td><td>{{ t(dict(PAY_METHODS).get(e.method or 'cash', e.method or '')) }}</td><td>{{ e.uname or '' }}</td>
+<td><a class="btn alt" href="/expenses/{{ e.id }}/edit">{{ t('ပြင်') }}</a>
+<form method="post" action="/expenses/{{ e.id }}/delete" style="display:inline" onsubmit="return confirm('{{ t('ဒီ စရိတ်ကို ဖျက်မှာ သေချာလား?') }}')"><button class="btn alt" type="submit">{{ t('ဖျက်') }}</button></form></td></tr>
+{% endfor %}
+</table>
+{% if not rows %}<p class="muted">{{ t('ဒီလမှာ အသုံးစရိတ် မမှတ်ရသေးဘူး။') }}</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Stock counts{% endblock %}
+{% block content %}
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Stock counts</h2>
+        <p class="text-muted mb-0">Capture physical quantities, review differences, then approve once to reconcile inventory.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('admin_inventory') }}" class="btn btn-outline-primary"><i class="bi bi-boxes"></i> Inventory</a>
+        <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary"><i class="bi bi-speedometer2"></i> Dashboard</a>
+    </div>
+</div>
+
+<section class="dashboard-card mb-4">
+    <form method="post" action="{{ url_for('admin_stock_count_create') }}" class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div><h3 class="h5 fw-bold mb-1">Start a physical count</h3><p class="text-muted mb-0">A draft snapshots the current catalog and balances. It does not change stock until approval.</p></div>
+        <button class="btn btn-primary" type="submit"><i class="bi bi-plus-lg"></i> New stock count</button>
+    </form>
+</section>
+
+<section class="dashboard-card">
+    <div class="card-header-custom mb-3"><i class="bi bi-clipboard-check"></i> Count history</div>
+    <div class="table-responsive">
+        <table class="table align-middle product-table mb-0">
+            <thead><tr><th>#</th><th>Date</th><th>Status</th><th>Progress</th><th>Created by</th><th>Approved by</th><th></th></tr></thead>
+            <tbody>
+            {% for count in counts %}
+                <tr>
+                    <td>{{ count.id }}</td>
+                    <td>{{ count.count_date }}</td>
+                    <td><span class="badge {% if count.status == 'approved' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ count.status|title }}</span></td>
+                    <td>{{ count.counted_count or 0 }} / {{ count.line_count }}</td>
+                    <td>{{ count.created_by or '—' }}</td>
+                    <td>{{ count.approved_by or '—' }}</td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_stock_count_detail', count_id=count.id) }}">Open</a></td>
+                </tr>
+            {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-4">No stock counts yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

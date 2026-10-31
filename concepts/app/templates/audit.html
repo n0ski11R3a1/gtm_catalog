@@ -1,0 +1,35 @@
+{% extends 'base.html' %}{% block title %}{{ t('မှတ်တမ်း စစ်') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('📋 မှတ်တမ်း စစ်') }}</h1>
+<p class="hint">{{ t('လုပ်ဆောင်ချက် မှတ်တမ်း — ဘယ်သူ, ဘယ်အချိန်, ဘာ လုပ်သွားလဲ ဆိုတာ တစ်နေရာ တည်း မှာ ကြည့် လို့ ရ တယ် (Owner သာ)') }}</p>
+{% if open_notis %}
+<h2>{{ t('ကိုင်တွယ်ရန် ကျန် သတိပေးချက်များ') }}</h2>
+{% for a in open_notis %}
+<div class="flags"><div>⚠️ {{ audit_sum(a.summary) }} <span class="muted">— {{ a.byname or '' }} · {{ a.created_at }}</span>
+<form method="post" action="/audit/{{ a.id }}/handled" style="display:inline"><button class="btn alt" type="submit">{{ t('ကိုင်တွယ်ပြီး မှတ်မယ်') }}</button></form>
+</div></div>
+{% endfor %}
+{% endif %}
+<form method="get" class="row">
+  <label>{{ t('ရက် အစ') }} <input type="date" name="from" value="{{ df }}"></label>
+  <label>{{ t('ရက် အဆုံး') }} <input type="date" name="to" value="{{ dt }}"></label>
+  <label>{{ t('လူ') }} <select name="person"><option value="0">{{ t('အားလုံး') }}</option>
+    {% for u in people %}<option value="{{ u.id }}" {{ 'selected' if pu == u.id else '' }}>{{ u.name }}</option>{% endfor %}</select></label>
+  <label>{{ t('အမျိုးအစား') }} <select name="type"><option value="">{{ t('အားလုံး') }}</option>
+    <option value="price" {{ 'selected' if tp == 'price' else '' }}>{{ t('ဈေး ပြောင်းလဲမှု') }}</option>
+    <option value="stock" {{ 'selected' if tp == 'stock' else '' }}>{{ t('Stock ညှိ/ရေတွက်') }}</option>
+    <option value="order" {{ 'selected' if tp == 'order' else '' }}>{{ t('ဘောက်ချာ ကိစ္စ') }}</option>
+    <option value="purchase" {{ 'selected' if tp == 'purchase' else '' }}>{{ t('အဝယ် ကိစ္စ') }}</option>
+    <option value="expense" {{ 'selected' if tp == 'expense' else '' }}>{{ t('အသုံးစရိတ် ကိစ္စ') }}</option>
+    <option value="settlement" {{ 'selected' if tp == 'settlement' else '' }}>{{ t('ရှင်းရန် ကိစ္စ') }}</option></select></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+</form>
+<div class="table-scroll"><table>
+<tr><th>{{ t('အချိန်') }}</th><th>{{ t('လုပ်သူ') }}</th><th>{{ t('အမျိုးအစား') }}</th><th>{{ t('ပြောင်းလဲမှု') }}</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.at }}</td><td>{{ r.who }}</td><td>{{ t(labels.get(r.kind, r.kind)) }}</td><td>{{ audit_sum(r.summary) }}</td></tr>
+{% else %}
+<tr><td colspan="4" class="muted">{{ t('မှတ်တမ်း မရှိသေးဘူး') }}</td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

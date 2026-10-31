@@ -1,0 +1,46 @@
+{% extends 'base.html' %}{% block title %}{{ t('ဈေးနှုန်း စာရင်း (Leader)') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('📋 ဈေးနှုန်း စာရင်း') }}</h1>
+{% if can('leader_prices.toggle') %}
+<div class="card">
+  <b>{{ t('Leader ကြည့်ခွင့်') }}</b> — {% if lp_on %}{{ t('ဖွင့်ထားတယ်') }}{% else %}{{ t('ပိတ်ထားတယ်') }}{% endif %}
+  <form method="post" action="/settings/leader-prices" style="display:inline">
+    {% if lp_on %}<button class="btn alt" type="submit">{{ t('ပိတ်မယ်') }}</button>{% else %}<input type="hidden" name="on" value="1"><button class="btn" type="submit">{{ t('ဖွင့်မယ်') }}</button>{% endif %}
+  </form>
+  <div class="muted">{{ t('ပိတ်ထားရင် Leader က ဒီ စာမျက်နှာ ကို ဝင်လို့ မရဘူး — သူ့ ပင်မ စာမျက်နှာမှာလည်း ဝင်ပေါက် မပြဘူး။') }}</div>
+</div>
+{% endif %}
+<p><button class="btn" type="button" id="eyeBtn" onclick="toggleSec()">{{ t('👁 ပြမယ်') }}</button></p>
+<form method="get" class="row">
+  <input name="q" value="{{ q }}" placeholder="{{ t('ရှာရန် (နာမည်/SKU)') }}">
+  <select name="cat"><option value="">{{ t('Category အကုန်') }}</option>{% for c in cats %}<option {% if c==cat %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">{{ t('ရှာ') }}</button>
+</form>
+<table>
+<tr><th>SKU</th><th>{{ t('ပစ္စည်း') }}</th><th>Unit</th><th style="text-align:right">Base</th><th style="text-align:right">{{ t('လက်လီ (Retail)') }}</th><th style="text-align:right">{{ t('လက်ကား (Wholesale)') }}</th><th style="text-align:right">Margin (Retail)</th><th style="text-align:right">Margin (Wholesale)</th><th>{{ t('အခြေအနေ') }}</th></tr>
+{% for x in rows %}
+<tr>
+<td>{{ x.r.sku }}</td>
+<td>{{ x.r.name }}</td>
+<td>{{ x.r.unit or '' }}{% if x.r.upc %} (Pack: {{ '%g'|format(x.r.upc) }}){% endif %}</td>
+<td class="num"><span class="sec" data-v="{{ fmt_money(x.r.base_price) }}">••••</span></td>
+<td class="num">{{ fmt_money(x.r.retail) }}</td>
+<td class="num">{{ fmt_money(x.r.wholesale) }}</td>
+<td class="num">{% if x.m_r is not none %}<span class="sec" data-v="{{ '%.1f'|format(x.m_r) }}%">••••</span>{% else %}—{% endif %}</td>
+<td class="num">{% if x.m_w is not none %}<span class="sec" data-v="{{ '%.1f'|format(x.m_w) }}%">••••</span>{% else %}—{% endif %}</td>
+<td>{% if x.r.sellable %}{{ t('🟢 ရောင်းဖွင့်') }}{% else %}{{ t('🔴 ရောင်းပိတ်') }}{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+{% if not rows %}<p class="muted">{{ t('မတွေ့ဘူး။') }}</p>{% endif %}
+<script>
+var secShown = false;
+function toggleSec(){
+  secShown = !secShown;
+  document.querySelectorAll('.sec').forEach(function(el){
+    el.textContent = secShown ? el.getAttribute('data-v') : '••••';
+  });
+  document.getElementById('eyeBtn').textContent = secShown ? tf('🙈 ဖျောက်မယ်') : tf('👁 ပြမယ်');
+}
+</script>
+{% endblock %}

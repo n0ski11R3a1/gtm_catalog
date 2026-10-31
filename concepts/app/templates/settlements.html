@@ -1,0 +1,33 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}{{ t('Supplier ရှင်းရန်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('stl', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('Supplier ရှင်းရန်') }}</h1>
+<p class="hint">{{ t('ရှင်းတာက ') }}<b>{{ t('batch တစ်ခုချင်း') }}</b>{{ t(' (Order Request တစ်ခု ဒါမှ မဟုတ် OR မပါတဲ့ PUR တစ်ခု) — batch တွေ ပေါင်း မရှင်းဘူး။ ကျသင့် = စစ်ပြီး PUR (') }}<b>{{ t('Actual ဈေး') }}</b>{{ t(' နဲ့ တွက်) − Supplier ပြန်ပို့ + ပြင်ဆင် ပမာဏ။') }}</p>
+
+<h3>{{ t('ရှင်းရန် ကျန်တဲ့ batch များ') }}</h3>
+<table>
+<tr><th>Batch</th><th>Supplier</th><th>{{ t('စစ်ပြီး PUR စုစုပေါင်း') }}</th><th>{{ t('ပြန်ပို့') }}</th><th></th></tr>
+{% for b in batches %}
+<tr><td><span class="muted">{{ t('အမှာ') if b.code.startswith('ORQ') else t('အဝယ်') }}</span> {{ b.code }} <span class="pill gray">{{ 'Direct' if b.buy_kind == 'direct' else 'Demand' }}</span></td><td>{{ b.supplier or '' }}</td><td>{{ fmt_money(b.gross) }}</td><td>{{ fmt_money(b.returns) }}</td>
+<td>
+{% if b.pending %}<span class="hint">{{ t('⚠️ စစ်ရန်ကျန် PUR ရှိသေး') }}</span>{% endif %}{% if b.missing %}<span class="hint">{{ t('⚠️ Actual ဈေး လို ({n} မျိုး)', n=b.missing|length) }}</span>{% endif %}
+<form method="post" action="/settlements/create" style="display:inline">
+<input type="hidden" name="{{ 'or_id' if b.kind=='or' else 'pu_id' }}" value="{{ b.id }}">
+<button class="btn {{ 'alt' if b.draft_id else '' }}" type="submit">{{ t('ရှင်းရန် ဆက်ပြင်') if b.draft_id else t('ရှင်းရန် စ ပြင်') }}</button></form>
+</td></tr>
+{% else %}
+<tr><td colspan="5" class="muted">{{ t('ရှင်းရန် ကျန်တဲ့ batch မရှိဘူး') }}</td></tr>
+{% endfor %}
+</table>
+
+<h3>{{ t('ရှင်းရန် မှတ်တမ်းများ') }}</h3>
+<table>
+<tr><th>{{ t('ရှင်းရန်') }}</th><th>Supplier</th><th>{{ t('ကျသင့် ပမာဏ') }}</th><th>{{ t('လုပ်သူ') }}</th><th>{{ t('အခြေအနေ') }}</th></tr>
+{% for s in stls %}
+<tr><td><a href="/settlements/{{ s.id }}">{{ s.code }}</a> <span class="pill gray">{{ 'Direct' if s.buy_kind == 'direct' else 'Demand' }}</span></td><td>{{ s.supplier or '' }}</td>
+<td>{{ fmt_money(s.final_amount) if s.final_amount is not none else '—' }}</td><td>{{ s.byname or '' }}</td><td>{{ t(STL_STATUS[s.status]) }}</td></tr>
+{% else %}
+<tr><td colspan="5" class="muted">{{ t('မှတ်တမ်း မရှိသေးဘူး') }}</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

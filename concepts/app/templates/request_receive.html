@@ -1,0 +1,40 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}{{ t('ကုန်ရောက် သွင်း') }} — {{ r.code }}{% endblock %}
+{% block body %}
+{{ pur_tabs('recv', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('🚚 ကုန်ရောက် သွင်းရန်') }} — {{ r.code }} ({{ r.supplier or '' }})</h1>
+<p class="hint"><b>{{ t('တကယ် ရောက်တဲ့ အရေအတွက်') }}</b>{{ t(' ကိုပဲ ထည့်ပါ (မှာတာထက် နည်းလည်း ရတယ် — ကျန်တာက အမှာမှာ ဆက် ကျန်နေမယ်)။ သွင်းလိုက်ရင် PUR တစ်ခု ဖြစ်သွားပြီး stock ဝင်မယ်၊ Finance စစ်ရန် ကျန်မယ်။') }}</p>
+<form method="post" class="card">
+  <div class="row">
+    <label>{{ t('Supplier ဘောက်ချာ နံပါတ် (ရှိမှ ထည့်)') }} <input name="invoice_no" autocomplete="off"></label>
+    <label>{{ t('ရက်') }} <input name="pdate" type="date"></label>
+  </div>
+  <p class="hint">{{ t('မရှိရင် အလွတ်ထားပါ — မထည့်လည်း ရတယ်') }}</p>
+  <table>
+  <tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th>{{ t('ကျန်တဲ့ အရေအတွက်') }}</th><th>{{ t('ရောက်တဲ့ အရေအတွက်') }}</th><th>{{ t('ဝယ်ဈေး (၁ ခု)') }}</th><th>{{ t('သက်တမ်း ကုန်ရက် (ရှိရင်)') }}</th></tr>
+  {% for i in lines %}
+  {% set rem = i.qty - i.received_qty %}
+  <tr><td>{{ i.sku }}</td><td>{{ i.name }} <small class="muted">{{ i.unit or '' }}</small></td>
+  <td><b>{{ rem|int if rem == rem|int else rem }}</b></td>
+  <td><input type="hidden" name="iid" value="{{ i.id }}"><input name="qty" type="number" step="any" min="0" placeholder="{{ t('ကျန်') }} {{ rem|int if rem == rem|int else rem }}" style="width:100px"></td>
+  <td><input name="cost" value="{{ i.base_price|int if i.base_price == i.base_price|int else i.base_price }}" style="width:110px"></td>
+  <td><input name="exp" type="date" style="width:150px"></td></tr>
+  {% endfor %}
+  </table>
+  <div class="row">
+    <label>{{ t('အပို ကုန်ကျ (ကားခ စသည်)') }} <input name="extra_cost" type="number" step="any" min="0" placeholder="0"></label>
+    <label>{{ t('အပို ကုန်ကျ က ဘာအတွက် လဲ') }} <input name="extra_note"></label>
+  </div>
+  <div class="row">
+    <label>{{ t('ငွေကြေး မှတ်ချက် (ရှိရင်)') }} — {{ t('ငွေကြေး အမျိုးအစား') }} <select name="fx_currency"><option value="">{{ t('— မရှိ —') }}</option><option value="USD">USD</option><option value="THB">THB</option><option value="RMB">RMB</option><option value="INR">INR</option></select></label>
+    <label>{{ t('နိုင်ငံခြား ငွေ ပမာဏ') }} <input name="fx_amount" type="number" step="any" min="0"></label>
+    <label>{{ t('လဲ နှုန်း (Ks)') }} <input name="fx_rate" type="number" step="any" min="0"></label>
+  </div>
+  <p class="hint">{{ t('မှတ်ချက် ပဲ — စာရင်း ထဲ မှာ Ks နဲ့ ပဲ တွက် ထား တယ်') }}</p>
+  <button class="btn" type="submit">{{ t('သွင်းမယ် (PUR ဖွင့်မယ်)') }}</button>
+  <a class="btn alt" href="/requests/{{ r.id }}">{{ t('နောက်ပြန်') }}</a>
+</form>
+{% set remtot = lines|sum(attribute='qty') - lines|sum(attribute='received_qty') %}
+<form method="post" action="/requests/{{ r.id }}/close" class="card" onsubmit="return confirm('{{ t('ကျန်တဲ့ {n} ခု မရောက်တော့ဘူးလို့ မှတ်ပြီး ပိတ်မလား?', n='%g' % remtot) }}')">
+  <button class="btn danger" type="submit">{{ t('ကျန်တာ မရောက်တော့ — ပိတ်မယ်') }}</button>
+</form>
+{% endblock %}

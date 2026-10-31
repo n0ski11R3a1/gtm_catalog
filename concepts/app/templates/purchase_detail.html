@@ -1,0 +1,71 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}{{ pu.code }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('pur', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('အဝယ်') }} — {{ pu.supplier or '' }} <small>{{ t('စစ်ရန်ကျန် ⏳') if pu.status=='pending_check' else (t('စစ်ပြီး ✅') if pu.status=='checked' else t('ပယ်ဖျက် ❌')) }}</small></h1>
+<p><span class="doccode">{{ pu.code }}</span> · Supplier: {{ pu.supplier or '' }} · Invoice: {{ pu.invoice_no or t('(ဘောက်ချာ နံပါတ် မပါ)') }} · {{ t('ရက်') }}: {{ pu.pdate }} · {{ t('သွင်းသူ') }}: {{ pu.byname or '' }}{% if pu.checkedname %} · {{ t('စစ်သူ') }}: {{ pu.checkedname }}{% endif %}{% if pu.or_id %} {{ t('· အမှာ (Order Request) က သွင်းတာ') }}{% endif %}</p>
+{% if pu.status=='cancelled' %}<div class="flags"><div>{{ t('❌ ပယ်ဖျက်ပြီး — ပယ်ဖျက်သူ:') }} {{ pu.cancelledname or '' }} · {{ t('အကြောင်း') }}: {{ pu.cancel_reason or '' }} {{ t('(stock ပြန် နှုတ်ပြီးပြီ)') }}</div></div>{% endif %}
+{% if stl %}<p class="hint">{{ t('💰 ဒီ batch အတွက် ရှင်းရန် မှတ်တမ်း ရှိတယ်:') }} <a href="/settlements/{{ stl.id }}">{{ stl.code }} — {{ t(STL_STATUS[stl.status]) }}</a></p>{% endif %}
+<table>
+<tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th>Unit</th><th>{{ t('အရေအတွက်') }}</th><th>{{ t('ဝယ်ဈေး') }}</th><th>{{ t('စုစုပေါင်း') }}</th><th>{{ t('သက်တမ်း ကုန်ရက်') }}</th></tr>
+{% for i in items %}
+<tr><td>{{ i.sku }}</td><td>{{ i.name }}</td><td>{{ i.unit or '' }}</td><td>{{ i.qty }}</td><td>{{ fmt_money(i.cost) }}</td><td>{{ fmt_money(i.qty*i.cost) }}</td><td>{{ i.expiry_date or '—' }}</td></tr>
+{% endfor %}
+</table>
+{% if pu.status != 'cancelled' %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('အပို ကုန်ကျ ထည့်/ပြင်') }}</h3>
+  <p style="margin:.2rem 0">{{ t('အဝယ် အပို ကုန်ကျ') }}: <b>{{ fmt_money(pu.extra_cost or 0) }} Ks</b>{% if pu.extra_note %} · {{ pu.extra_note }}{% endif %}</p>
+  {% if can_extra %}
+  <form method="post" action="/purchases/{{ pu.id }}/extra" class="row">
+    <label>{{ t('အပို ကုန်ကျ (ကားခ စသည်)') }} <input name="extra_cost" type="number" step="any" min="0" value="{{ pu.extra_cost|int if pu.extra_cost else '' }}"></label>
+    <label>{{ t('အပို ကုန်ကျ က ဘာအတွက် လဲ') }} <input name="extra_note" value="{{ pu.extra_note or '' }}"></label>
+    <button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% if fx_memo or can_extra %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('ငွေကြေး မှတ်ချက်') }}</h3>
+  {% if fx_memo %}<p style="margin:.2rem 0"><b>{{ fx_memo }}</b></p>{% endif %}
+  <p class="hint">{{ t('မှတ်ချက် ပဲ — စာရင်း ထဲ မှာ Ks နဲ့ ပဲ တွက် ထား တယ်') }}</p>
+  {% if can_extra %}
+  <form method="post" action="/purchases/{{ pu.id }}/fx" class="row">
+    <label>{{ t('ငွေကြေး အမျိုးအစား') }} <select name="fx_currency"><option value="">{{ t('— မရှိ —') }}</option>{% for c in FX_CURRENCIES %}<option value="{{ c }}" {{ 'selected' if pu.fx_currency == c }}>{{ c }}</option>{% endfor %}</select></label>
+    <label>{{ t('နိုင်ငံခြား ငွေ ပမာဏ') }} <input name="fx_amount" type="number" step="any" min="0" value="{{ pu.fx_amount|int if pu.fx_amount else '' }}"></label>
+    <label>{{ t('လဲ နှုန်း (Ks)') }} <input name="fx_rate" type="number" step="any" min="0" value="{{ pu.fx_rate if pu.fx_rate else '' }}"></label>
+    <button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% if costing %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('တွက်ဈေး (ဈေး ဆုံးဖြတ် ဖို့)') }}</h3>
+  <p class="hint">{{ t('ဒီ တွက်ဈေး က ဈေး ဆုံးဖြတ် တဲ့ အခါ ကြည့် ဖို့ ပဲ — Supplier ကို ရှင်း ရ မယ့် ငွေ မဟုတ် ဘူး။ အပို ကုန်ကျ ကို ကုန် ဖိုး အချိုး နဲ့ ခွဲ ထည့် ပြီး, Risk % ကို ပစ္စည်း တစ်မျိုး ချင်း သတ်မှတ် ထား တဲ့ အတိုင်း ထည့် တွက် ထား တယ်။') }}</p>
+  <div class="table-scroll"><table>
+  <tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th style="text-align:right">{{ t('ကုန် ဖိုး') }}</th><th style="text-align:right">{{ t('အပို ကုန်ကျ ခွဲတမ်း') }}</th><th style="text-align:right">{{ t('Risk လျာထား') }}</th><th style="text-align:right">{{ t('တွက်ဈေး') }}</th><th style="text-align:right">{{ t('တွက်ဈေး (၁ ခု)') }}</th></tr>
+  {% for L in costing.lines %}
+  <tr><td>{{ L.it.sku }}</td><td>{{ L.it.name }}</td><td class="num">{{ fmt_money(L.goods) }}</td><td class="num">{{ fmt_money(L.alloc) }}</td><td class="num">{{ fmt_money(L.risk) }}</td><td class="num"><b>{{ fmt_money(L.dec) }}</b></td><td class="num"><b>{{ fmt_money(L.unit) }}</b></td></tr>
+  {% endfor %}
+  <tr><td colspan="2"><b>{{ t('စုစုပေါင်း') }}</b></td><td class="num"><b>{{ fmt_money(costing.goods) }}</b></td><td class="num"><b>{{ fmt_money(costing.extra) }}</b></td><td class="num"><b>{{ fmt_money(costing.risk) }}</b></td><td class="num"><b>{{ fmt_money(costing.decision) }}</b></td><td></td></tr>
+  </table></div>
+</div>
+{% endif %}
+{% if pu.status=='pending_check' and can('purchases.cancel') %}
+<form method="post" action="/purchases/{{ pu.id }}/cancel" class="card" onsubmit="return confirm('{{ t('ဒီ အဝယ်ကို ပယ်ဖျက်ပြီး stock ပြန် နှုတ်မလား?') }}')">
+  <h3 style="margin-top:0">{{ t('အဝယ် ပယ်ဖျက် (မှား သွင်းမိရင်)') }}</h3>
+  <p class="hint">{{ t('⚠️ ပယ်ဖျက်ရင် ဒီ အဝယ်နဲ့ ဝင်ထားတဲ့ stock အကုန် ပြန် နှုတ်မယ်။ မှတ်တမ်းကတော့ "ပယ်ဖျက်" အဖြစ် ဆက် ပေါ်နေမယ်။ စစ်ပြီး သွားတဲ့ အဝယ်ကို ပယ်ဖျက်လို့ မရဘူး။') }}</p>
+  <div class="row"><label>{{ t('အကြောင်းပြချက်') }} <input name="reason" required placeholder="{{ t('(မဖြစ်မနေ)') }}"></label>
+  <button class="btn danger" type="submit">{{ t('ပယ်ဖျက်မယ်') }}</button></div>
+</form>
+{% endif %}
+{% if pu.status=='pending_check' and can_finance %}
+<form method="post" action="/purchases/{{ pu.id }}/check" class="card">
+  <h3 style="margin-top:0">{{ t('စစ်ဆေး အတည်ပြုရန်') }} <small class="hint">{{ t('(Owner / Finance သာ နှိပ်နိုင်တယ်)') }}</small></h3>
+  <p class="hint">{{ t('ဒီ ခလုတ်က ဒီ အဝယ်ကို စစ်ပြီး လို့ မှတ်ရုံပဲ — ဈေးတွေ ဘာမှ မပြောင်းဘူး (ဈေး ပြောင်းတာက Products → ဈေးပြင် form ကနေ သီးသန့် လုပ်ရတယ်)။') }}<br>
+  {{ t('အတည်ပြုပြီးရင် "စစ်ရန်ကျန်" အဖြစ် ပြန် ပြောင်းလို့ မရတော့ပါဘူး။') }}</p>
+  <button class="btn" type="submit">{{ t('စစ်ပြီး အတည်ပြုမယ်') }}</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends 'base.html' %}{% from '_tabs.html' import inv_tabs %}{% block title %}{{ t('ပစ္စည်းများ') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ inv_tabs('prod', perms) }}
+<h1>{{ t('ပစ္စည်းများ ({n} ခု)', n=rows|length) }}</h1>
+<form method="get" class="row">
+  <input name="q" value="{{ q }}" placeholder="{{ t('နာမည် / SKU ရှာရန်') }}">
+  <select name="cat"><option value="">{{ t('Category အကုန်') }}</option>{% for c in cats %}<option {% if c==cat %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+  <select name="sup"><option value="">{{ t('Supplier အကုန်') }}</option>{% for s in sups %}<option {% if s==sup %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+  <select name="sell"><option value="">{{ t('ရောင်းဖွင့်/ပိတ် အကုန်') }}</option><option value="on" {% if sell=='on' %}selected{% endif %}>{{ t('🟢 ရောင်းဖွင့် သာ') }}</option><option value="off" {% if sell=='off' %}selected{% endif %}>{{ t('🔴 ရောင်းပိတ် သာ') }}</option></select>
+  <button class="btn" type="submit">{{ t('ရှာ') }}</button>
+  {% if q or cat or sup or sell %}<a class="btn alt" href="/products">{{ t('✖ စစ်ထုတ်မှု ရှင်း') }}</a>{% endif %}
+  {% if can('products.create') %}<a class="btn alt" href="/products/new">{{ t('+ ပစ္စည်း အသစ်') }}</a>{% endif %}
+  {% if can('export.stock_xlsx') %}<a class="btn alt" href="/export/stock.xlsx">{{ t('📥 Stock+ဈေး Excel') }}</a>{% endif %}
+</form>
+<div class="card">
+<b>{{ t('Supplier အရောင်း အခြေအနေ') }}</b> <span class="hint">{{ t('— Supplier တစ်ခု ပိတ်လိုက်ရင် သူ့ ပစ္စည်း အကုန် Catalog က ပျောက်မယ်။ ပစ္စည်းချင်း ရောင်းဖွင့်/ပိတ် setting ကို မထိဘူး — ပြန် ဖွင့်ရင် မူလ အတိုင်း ပြန်ပေါ်မယ်။') }}</span>
+<div class="supchips">
+{% for s in sup_states %}
+<span class="supchip"><span>{{ s.name }} <span class="muted">{{ t('({n} မျိုး)', n=s.count) }}</span></span>
+{% if s.closed %}<span class="sell-pill off">{{ t('🔴 အရောင်း ပိတ်') }}</span>{% else %}<span class="sell-pill on">{{ t('🟢 ဖွင့်') }}</span>{% endif %}
+{% if can('suppliers.toggle') %}<form method="post" action="/suppliers/toggle" class="inline"><input type="hidden" name="supplier" value="{{ s.name }}"><input type="hidden" name="rq" value="{{ q }}"><input type="hidden" name="rcat" value="{{ cat }}"><input type="hidden" name="rsup" value="{{ sup }}"><input type="hidden" name="rsell" value="{{ sell }}"><button type="submit">{{ t('ပြန်ဖွင့်မယ်') if s.closed else t('ပိတ်မယ်') }}</button></form>{% endif %}
+</span>
+{% endfor %}
+</div>
+</div>
+{% if sug %}
+<div class="card">
+<b>🔗 {{ t('ချိတ်ရန် အကြံပြု') }}</b>
+<p class="hint">{{ t('နာမည် နဲ့ ပါဝင်မှု အချက်အလက်ကို ကြည့်ပြီး တွဲနိုင်တဲ့ ပစ္စည်းတွေ အကြံပြုထားတာပါ — သေချာ စစ်ပြီးမှ ချိတ်ပါ။ အရွယ်အစား ပဲ မတူတဲ့ ပစ္စည်း (ဥပမာ (B) နဲ့ (S)) တွေလည်း ပါနိုင်တယ် — အဲ့ဒါမျိုးဆို ကျော်လိုက်ပါ။') }}</p>
+<div class="table-scroll"><table>
+<tr><th>{{ t('အခြေခံ (အသေး)') }}</th><th>{{ t('အထုပ် (အကြီး)') }}</th><th>{{ t('အကြံပြု နှုန်း') }}</th><th>{{ t('အထောက်အထား') }}</th><th></th></tr>
+{% for s in sug %}
+<tr>
+<td>{{ s.small.sku }} ({{ s.small.unit or '' }})<br><input name="small_name" form="pk{{ s.small.id }}_{{ s.big.id }}" value="{{ s.small.name }}" aria-label="{{ t('အခြေခံ ပစ္စည်း နာမည်') }}" style="width:95%"></td>
+<td>{{ s.big.sku }} ({{ s.big.unit or '' }})<br><input name="big_name" form="pk{{ s.small.id }}_{{ s.big.id }}" value="{{ s.big.name }}" aria-label="{{ t('အထုပ် ပစ္စည်း နာမည်') }}" style="width:95%"></td>
+<td><form method="post" action="/products/pack-confirm" class="inline" id="pk{{ s.small.id }}_{{ s.big.id }}"><input type="hidden" name="small_id" value="{{ s.small.id }}"><input type="hidden" name="big_id" value="{{ s.big.id }}"><input name="factor" type="number" step="any" min="1" value="{{ ('%g'|format(s.factor)) if s.factor else '' }}" style="width:80px"></form></td>
+<td><small>{{ s.evidence }}</small></td>
+<td><span class="row"><button type="submit" form="pk{{ s.small.id }}_{{ s.big.id }}">{{ t('ချိတ်မယ်') }}</button>
+<form method="post" action="/products/pack-dismiss" class="inline"><input type="hidden" name="small_id" value="{{ s.small.id }}"><input type="hidden" name="big_id" value="{{ s.big.id }}"><button type="submit">{{ t('ကျော်မယ်') }}</button></form></span></td>
+</tr>
+{% endfor %}
+</table></div>
+</div>
+{% endif %}
+<div class="table-scroll"><table class="fit tbl-products">
+<tr><th>SKU</th><th>{{ t('ပုံ') }}</th><th>{{ t('နာမည်') }}</th><th>Category</th><th>Unit</th><th>Stock</th>{% if can('prices.view.base') %}<th>Base</th>{% endif %}{% if can_finance %}<th>Actual ★</th><th>Margin %</th>{% endif %}<th>Retail</th><th>Wholesale</th>{% if can('prices.view.base') %}<th>B2C</th>{% endif %}<th>Supplier</th><th></th></tr>
+{% for p in rows %}
+<tr id="p{{ p.id }}">
+<td>{{ p.sku }}</td>
+<td>{% if p.image %}<img class="thumb" src="/static/product-images/{{ p.image }}" alt="">{% endif %}</td>
+<td>{{ p.name }}</td><td>{{ p.category }}</td><td>{{ p.unit or '' }}</td>
+<td><b>{{ p.qty|int if p.qty == p.qty|int else p.qty }}</b>{% if p.fam %}<br><small class="muted">{% if p.fam.kind == 'big' %}{{ t('🔗 {sku} ရဲ့ အထုပ်', sku=p.fam.partner) }}{% else %}{{ t('🔗 အထုပ်: {skus}', skus=p.fam.partners) }} {{ t('(စုစုပေါင်း)') }}{% endif %}</small>{% endif %}</td>
+{% if can('prices.view.base') %}<td>{{ fmt_money(p.base_price) }}</td>{% endif %}
+{% if can_finance %}<td class="secret">{{ fmt_money(p.actual_base) }}</td>
+<td><small>
+Base: R {{ ('%.1f%%'|format(margins[p.id].rb)) if margins[p.id].rb is not none else '—' }} · W {{ ('%.1f%%'|format(margins[p.id].wb)) if margins[p.id].wb is not none else '—' }}<br>
+Actual: R {{ ('%.1f%%'|format(margins[p.id].ra)) if margins[p.id].ra is not none else '—' }} · W {{ ('%.1f%%'|format(margins[p.id].wa)) if margins[p.id].wa is not none else '—' }}<br>
+{{ t('ကွာ:') }} {{ ('%.1f%%'|format(margins[p.id].diff)) if margins[p.id].diff is not none else '—' }}
+</small></td>{% endif %}
+<td>{{ fmt_money(p.retail) }}</td><td>{{ fmt_money(p.wholesale) }}</td>{% if can('prices.view.base') %}<td>{{ fmt_money(p.b2c) }}</td>{% endif %}
+<td>{{ p.supplier or '' }}</td>
+<td class="actcell">
+<div class="act-line">
+<span class="sell-pill {{ 'on' if p.sellable else 'off' }}">{{ t('🟢 ရောင်းဖွင့်') if p.sellable else t('🔴 ရောင်းပိတ်') }}</span>{% if p.supplier in closed_sups %} <span class="hint">{{ t('(Supplier ပိတ်ထားသည်)') }}</span>{% endif %}
+{% if can('products.sellable_toggle') %}<form method="post" action="/products/{{ p.id }}/sellable" class="inline"><input type="hidden" name="rq" value="{{ q }}"><input type="hidden" name="rcat" value="{{ cat }}"><input type="hidden" name="rsup" value="{{ sup }}"><input type="hidden" name="rsell" value="{{ sell }}"><button type="submit">{{ t('ပိတ်မယ်') if p.sellable else t('ဖွင့်မယ်') }}</button></form>{% endif %}
+{% if can('prices.edit') and not can('products.data_edit') %}<a href="/products/{{ p.id }}/edit?rq={{ q|urlencode }}&rcat={{ cat|urlencode }}&rsup={{ sup|urlencode }}&rsell={{ sell }}">{{ t('ဈေးပြင်') }}</a>{% endif %}
+{% if can('products.data_edit') %}<a href="/products/{{ p.id }}/edit?rq={{ q|urlencode }}&rcat={{ cat|urlencode }}&rsup={{ sup|urlencode }}&rsell={{ sell }}">{{ t('ပြင်') }}</a>{% endif %}
+</div>
+{% if can('stock.adjust') %}<form method="post" action="/products/{{ p.id }}/adjust" class="act-line act-stock" onsubmit="return confirm('{{ t('Stock ပြင်မှာ သေချာလား?') }}')"><input type="hidden" name="rq" value="{{ q }}"><input type="hidden" name="rcat" value="{{ cat }}"><input type="hidden" name="rsup" value="{{ sup }}"><input type="hidden" name="rsell" value="{{ sell }}">
+<input name="delta" placeholder="+/-"><input name="note" placeholder="{{ t('မှတ်ချက်') }}"><button type="submit">{{ t('Stock ပြင်') }}</button></form>{% endif %}
+</td></tr>
+{% endfor %}
+</table></div>
+{% if can_finance %}<p class="hint">{{ t('★ Actual Base (အရင်းအမှန်) ကို Owner နဲ့ Finance ပဲ မြင်ရတယ်။') }}</p>{% endif %}
+{% endblock %}

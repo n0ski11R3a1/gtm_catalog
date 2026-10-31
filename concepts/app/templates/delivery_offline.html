@@ -1,0 +1,286 @@
+{% extends 'base.html' %}{% from '_denom.html' import denom_counter %}{% block title %}{{ t('🚚 ပို့ဆောင်') }} — GTM ERP{% endblock %}
+{% block body %}
+{# v78 Offline Delivery — Delivery role ONLY. This page is NOT the sales
+   Catalog: Delivery accounts are 403 on /catalog by design, so this page
+   never routes through /catalog and never shows per-line prices or costs
+   (the /api/my-deliveries contract carries no per-line prices at all).
+   NOTE on the assignments shape: the server builder's GET
+   /api/my-deliveries returns a BARE array (not {orders:[...]} as the
+   task brief sketched) — refreshAssignments accepts both, so the page
+   works against the landed server code either way.
+   Patterns mirrored from templates/catalog.html: localStorage queues,
+   online/offline event handling, grabGPS, the _denom.html macro, base.html
+   extension, and tf() for JS strings (Burmese source; genuinely new
+   strings are listed in the builder's report for TRANS/JS_KEYS entry).
+   Ko's rule (2026-10-25): the form is fully editable UNTIL the confirm
+   tap; the confirm tap SEALS the attempt into the queue, and a sealed
+   attempt has NO edit button anywhere — mistakes after delivery go
+   through the office, never through this page. #}
+<h1>{{ t('🚚 ပို့ဆောင်') }}</h1>
+<div id="net" class="hint"></div>
+<p class="hint">{{ t('ဒီ စာမျက်နှာကို လိုင်း ရှိတုန်း တစ်ခါ ဖွင့်ထားမှ Offline သုံးလို့ ရမယ် — ပို့ရန် စာရင်း ဖုန်းထဲ သိမ်းထားမှ ဖြစ်တယ်') }}</p>
+<div class="row">
+  <button class="btn alt" type="button" onclick="refreshAssignments()">{{ t('🔄 စာရင်း ပြန် ဆွဲမယ်') }}</button>
+  <button class="btn" type="button" onclick="syncQueue()">{{ t('🔄 ပြန် တင်မယ်') }}</button>
+  <span id="syncstat"></span>
+</div>
+<div class="card" id="assignbox">
+  <h3 style="margin-top:0">{{ t('ပို့ရန် ဘောက်ချာများ') }}</h3>
+  <div id="assignarea"></div>
+</div>
+<form id="dform" onsubmit="return false" class="card" style="display:none">
+  <div id="formhead"></div>
+  <h3 style="margin-top:0">{{ t('တကယ် ပို့တဲ့ အရေအတွက်') }}</h3>
+  <div id="formlines"></div>
+  <p class="hint">{{ t('ပစ္စည်း အရေအတွက် ပြင်ရင် ကောက်ရတဲ့ ငွေကို ကိုယ်တိုင် ပြင်ပါ — ဈေး မပါလို့ အလိုလို မတွက်ဘူး') }}</p>
+  <div class="row">
+    <label><input type="checkbox" id="failchk" onchange="toggleFail()"> {{ t('မပို့ဖြစ် — ဒီ ဘောက်ချာ ပို့လို့ မရဘူး') }}</label>
+  </div>
+  <div id="failbox" style="display:none">
+    <div class="row">
+      <label>{{ t('မပို့နိုင်တဲ့ အကြောင်း') }} <select id="failreason">
+        <option value="ဆိုင်ပိတ်">{{ t('ဆိုင်ပိတ်') }}</option>
+        <option value="လူမရှိ">{{ t('လူမရှိ') }}</option>
+        <option value="နောက်မှ လာပို့ရန်">{{ t('နောက်မှ လာပို့ရန်') }}</option>
+        <option value="တခြား">{{ t('တခြား') }}</option>
+      </select></label>
+      <label>{{ t('မှတ်ချက်') }} <input type="text" id="failnote" autocomplete="off"></label>
+    </div>
+  </div>
+  <div id="moneybox">
+    <div class="row">
+      <label>{{ t('ကောက်ရတဲ့ ငွေ (Ks)') }} <input name="collected" id="collected" type="number" step="any" min="0"></label>
+      <label>{{ t('ငွေ ပေးတဲ့ နည်း') }} <select name="method" id="method">{% for k, lbl in PAY_METHODS %}<option value="{{ k }}">{{ t(lbl) }}</option>{% endfor %}</select></label>
+    </div>
+    {{ denom_counter('dl_', 'collected', gate='method') }}
+  </div>
+  <p id="gpsstat" class="hint"></p>
+  <div class="row">
+    <button class="btn alt" type="button" onclick="captureGPS(true)">{{ t('📍 နေရာ ပြန် ယူမယ်') }}</button>
+  </div>
+  <p>
+    <button class="btn" type="button" onclick="sealAttempt()">{{ t('ပို့မယ် / အတည်ပြု') }}</button>
+    <button class="btn alt" type="button" onclick="closeForm()">{{ t('မပြင်တော့') }}</button>
+  </p>
+  <p class="hint">{{ t('ပို့မယ် / အတည်ပြု နှိပ်ပြီးရင် ပြင်လို့ မရတော့ဘူး — မှားရင် ရုံးကို ပြောပါ') }}</p>
+</form>
+<div class="card" id="queuebox">
+  <h3 style="margin-top:0">{{ t('⏳ တင်ရန် ကျန်တဲ့ ပို့ဆောင်ချက်များ') }}</h3>
+  <div id="queuearea"></div>
+  <h4>{{ t('⚠️ တင်မဝင်တဲ့ အကြောင်းပြချက်') }}</h4>
+  <div id="rejectarea"></div>
+</div>
+<script>
+/* v78 offline delivery — mirrors catalog.html's offline shape. */
+const LS_A='gtm_deliv_assign', LS_Q='gtm_deliv_queue', LS_R='gtm_deliv_rejects';
+let ASSIGN=[];
+let FORM=null;      /* in-memory ONLY until the confirm tap: the one form
+                       pass. Nothing pre-confirm is written to the queue,
+                       so a sealed attempt can never be re-opened here. */
+let FORMGPS=null;
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+function loadLS(k){ try{ return JSON.parse(localStorage.getItem(k)||'[]'); }catch(e){ return []; } }
+function saveLS(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function loadAssign(){ ASSIGN=loadLS(LS_A); }
+function loadQueue(){ return loadLS(LS_Q); }
+function saveQueue(q){ saveLS(LS_Q, q); }
+function loadRejects(){ return loadLS(LS_R); }
+function saveRejects(r){ saveLS(LS_R, r); }
+function uuid(){ return (crypto.randomUUID? crypto.randomUUID() : 'a'+Date.now()+Math.random()); }
+/* catalog.html's grabGPS, unchanged: device GPS works offline. */
+function grabGPS(ms){ return new Promise(res=>{ if(!navigator.geolocation) return res(null);
+  let done=false; const to=setTimeout(()=>{ if(!done){ done=true; res(null); } }, ms||7000);
+  navigator.geolocation.getCurrentPosition(p=>{ if(done) return; done=true; clearTimeout(to);
+      res({lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy}); },
+    ()=>{ if(done) return; done=true; clearTimeout(to); res(null); },
+    {enableHighAccuracy:true, timeout: ms||7000, maximumAge: 30000}); }); }
+/* Pure helpers — these are what the node test exercises. */
+function groupOrders(orders){
+  const groups=[], byArea={};
+  (orders||[]).forEach(o=>{
+    const a=o.area||'';
+    if(!(a in byArea)){ byArea[a]=[]; groups.push({area:a, rows:byArea[a]}); }
+    byArea[a].push(o);
+  });
+  return groups;
+}
+function sealedOrderIds(queue){
+  const s=new Set();
+  (queue||[]).forEach(q=>{ if(q.order_id!=null) s.add(q.order_id); });
+  return s;
+}
+function assignToHTML(orders, sealedIds){
+  if(!orders || !orders.length) return '<p class="muted">'+tf('ပို့ရန် ဘောက်ချာ မရှိဘူး (လိုင်း ရမှ စာရင်း ပြန် ဆွဲပါ)')+'</p>';
+  let html='';
+  groupOrders(orders).forEach(g=>{
+    html+='<h4>'+esc(g.area||'—')+'</h4>';
+    g.rows.forEach(o=>{
+      const sealed=sealedIds.has(o.id);
+      html+='<div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px;margin:6px 0"><b>'+esc(o.code)+'</b> · '+esc(o.outlet)+' · '+esc(o.odate)+' · <b>'+(+o.total).toLocaleString()+' Ks</b> · '+tf('ပစ္စည်း {n} မျိုး', {n: (o.items||[]).length})+'<br>'+
+        (o.items||[]).map(i=>esc(i.sku)+' '+esc(i.name)+' × '+i.qty).join('<br>');
+      if(sealed) html+='<br><span style="color:#166534">🔒 '+tf('အတည်ပြုပြီး — ပြင်လို့ မရတော့')+'</span>';
+      else html+='<br><button class="btn" type="button" onclick="openForm('+o.id+')">📝 '+tf('ပို့ချက် ဖြည့်မယ်')+'</button>';
+      html+='</div>';
+    });
+  });
+  return html;
+}
+/* Queued attempts render READ-ONLY, always: no edit button is ever
+   emitted for a queued attempt, sealed or otherwise. */
+function queueToHTML(queue){
+  if(!queue || !queue.length) return '<p class="muted">'+tf('တင်ရန် ကျန်တာ မရှိဘူး')+'</p>';
+  const methodLabel={cash:tf('Cash'), digital:tf('Digital Pay'), bank:tf('Banking')};
+  return queue.map(q=>{
+    let html='<div style="border:1px solid #d97706;border-radius:8px;padding:8px;margin:6px 0"><b>⏳ '+esc(q.code||(' #'+q.order_id))+'</b> · '+esc(q.outlet||'')+' · <span style="color:#166534">🔒 '+tf('အတည်ပြုပြီး — ပြင်လို့ မရတော့')+'</span>';
+    if(q.failed) html+='<br><span style="color:#b45309">'+tf('မပို့ဖြစ် — ဘောက်ချာ ပယ်ဖျက်')+(q.fail_reason? ' — '+esc(q.fail_reason):'')+'</span>';
+    else html+='<br>'+tf('ကောက်ရတဲ့ ငွေ (Ks)')+' <b>'+(+q.collected||0).toLocaleString()+' Ks</b>'+(q.method? ' · '+esc(methodLabel[q.method]||q.method):'');
+    html+='<br>'+(q.lines||[]).map(l=>esc(l.sku||'')+' '+esc(l.name||'')+' × '+l.qty).join('<br>')+'</div>';
+    return html;
+  }).join('');
+}
+function rejectsToHTML(rejects){
+  if(!rejects || !rejects.length) return '<p class="muted">'+tf('တင်မဝင်တာ မရှိဘူး')+'</p>';
+  return rejects.map((x,i)=>'<div style="border:1px solid #dc2626;background:#fef2f2;border-radius:8px;padding:8px;margin:6px 0">⚠️ <b>'+tf('ပို့ဆောင်ချက် တင်မဝင်ဘူး')+'</b> — '+esc(x.code||'')+' : '+esc(x.reason||'')+' <button class="btn alt" type="button" onclick="dismissReject('+i+')">'+tf('သိပြီ')+'</button></div>').join('');
+}
+function dismissReject(i){ const r=loadRejects(); r.splice(i,1); saveRejects(r); renderAll(); }
+function netStat(){
+  document.getElementById('net').textContent = navigator.onLine ? tf('🟢 Online') : tf('🔴 Offline — သိမ်းထားတဲ့ စာရင်းနဲ့ အလုပ်ဖြစ်တယ်');
+  syncStat();
+}
+function syncStat(){ const q=loadQueue(); document.getElementById('syncstat').textContent = q.length? tf('({n} ခု တင်ရန် ကျန်တယ်)', {n: q.length}) : ''; }
+function renderAll(){
+  netStat();
+  document.getElementById('assignarea').innerHTML = assignToHTML(ASSIGN, sealedOrderIds(loadQueue()));
+  document.getElementById('queuearea').innerHTML = queueToHTML(loadQueue());
+  document.getElementById('rejectarea').innerHTML = rejectsToHTML(loadRejects());
+}
+async function refreshAssignments(){
+  if(!navigator.onLine){ alert(tf('လိုင်း မရှိသေးဘူး')); renderAll(); return; }
+  try{ const r=await fetch('/api/my-deliveries'); if(r.ok){ const j=await r.json(); ASSIGN=Array.isArray(j)? j : (j.orders||[]); saveLS(LS_A, ASSIGN); } }catch(e){}
+  renderAll();
+}
+function openForm(orderId){
+  const o=ASSIGN.find(x=>x.id===orderId); if(!o) return;
+  if(sealedOrderIds(loadQueue()).has(orderId)) return; /* already sealed: no re-open */
+  FORM={order:o, lines:(o.items||[]).map(i=>({item_id:i.item_id, sku:i.sku, name:i.name, ordered:i.qty, qty:i.qty}))};
+  FORMGPS=null;
+  document.getElementById('formhead').innerHTML='<b>'+esc(o.code)+'</b> · '+esc(o.outlet)+' · '+esc(o.area||'')+' · '+esc(o.odate)+' · <b>'+(+o.total).toLocaleString()+' Ks</b>';
+  drawFormLines();
+  document.getElementById('failchk').checked=false;
+  document.getElementById('failnote').value='';
+  document.getElementById('collected').value=Math.round(+o.total||0);
+  document.getElementById('method').value='cash';
+  document.querySelectorAll('#dform .denom-in').forEach(inp=>{ inp.value=''; });
+  document.querySelectorAll('#dform .denom-sum').forEach(el=>{ el.textContent='0'; });
+  document.querySelectorAll('#dform .denom-warn').forEach(el=>{ el.hidden=true; });
+  toggleFail();
+  document.getElementById('dform').style.display='block';
+  document.getElementById('dform').scrollIntoView({behavior:'smooth', block:'start'});
+  captureGPS(false);
+}
+function drawFormLines(){
+  const box=document.getElementById('formlines'); if(!box||!FORM) return;
+  box.innerHTML=FORM.lines.map((l,i)=>'<div style="margin:6px 0">'+esc(l.sku)+' '+esc(l.name)+' ('+tf('မှာတဲ့ အရေအတွက်')+' '+l.ordered+') × <input type="number" class="dq" data-idx="'+i+'" min="0" max="'+l.ordered+'" step="any" value="'+l.qty+'" style="width:90px" onchange="FORM.lines['+i+'].qty=+this.value"></div>').join('');
+}
+function toggleFail(){
+  document.querySelectorAll('#formlines .dq').forEach(inp=>{ const li=FORM.lines[+inp.dataset.idx]; if(li) li.qty=+inp.value; });
+  const failed=document.getElementById('failchk').checked;
+  document.getElementById('failbox').style.display=failed?'':'none';
+  document.getElementById('moneybox').style.display=failed?'none':'';
+}
+function captureGPS(manual){
+  const st=document.getElementById('gpsstat'); if(!st) return;
+  if(!navigator.geolocation){ st.textContent=tf('ဒီ browser မှာ GPS မရဘူး'); return; }
+  st.textContent=tf('📍 နေရာ ယူနေတယ်…');
+  grabGPS(7000).then(f=>{
+    if(f){ FORMGPS=f; st.textContent=tf('📍 နေရာ ရပြီ (± {acc} m)', {acc: Math.round(f.acc)}); }
+    else st.textContent=tf('GPS မရဘူး — Location ဖွင့်ပြီး ထပ်စမ်းပါ');
+  });
+}
+function closeForm(){ FORM=null; FORMGPS=null; document.getElementById('dform').style.display='none'; }
+/* The seal: pure build + validation, so it is node-testable. A failed
+   attempt carries no money and no denomination count (it mirrors the
+   online fail form, which has no money section); a delivered attempt
+   needs at least one line with qty > 0. Quantities clamp to [0, ordered]
+   and the invoice total is NOT recomputed — the contract carries no
+   per-line prices, so 'collected' stays exactly what the person typed
+   (defaulted to the invoice total when the form opened). */
+function sealAttemptFromValues(v){
+  const lines=(v.lines||[]).map(l=>({item_id:l.item_id, sku:l.sku||'', name:l.name||'', qty:Math.min(Math.max(+l.qty||0, 0), +l.ordered||0)}));
+  if(v.failed){
+    if(!(v.failReason||'').trim()) throw new Error('မပို့ဖြစ်ရင် အကြောင်း ထည့်ပါ');
+    return {client_attempt_uuid:uuid(), order_id:v.order.id, code:v.order.code, outlet:v.order.outlet,
+      lines:lines.map(l=>({item_id:l.item_id, qty:l.qty})), failed:true, fail_reason:(v.failReason||'').trim(),
+      lat:v.gps?v.gps.lat:null, lng:v.gps?v.gps.lng:null, acc:v.gps?v.gps.acc:null,
+      collected:0, method:v.method||'cash', denom:{}, status:'sealed', created_at:Date.now()};
+  }
+  if(!lines.some(l=>l.qty>0)) throw new Error('အနည်းဆုံး ၁ မျိုး ပို့တဲ့ အရေအတွက် ထည့်ပါ — ဒါမှ မဟုတ် မပို့ဖြစ် လုပ်ပါ');
+  return {client_attempt_uuid:uuid(), order_id:v.order.id, code:v.order.code, outlet:v.order.outlet,
+    lines:lines.map(l=>({item_id:l.item_id, qty:l.qty})), failed:false, fail_reason:'',
+    lat:v.gps?v.gps.lat:null, lng:v.gps?v.gps.lng:null, acc:v.gps?v.gps.acc:null,
+    collected:Math.max(0, +v.collected||0), method:v.method||'cash', denom:v.denom||{}, status:'sealed', created_at:Date.now()};
+}
+function sealAttempt(){
+  if(!FORM) return;
+  /* The confirm tap is the seal: after this, the attempt is in the
+     queue with status 'sealed' and this page offers no edit door. */
+  if(!confirm(tf('ပို့မယ် / အတည်ပြု ပြီးရင် ပြင်လို့ မရတော့ဘူး — သေချာပြီလား?'))) return;
+  document.querySelectorAll('#formlines .dq').forEach(inp=>{ const li=FORM.lines[+inp.dataset.idx]; if(li) li.qty=+inp.value; });
+  const failed=document.getElementById('failchk').checked;
+  const failReason=(document.getElementById('failnote').value||'').trim() || document.getElementById('failreason').value;
+  let denom={};
+  if(!failed && document.getElementById('method').value==='cash'){
+    document.querySelectorAll('#dform .denom-in').forEach(inp=>{ const c=parseInt(inp.value,10); if(c>0) denom[inp.getAttribute('data-dval')]=c; });
+  }
+  let attempt;
+  try{
+    attempt=sealAttemptFromValues({order:FORM.order, lines:FORM.lines, failed:failed, failReason:failReason,
+      gps:FORMGPS, collected:document.getElementById('collected').value, method:document.getElementById('method').value, denom:denom});
+  }catch(e){ alert(tf(e.message)); return; }
+  const q=loadQueue(); q.push(attempt); saveQueue(q);
+  closeForm(); renderAll();
+  if(navigator.onLine) syncQueue();
+  else alert(tf('လိုင်း မရှိလို့ ဖုန်းထဲ သိမ်းထားတယ် — လိုင်း ရရင် ပြန် တင်ပါ'));
+}
+/* Pure sync-result handling: 'ok' leaves the queue; 'rejected' STAYS
+   queued and its reason lands in the rejection notices — never
+   silently dropped; a result missing for an attempt keeps it queued. */
+function applySyncResults(queue, results){
+  const byUuid={}; (results||[]).forEach(x=>{ byUuid[x.client_attempt_uuid]=x; });
+  const kept=[], newRejects=[]; let removed=0;
+  (queue||[]).forEach(q=>{
+    const x=byUuid[q.client_attempt_uuid];
+    if(!x){ kept.push(q); return; }
+    if(x.status==='ok'){ removed++; return; }
+    kept.push(q);
+    newRejects.push({code:q.code||'', reason:x.reason||'', at:Date.now()});
+  });
+  return {kept:kept, removed:removed, newRejects:newRejects};
+}
+function contractAttempts(queue){
+  return (queue||[]).map(q=>({client_attempt_uuid:q.client_attempt_uuid, order_id:q.order_id,
+    lines:q.lines, failed:!!q.failed, fail_reason:q.fail_reason||'', lat:q.lat, lng:q.lng, acc:q.acc,
+    collected:q.collected, method:q.method, denom:q.denom||{}}));
+}
+async function syncQueue(){
+  if(!navigator.onLine){ alert(tf('လိုင်း မရှိသေးဘူး')); return; }
+  const q=loadQueue(); if(!q.length){ renderAll(); return; }
+  let res=null;
+  try{
+    const r=await fetch('/api/delivery-attempts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({attempts:contractAttempts(q)})});
+    if(!r.ok) throw new Error('http');
+    res=await r.json();
+  }catch(e){ alert(tf('တစ်ချို့ မရသေးဘူး — နောက်မှ ပြန်စမ်းပါ')); return; }
+  const out=applySyncResults(q, res.results||[]);
+  saveQueue(out.kept);
+  if(out.newRejects.length){ const rj=loadRejects(); saveRejects(out.newRejects.concat(rj).slice(0,20)); }
+  renderAll();
+  if(out.kept.length) alert(tf('တစ်ချို့ မရသေးဘူး — နောက်မှ ပြန်စမ်းပါ'));
+  else { alert(tf('တင်ပြီးပြီ ✅')); refreshAssignments(); }
+}
+window.addEventListener('online', ()=>{ netStat(); syncQueue(); });
+window.addEventListener('offline', netStat);
+loadAssign(); renderAll(); refreshAssignments();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+</script>
+{% endblock %}

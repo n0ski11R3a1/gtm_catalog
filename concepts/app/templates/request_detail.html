@@ -1,0 +1,71 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% from '_picker.html' import picker_field, picker_assets %}{% block title %}{{ r.code }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('req', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('အမှာ') }} — {{ r.supplier or '' }} <small>{{ t(OR_STATUS[r.status]) }}</small></h1>
+<p><span class="doccode">{{ r.code }}</span> {% if r.kind == 'direct' %}<span class="pill amber">{{ t('ကြို · Direct') }}</span>{% else %}<span class="pill blue">{{ t('Demand') }}</span>{% endif %} · {{ t('တင်သူ') }}: {{ r.byname or '' }} · {{ t('ရက်') }}: {{ (r.created_at or '')[:10] }}{% if r.status=='cancelled' %} · {{ t('ပယ်ဖျက်သူ') }}: {{ r.cancelledname or '' }} — {{ t('အကြောင်း') }}: <b>{{ r.cancel_reason or '' }}</b>{% endif %}</p>
+{% if r.note %}<p class="hint">{{ t('မှတ်ချက်') }}: {{ r.note }}</p>{% endif %}
+<p><a class="btn alt" href="/requests/{{ r.id }}/print" target="_blank">{{ t('🖨️ အမှာ စာရွက် Print (Order Issue)') }}</a></p>
+{% if stl %}<p class="hint">{{ t('💰 ဒီ အမှာ အတွက် ရှင်းရန် မှတ်တမ်း ရှိတယ်:') }} <a href="/settlements/{{ stl.id }}">{{ stl.code }} — {{ t(STL_STATUS[stl.status]) }}</a></p>{% endif %}
+
+{% if editable %}
+<form method="post" action="/requests/{{ r.id }}/update">
+<table>
+<tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th>{{ t('မှာတဲ့ အရေအတွက်') }}</th><th>{{ t('ရောက်ပြီး') }}</th><th>{{ t('ကျန်') }}</th><th></th></tr>
+{% for i in items %}
+<tr><td>{{ i.sku }}</td><td>{{ i.name }} <small class="muted">{{ i.unit or '' }}</small></td>
+<td><input name="qty_{{ i.id }}" type="number" step="any" min="0" value="{{ i.qty|int if i.qty == i.qty|int else i.qty }}" style="width:90px"></td>
+<td>{{ i.received_qty|int if i.received_qty == i.received_qty|int else i.received_qty }}</td>
+<td><b>{{ (i.qty - i.received_qty)|int if (i.qty - i.received_qty) == (i.qty - i.received_qty)|int else (i.qty - i.received_qty) }}</b></td>
+<td>{% if i.received_qty <= 0 %}<button class="btn danger" type="submit" form="rm{{ i.id }}">{{ t('ဖြုတ်') }}</button>{% endif %}</td></tr>
+{% endfor %}
+</table>
+<div class="row">
+  <label>Supplier <input name="supplier" value="{{ r.supplier or '' }}"></label>
+  <label>{{ t('မှတ်ချက်') }} <input name="note" value="{{ r.note or '' }}"></label>
+  <button class="btn" type="submit">{{ t('ပြင်တာတွေ သိမ်းမယ်') }}</button>
+</div>
+</form>
+{% for i in items %}{% if i.received_qty <= 0 %}<form id="rm{{ i.id }}" method="post" action="/requests/{{ r.id }}/remove-line/{{ i.id }}" onsubmit="return confirm('{{ t('ဒီ line ကို ဖြုတ်မလား?') }}')"></form>{% endif %}{% endfor %}
+
+<div class="row">
+  <a class="btn" href="/requests/{{ r.id }}/receive">{{ t('🚚 ကုန်ရောက် သွင်းရန် (PUR ဖွင့်မယ်)') }}</a>
+</div>
+
+<form method="post" action="/requests/{{ r.id }}/add-line" class="card">
+  <div class="row">
+    {{ picker_field('pid') }}
+    <input name="qty" type="number" step="any" min="0" placeholder="{{ t('အရေအတွက်') }}">
+    <button class="btn alt" type="submit">{{ t('+ ပစ္စည်း ထပ်ထည့်') }}</button>
+  </div>
+</form>
+{{ picker_assets(prods) }}
+
+{% set remtot = items|sum(attribute='qty') - items|sum(attribute='received_qty') %}
+{% if remtot > 0 %}
+<form method="post" action="/requests/{{ r.id }}/close" class="card" onsubmit="return confirm('{{ t('ကျန်တဲ့ {n} ခု မရောက်တော့ဘူးလို့ မှတ်ပြီး ပိတ်မလား?', n='%g' % remtot) }}')">
+  <p style="margin-top:0"><b>{{ t('ကျန်တာ ရှိသေးတယ် — {n} ခု · ထပ်စောင့်မလား / မရောက်တော့ ပိတ်မလား', n='%g' % remtot) }}</b></p>
+  <div class="row">
+    <label>{{ t('မှတ်ချက်') }} <input name="note" placeholder="{{ t('အကြောင်း (ဥပမာ supplier short)') }}"></label>
+    <button class="btn alt" type="submit">{{ t('ကျန်တာ မရောက်တော့ — ပိတ်မယ်') }}</button>
+  </div>
+</form>
+{% endif %}
+<div class="row">
+  <form method="post" action="/requests/{{ r.id }}/cancel" class="card" onsubmit="return confirm('{{ t('အမှာ တစ်ခုလုံး ပယ်ဖျက်မလား?') }}')">
+    <label>{{ t('ပယ်ဖျက်မယ် ဆိုရင်') }} <input name="reason" required placeholder="{{ t('အကြောင်းပြချက် (မဖြစ်မနေ)') }}"></label>
+    <button class="btn danger" type="submit">{{ t('အမှာ ပယ်ဖျက်') }}</button>
+  </form>
+</div>
+<p class="hint">{{ t('ပယ်ဖျက်/ပိတ် လုပ်ရင် ရောက်ပြီးသား အပိုင်းက PUR အဖြစ် ဆက် ကျန်နေမယ် — မရောက်သေးတဲ့ အပိုင်းကိုပဲ သက်ရောက်တယ်။') }}</p>
+{% else %}
+<table>
+<tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th>{{ t('မှာတဲ့ အရေအတွက်') }}</th><th>{{ t('ရောက်ပြီး') }}</th><th>{{ t('ကျန်') }}</th></tr>
+{% for i in items %}
+<tr><td>{{ i.sku }}</td><td>{{ i.name }} <small class="muted">{{ i.unit or '' }}</small></td>
+<td>{{ i.qty|int if i.qty == i.qty|int else i.qty }}</td>
+<td>{{ i.received_qty|int if i.received_qty == i.received_qty|int else i.received_qty }}</td>
+<td><b>{{ (i.qty - i.received_qty)|int if (i.qty - i.received_qty) == (i.qty - i.received_qty)|int else (i.qty - i.received_qty) }}</b></td></tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

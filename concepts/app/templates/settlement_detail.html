@@ -1,0 +1,86 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% from '_denom.html' import denom_counter %}{% block title %}{{ st.code }} {{ t('ရှင်းရန်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('stl', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('ရှင်းရန်') }} — {{ st.supplier or '' }} <small>{{ t(STL_STATUS[st.status]) }}</small></h1>
+<p><a class="btn alt" href="/settlements/{{ st.id }}/print" target="_blank">🖨️ Supplier Payment Invoice Print</a></p>
+<p><span class="doccode">{{ st.code }}</span> · Batch: {{ t('အမှာ') if batch_code.startswith('ORQ') else t('အဝယ်') }} <b>{{ batch_code }}</b> · {{ t('လုပ်သူ') }}: {{ st.byname or '' }}{% if st.sent_at %} · {{ t('ပို့ပြီး') }}: {{ st.sent_at }}{% endif %}{% if st.confirmed_at %} · {{ t('Supplier အတည်ပြု') }}: {{ st.confirmed_at }}{% endif %}{% if st.status=='paid' %} · {{ t('ရှင်းပြီး') }}: {{ st.paid_at }} ({{ t(dict(PAY_METHODS).get(st.pay_method or 'cash', st.pay_method or '')) }}{{ ' · ' + st.pay_ref if st.pay_ref else '' }}) — {{ st.paidname or '' }}{% if st.pay_denom %}<br><span class="denom-line">🧮 {{ t('ငွေသား အမျိုးအစား') }}: {{ st.pay_denom | denom }}</span>{% endif %}{% endif %}</p>
+
+<h3>{{ t('အဝယ်များ (PUR)') }}</h3>
+<table>
+<tr><th>{{ t('အဝယ်') }}</th><th>Invoice</th><th>{{ t('စုစုပေါင်း') }}</th><th>{{ t('အခြေအနေ') }}</th></tr>
+{% for pu, ptot in pur_rows %}
+<tr><td><a href="/purchases/{{ pu.id }}">{{ pu.code }}</a></td><td>{{ pu.invoice_no or t('(ဘောက်ချာ နံပါတ် မပါ)') }}</td><td>{{ fmt_money(ptot) }}</td>
+<td>{{ t('စစ်ပြီး ✅ (တွက်ထဲ ပါ)') if pu.status=='checked' else t('စစ်ရန်ကျန် ⏳ (တွက်ထဲ မပါ)') }}</td></tr>
+{% endfor %}
+<tr><td colspan="2"><b>{{ t('စစ်ပြီး စုစုပေါင်း (ပြေစာ ဈေး)') }}</b></td><td><b>{{ fmt_money(bill) }}</b></td><td></td></tr>
+</table>
+
+<h3>{{ t('Actual ဈေးနဲ့ တွက် အသေးစိတ် (ရှင်းရန် အခြေခံ)') }}</h3>
+<table>
+<tr><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('အရေအတွက်') }}</th>{% if show_actual %}<th>{{ t('Actual ဈေး ★') }}</th><th>{{ t('တန်ဖိုး') }}</th>{% endif %}</tr>
+{% for L in lines %}
+<tr><td>{{ L.sku }} — {{ L.name }}</td><td>{{ L.qty|int if L.qty == L.qty|int else L.qty }}</td>{% if show_actual %}<td>{{ fmt_money(L.actual) if L.actual else '—' }}</td><td>{{ fmt_money(L.amount) if L.amount is not none else '—' }}</td>{% endif %}</tr>
+{% endfor %}
+<tr><td colspan="2"><b>{{ t('Actual စုစုပေါင်း') }}</b></td>{% if show_actual %}<td></td><td><b>{{ fmt_money(gross) }}</b></td>{% endif %}</tr>
+</table>
+<p class="hint">{{ t('ပြေစာ ဈေး စုစုပေါင်း {bill} နဲ့ Actual တွက် {gross} ကွာခြား: {diff} Ks', bill=fmt_money(bill), gross=fmt_money(gross), diff=fmt_money(gross - bill)) }}</p>
+{% if missing %}<div class="flags"><div>{{ t('⚠️ Actual ဈေး မဖြည့်ရသေးတဲ့ ပစ္စည်း: {list} — Finance/Owner ဖြည့်ပြီးမှ ရှင်းရန် ပို့လို့ရမယ်', list=missing|join(', ')) }}</div></div>{% endif %}
+{% if pending %}<div class="flags"><div>{{ t('⚠️ စစ်ရန်ကျန် PUR {n} ခု ကျန်သေးတယ် — Finance စစ် ပြီးမှ ရှင်းရန် ပို့လို့ရမယ် (အဲဒီ ပမာဏတွေ တွက်ချက်ထဲ မပါသေးဘူး)', n=pending|length) }}</div></div>{% endif %}
+
+<h3>{{ t('Supplier ဆီ ပြန်ပို့များ') }}</h3>
+<table>
+<tr><th>{{ t('ပြန်အပ်') }}</th><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('အရေအတွက်') }}</th><th>{{ t('တွက်ဈေး (Actual)') }}</th><th>{{ t('တန်ဖိုး') }}</th><th>{{ t('အကြောင်း') }}</th>{% if editable %}<th></th>{% endif %}</tr>
+{% for r in rets %}
+<tr><td>{{ r.code }}</td><td>{{ r.sku }} — {{ r.name }}</td><td>{{ r.qty|int if r.qty == r.qty|int else r.qty }}</td><td>{{ fmt_money(r.cost) }}</td><td>{{ fmt_money(r.qty * r.cost) }}</td><td>{{ r.reason or '' }}</td>
+{% if editable %}<td><form method="post" action="/settlements/{{ st.id }}/returns/{{ r.id }}/delete" onsubmit="return confirm('{{ t('ပြန်ပို့ မှတ်တမ်း ဖျက်ပြီး stock ပြန် ပေါင်းမလား?') }}')"><button class="btn danger" type="submit">{{ t('ဖျက်') }}</button></form></td>{% endif %}</tr>
+{% else %}
+<tr><td colspan="7" class="muted">{{ t('ပြန်ပို့ မရှိဘူး') }}</td></tr>
+{% endfor %}
+<tr><td colspan="4"><b>{{ t('ပြန်ပို့ စုစုပေါင်း') }}</b></td><td><b>{{ fmt_money(rv) }}</b></td><td colspan="2"></td></tr>
+</table>
+
+{% if editable %}
+<form method="post" action="/settlements/{{ st.id }}/returns/add" class="card">
+  <div class="row">
+    <select name="pid">{% for bi in batch_items %}<option value="{{ bi.product_id }}">{{ bi.sku }} — {{ bi.name }}</option>{% endfor %}</select>
+    <input name="qty" type="number" step="any" min="0" placeholder="{{ t('ပြန်ပို့ အရေအတွက်') }}">
+    {% if can('actual.view') %}<input name="cost" placeholder="{{ t('တွက်ဈေး (မထည့်ရင် Actual)') }}">{% endif %}
+    <input name="reason" placeholder="{{ t('အကြောင်း (ပျက်/သက်တမ်းကုန်...)') }}">
+    <button class="btn alt" type="submit">{{ t('+ ပြန်ပို့ မှတ် (stock နုတ်မယ်)') }}</button>
+  </div>
+  <p class="hint">{{ t('ပြန်ပို့ မှတ်တာနဲ့ stock က တန်း နုတ်ပြီး ကျသင့် ပမာဏ လျော့သွားမယ်။ တန်ဖိုး ကို ') }}<b>{{ t('Actual ဈေး') }}</b>{{ t(' နဲ့ auto တွက်တယ် (Actual မရှိတဲ့ ပစ္စည်း ဆို မှတ်လို့ မရဘူး — Finance/Owner အရင် ဖြည့်ရမယ်)။') }}</p>
+</form>
+
+<form method="post" action="/settlements/{{ st.id }}/adjust" class="card">
+  <div class="row">
+    <label>{{ t('ပြင်ဆင် ပမာဏ (+/− Ks)') }} <input name="adjust" value="{{ st.adjust|int if st.adjust == st.adjust|int else st.adjust }}" style="width:130px"></label>
+    <label>{{ t('အကြောင်း') }} <input name="adjust_note" value="{{ st.adjust_note or '' }}" placeholder="{{ t('(လျှော့တာ/ပိုတာရှိရင်)') }}"></label>
+    <button class="btn alt" type="submit">{{ t('သိမ်းမယ်') }}</button>
+  </div>
+</form>
+{% elif st.adjust %}
+<p>{{ t('ပြင်ဆင် ပမာဏ') }}: {{ fmt_money(st.adjust) }}{{ ' — ' + st.adjust_note if st.adjust_note else '' }}</p>
+{% endif %}
+
+<div class="card">
+  <h3 style="margin-top:0">{{ t('ကျသင့် ပမာဏ') }}</h3>
+  <p>{{ t('Actual တွက် စုစုပေါင်း {gross} − ပြန်ပို့ {rv}', gross=fmt_money(gross), rv=fmt_money(rv)) }}{{ t(' + ပြင်ဆင် {adj}', adj=fmt_money(st.adjust)) if st.adjust else '' }} = <b style="font-size:1.25em">{{ fmt_money(st.final_amount if st.final_amount is not none else payable) }} Ks</b></p>
+  {% if st.status=='draft' and can('settlements.send') %}
+  <form method="post" action="/settlements/{{ st.id }}/send" onsubmit="return confirm('{{ t('ကျသင့် ပမာဏကို အတည်ပြုပြီး Supplier ဆီ ပို့ပြီး အဖြစ် မှတ်မလား? ပို့ပြီးရင် ပြန် ပြင်လို့ မရတော့ဘူး') }}')">
+    <button class="btn" type="submit" {{ 'disabled' if pending or missing else '' }}>{{ t('📤 ကျသင့် အတည်ပြု — Supplier ဆီ ပို့ပြီး') }}</button>
+  </form>
+  {% elif st.status=='sent' and can('settlements.confirm') %}
+  <form method="post" action="/settlements/{{ st.id }}/confirm" onsubmit="return confirm('{{ t('Supplier က အတည်ပြုပြီးပြီလား?') }}')">
+    <button class="btn" type="submit">{{ t('✅ Supplier အတည်ပြုပြီး') }}</button>
+  </form>
+  {% elif st.status=='confirmed' and can('settlements.pay') %}
+  <form method="post" action="/settlements/{{ st.id }}/pay" class="row">
+    <label>{{ t('ရှင်းတဲ့ ရက်') }} <input name="paid_at" type="date"></label>
+    <label>{{ t('ငွေ ပေးတဲ့ နည်း') }} <select name="pay_method">{% for k, lbl in PAY_METHODS %}<option value="{{ k }}">{{ t(lbl) }}</option>{% endfor %}</select></label>
+    <label>{{ t('အမှတ်/မှတ်ချက်') }} <input name="pay_ref" placeholder="{{ t('(ရှိရင်)') }}"></label>
+    {{ denom_counter('sp_', gate='pay_method') }}
+    <button class="btn" type="submit">{{ t('💰 ငွေရှင်းပြီး မှတ်မယ်') }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

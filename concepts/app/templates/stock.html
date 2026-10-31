@@ -1,0 +1,21 @@
+{% extends 'base.html' %}{% from '_tabs.html' import inv_tabs %}{% block title %}{{ t('Stock မှတ်တမ်း') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ inv_tabs('stock', perms) }}
+<h1>{{ t('Stock မှတ်တမ်း') }} (Ledger)</h1>
+<a class="btn alt" href="/export/stock.xlsx">{{ t('📥 Stock+ဈေး Excel ဆွဲမယ်') }}</a>
+<form method="get" class="row">
+  <select name="pid"><option value="">{{ t('ပစ္စည်း အကုန်') }}</option>{% for p in prods %}<option value="{{ p.id }}" {% if pid and p.id==pid|int %}selected{% endif %}>{{ p.sku }} — {{ p.name }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+</form>
+{% if sel %}
+<div class="card"><b>{{ sel.prod.sku }} — {{ sel.prod.name }}</b> · {{ t('လက်ကျန်') }}: <b>{{ sel.view|int if sel.view == sel.view|int else sel.view }}</b> {{ sel.prod.unit or '' }}
+{% if sel.partner %}<br><small class="muted">{{ t('🔗 {sku} နဲ့ ချိတ်ထား — စုစုပေါင်း လက်ကျန် {pool} {unit}', sku=sel.partner.sku, pool=(sel.pool|int if sel.pool == sel.pool|int else sel.pool), unit=sel.base_unit or '') }}</small>{% endif %}
+</div>
+{% endif %}
+<table>
+<tr><th>{{ t('အချိန်') }}</th><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('အပြောင်းအလဲ') }}</th><th>{{ t('အမျိုးအစား') }}</th><th>Ref</th><th>{{ t('မှတ်ချက်') }}</th><th>{{ t('လုပ်သူ') }}</th></tr>
+{% for m in rows %}
+<tr><td>{{ m.created_at }}</td><td>{{ m.sku }} {{ m.name }}</td><td>{{ '+' if m.delta>0 else '' }}{{ m.delta }}</td><td>{{ m.kind }}</td><td>{{ m.ref or '' }}</td><td>{{ m.note or '' }}</td><td>{{ m.uname or '' }}</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

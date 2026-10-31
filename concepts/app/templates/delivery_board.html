@@ -1,0 +1,56 @@
+{% extends 'base.html' %}{% from '_tabs.html' import ord_tabs %}{% block title %}{{ t('🚚 ပို့ဆောင်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ ord_tabs('board', perms) }}
+<h1>{{ t('🚚 ပို့ဆောင်') }}</h1>
+<form method="get" class="row">
+  <label>{{ t('ရက်') }} <input type="date" name="day" value="{{ day }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+  {% if can('handover.view') %}<a class="btn alt" href="/handover?day={{ day }}">{{ t('💵 ငွေ လွှဲအပ် စစ်ရန်') }}</a>{% endif %}
+  <a class="btn alt" href="/gps-check">{{ t('📍 နေရာ စစ် စာရင်း') }}{% if gps_open %} ({{ gps_open }}){% endif %}</a>
+</form>
+<h2>{{ t('ဒီနေ့ ပို့ဆောင် အခြေအနေ') }}</h2>
+{% if board %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('ပို့သူ') }}</th><th style="text-align:right">{{ t('ပို့ရန် ကျန်') }}</th><th style="text-align:right">{{ t('ဒီနေ့ ပို့ပြီး') }}</th><th style="text-align:right">{{ t('မပို့ဖြစ် — ဘောက်ချာ ပယ်ဖျက်') }}</th><th style="text-align:right">{{ t('ကောက်ရမယ့် ငွေ') }}</th><th style="text-align:right">{{ t('ကောက်ပြီး ငွေ') }}</th><th style="text-align:right">{{ t('အတည်ပြုပြီး ငွေ') }}</th></tr>
+{% for b in board %}
+<tr><td>{{ b.u.name }}</td><td class="num">{{ b.assigned }}</td><td class="num">{{ b.delivered }}</td><td class="num">{{ b.failed }}</td><td class="num">{{ fmt_money(b.expected) }}</td><td class="num">{{ fmt_money(b.collected) }}</td><td class="num">{{ fmt_money(b.verified) }}</td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="hint">{{ t('ပို့ ဘောက်ချာ မရှိသေးဘူး') }}</p>{% endif %}
+<h2>{{ t('ပို့ရန် ဘောက်ချာများ') }}</h2>
+{% if groups %}
+{% for area, rows in groups.items() %}
+<h3>{{ area or '—' }}</h3>
+{% if can('delivery.assign') and deliverers %}
+<form method="post" action="/delivery/assign" class="row">
+  <input type="hidden" name="area" value="{{ area }}"><input type="hidden" name="bulk" value="1"><input type="hidden" name="day" value="{{ day }}">
+  <label>{{ t('ပို့သူ') }} <select name="user_id">{% for u in deliverers %}<option value="{{ u.id }}">{{ u.name }}</option>{% endfor %}</select></label>
+  <button class="btn alt" type="submit">{{ t('ဒီ ဧရိယာ တစ်ခုလုံး ပေးမယ်') }}</button>
+</form>
+{% endif %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('ရက်') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th>{{ t('တာဝန် ရသူ') }}</th><th></th></tr>
+{% for x in rows %}
+<tr><td><a href="/orders/{{ x.o.id }}">{{ x.o.code }}</a></td><td>{{ x.o.outlet }}</td><td>{{ x.o.odate }}</td><td class="num">{{ fmt_money(x.total) }}</td>
+<td>{{ x.assignee or t('မပေးရသေး') }}</td>
+<td>{% if can('delivery.assign') and deliverers %}<form method="post" action="/delivery/assign" class="row"><input type="hidden" name="order_id" value="{{ x.o.id }}"><input type="hidden" name="day" value="{{ day }}"><select name="user_id">{% for u in deliverers %}<option value="{{ u.id }}" {% if x.o.assigned_to == u.id %}selected{% endif %}>{{ u.name }}</option>{% endfor %}</select> <button type="submit">{{ t('တာဝန် ပေးမယ်') }}</button></form>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% endfor %}
+{% else %}<p class="hint">{{ t('ပေးရန် ဘောက်ချာ မရှိဘူး') }}</p>{% endif %}
+<h2>{{ t('မပို့ဖြစ် မှတ်တမ်း') }}</h2>
+{% if fails %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('အချိန်') }}</th><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('ပို့သူ') }}</th><th>{{ t('အကြောင်း') }}</th></tr>
+{% for a in fails %}
+<tr><td>{{ (a.created_at or '')[:16] }}</td><td>{{ a.code }}</td><td>{{ a.outlet }}</td><td>{{ a.byname or '' }}</td><td>{{ a.reason or '' }}{% if a.note %} · {{ a.note }}{% endif %}{% if a.lat is not none and a.lng is not none %} · <a href="https://www.google.com/maps?q={{ a.lat }},{{ a.lng }}" target="_blank" rel="noopener">📍 {{ t('နေရာ ကြည့်ရန်') }}</a>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="hint">{{ t('မပို့ဖြစ် မှတ်တမ်း မရှိဘူး') }}</p>{% endif %}
+{% if can('settings.gps_threshold') %}
+<form method="post" action="/settings/gps-mismatch" class="card">
+  <label>{{ t('ရောင်း တဲ့ နေရာ နဲ့ ပို့ တဲ့ နေရာ ဘယ် လောက် ခြား ရင် သတိ ပေး မလဲ (m)') }} <input type="number" name="m" value="{{ gps_m }}" min="20" max="10000" step="10" style="width:7em"></label>
+  <button class="btn alt" type="submit">{{ t('သိမ်းမယ်') }}</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from io import BytesIO
 import hashlib
+import math
 import re
 import secrets
 import sqlite3
@@ -26,11 +27,13 @@ import os
 import shutil
 import tempfile
 import pandas as pd
+from urllib.parse import urlsplit
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import (
     SECRET_KEY,
+    IS_PRODUCTION,
     EXCEL_FILE,
     UPLOAD_FOLDER,
     ADMIN_USERNAME,
@@ -62,8 +65,30 @@ from services import (
     validate_product_form,
 )
 
+SHOP_TYPE_OPTIONS = [
+    ("retail", "Retail shop"),
+    ("wholesale", "Wholesale shop"),
+    ("area_wholesale", "Area wholesaler"),
+    ("trading", "Trading company"),
+    ("cosmetics", "Cosmetics"),
+    ("cosmetics_wholesale", "Cosmetics wholesaler"),
+    ("cold_drinks", "Cold drinks"),
+    ("coffee", "Coffee shop"),
+    ("tea", "Tea shop"),
+    ("food_variety", "Food variety"),
+    ("snack", "Snack shop"),
+    ("restaurant", "Restaurant"),
+    ("entertainment", "Entertainment"),
+]
+SHOP_TYPE_KEYS = {key for key, _ in SHOP_TYPE_OPTIONS}
+
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+app.config.update(
+    SESSION_COOKIE_SECURE=IS_PRODUCTION,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 app.config["PRODUCT_IMAGES_DIR"] = PRODUCT_IMAGES_DIR
 app.config["THUMBNAILS_DIR"] = THUMBNAILS_DIR
 app.config["MAX_IMAGE_SIZE"] = MAX_IMAGE_SIZE
@@ -73,6 +98,23 @@ app.config["WEBP_QUALITY"] = WEBP_QUALITY
 app.config["IMAGE_MAX_WIDTH"] = IMAGE_MAX_WIDTH
 app.config["THUMBNAIL_WIDTH"] = THUMBNAIL_WIDTH
 app.config["GALLERY_PAGE_SIZE"] = GALLERY_PAGE_SIZE
+
+UI_LANGUAGES = {
+    "en": "English",
+    "my": "မြန်မာ",
+    "zh": "中文",
+}
+
+
+@app.context_processor
+def inject_ui_language():
+    selected = request.cookies.get("gtm_lang", "en")
+    if selected not in UI_LANGUAGES:
+        selected = "en"
+    return {
+        "ui_language": selected,
+        "ui_languages": UI_LANGUAGES.items(),
+    }
 
 # Create the products table (if needed) and, on a brand new database,
 # auto-import whatever Excel file is already sitting in uploads/.
@@ -169,6 +211,34 @@ def get_mobile_rep():
         return None
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     return db.get_mobile_rep_by_token_hash(token_hash)
+
+
+def _validate_mobile_visit_location(location):
+    if location is None:
+        return None
+    if not isinstance(location, dict):
+        raise ValueError("Visit location must be an object.")
+
+    coordinates = {}
+    for field in ("latitude", "longitude", "accuracy"):
+        raw_value = location.get(field)
+        if isinstance(raw_value, bool):
+            raise ValueError("Visit location contains invalid coordinates.")
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            raise ValueError("Visit location contains invalid coordinates.") from None
+        if not math.isfinite(value):
+            raise ValueError("Visit location contains invalid coordinates.")
+        coordinates[field] = value
+
+    if (
+        not -90 <= coordinates["latitude"] <= 90
+        or not -180 <= coordinates["longitude"] <= 180
+        or coordinates["accuracy"] < 0
+    ):
+        raise ValueError("Visit location is outside valid coordinate ranges.")
+    return coordinates
 
 
 # Product images live in static/product-images/, named to match the
@@ -964,6 +1034,28 @@ def api_mobile_sync():
             })
             continue
 
+        raw_outlet_id = order.get("outlet_id")
+        outlet_id = None
+        if raw_outlet_id is not None:
+            if isinstance(raw_outlet_id, bool):
+                results.append({
+                    "client_order_id": client_order_id,
+                    "ok": False,
+                    "error": "Invalid outlet selection.",
+                })
+                continue
+            try:
+                outlet_id = int(raw_outlet_id)
+                if outlet_id < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                results.append({
+                    "client_order_id": client_order_id,
+                    "ok": False,
+                    "error": "Invalid outlet selection.",
+                })
+                continue
+
         raw_collected_at = order.get("collected_at")
         try:
             if not isinstance(raw_collected_at, str):
@@ -981,6 +1073,9 @@ def api_mobile_sync():
             continue
 
         try:
+            visit_location = _validate_mobile_visit_location(
+                order.get("visit_location")
+            )
             result = db.create_mobile_order(
                 rep_id=rep["id"],
                 rep_name=db.rep_label(rep),
@@ -989,6 +1084,8 @@ def api_mobile_sync():
                 outlet_name=outlet_name,
                 collected_at=collected_at,
                 items=order.get("items"),
+                outlet_id=outlet_id,
+                visit_location=visit_location,
             )
         except ValueError as exc:
             results.append({
@@ -1004,6 +1101,289 @@ def api_mobile_sync():
             **result,
         })
 
+    return jsonify({"results": results})
+
+
+@app.route("/api/mobile/visits/sync", methods=["POST"])
+def api_mobile_visits_sync():
+    """Accept an independently retry-safe batch of offline field visits."""
+    rep = get_mobile_rep()
+    if rep is None:
+        return jsonify({"error": "Authentication required."}), 401
+
+    visits = get_json_payload().get("visits")
+    if not isinstance(visits, list) or not visits or len(visits) > 50:
+        return jsonify({"error": "Provide between 1 and 50 visits."}), 400
+
+    results = []
+    for visit in visits:
+        if not isinstance(visit, dict):
+            results.append({"ok": False, "error": "Invalid visit payload."})
+            continue
+
+        client_visit_id = visit.get("client_visit_id")
+        try:
+            parsed_id = uuid.UUID(str(client_visit_id))
+            if str(parsed_id) != str(client_visit_id).lower():
+                raise ValueError
+        except (ValueError, AttributeError):
+            results.append({
+                "client_visit_id": client_visit_id,
+                "ok": False,
+                "error": "Visit ID must be a UUID.",
+            })
+            continue
+
+        raw_outlet_name = visit.get("outlet_name")
+        outlet_name = raw_outlet_name.strip() if isinstance(raw_outlet_name, str) else ""
+        if not outlet_name or len(outlet_name) > 200:
+            results.append({
+                "client_visit_id": client_visit_id,
+                "ok": False,
+                "error": "Outlet name is required and must be 200 characters or fewer.",
+            })
+            continue
+
+        raw_type = visit.get("visit_type", "general")
+        visit_type = raw_type.strip() if isinstance(raw_type, str) else ""
+        raw_note = visit.get("note", "")
+        note = raw_note.strip() if isinstance(raw_note, str) else None
+        if not visit_type or len(visit_type) > 40 or note is None or len(note) > 500:
+            results.append({
+                "client_visit_id": client_visit_id,
+                "ok": False,
+                "error": "Visit type or note has an invalid value or is too long.",
+            })
+            continue
+
+        raw_outlet_id = visit.get("outlet_id")
+        outlet_id = None
+        if raw_outlet_id is not None:
+            if isinstance(raw_outlet_id, bool):
+                results.append({
+                    "client_visit_id": client_visit_id,
+                    "ok": False,
+                    "error": "Invalid outlet selection.",
+                })
+                continue
+            try:
+                outlet_id = int(raw_outlet_id)
+                if outlet_id < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                results.append({
+                    "client_visit_id": client_visit_id,
+                    "ok": False,
+                    "error": "Invalid outlet selection.",
+                })
+                continue
+
+        raw_visited_at = visit.get("visited_at")
+        try:
+            if not isinstance(raw_visited_at, str):
+                raise ValueError
+            visited = datetime.fromisoformat(raw_visited_at.replace("Z", "+00:00"))
+            if visited.tzinfo is None:
+                raise ValueError
+            visited_at = visited.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            results.append({
+                "client_visit_id": client_visit_id,
+                "ok": False,
+                "error": "Visit time must be an ISO 8601 timestamp with timezone.",
+            })
+            continue
+
+        try:
+            visit_location = _validate_mobile_visit_location(visit.get("visit_location"))
+            result = db.create_mobile_visit(
+                rep_id=rep["id"],
+                rep_name=db.rep_label(rep),
+                client_visit_id=str(parsed_id),
+                outlet_name=outlet_name,
+                visited_at=visited_at,
+                visit_type=visit_type,
+                note=note,
+                outlet_id=outlet_id,
+                visit_location=visit_location,
+            )
+        except ValueError as exc:
+            results.append({
+                "client_visit_id": client_visit_id,
+                "ok": False,
+                "error": str(exc),
+            })
+            continue
+
+        results.append({
+            "client_visit_id": str(parsed_id),
+            "ok": True,
+            **result,
+        })
+
+    return jsonify({"results": results})
+
+
+@app.route("/api/mobile/deliveries")
+def api_mobile_deliveries():
+    rep = get_mobile_rep()
+    if rep is None:
+        return jsonify({"error": "Authentication required."}), 401
+    requested_date = request.args.get("date", "").strip()
+    try:
+        if requested_date:
+            datetime.strptime(requested_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Date must use YYYY-MM-DD format."}), 400
+    payload = db.get_mobile_deliveries(rep["id"], delivery_date=requested_date or None)
+    return jsonify(payload)
+
+
+@app.route("/api/mobile/deliveries/sync", methods=["POST"])
+def api_mobile_deliveries_sync():
+    rep = get_mobile_rep()
+    if rep is None:
+        return jsonify({"error": "Authentication required."}), 401
+    attempts = get_json_payload().get("attempts")
+    if not isinstance(attempts, list) or not attempts or len(attempts) > 50:
+        return jsonify({"error": "Provide between 1 and 50 delivery attempts."}), 400
+
+    results = []
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            results.append({"ok": False, "error": "Invalid delivery attempt."})
+            continue
+        client_attempt_id = attempt.get("client_attempt_id")
+        try:
+            parsed_id = uuid.UUID(str(client_attempt_id))
+            if str(parsed_id) != str(client_attempt_id).lower():
+                raise ValueError
+        except (ValueError, AttributeError):
+            results.append({
+                "client_attempt_id": client_attempt_id,
+                "ok": False,
+                "error": "Delivery attempt ID must be a UUID.",
+            })
+            continue
+
+        raw_order_id = attempt.get("order_id")
+        if isinstance(raw_order_id, bool) or (
+            isinstance(raw_order_id, float) and not raw_order_id.is_integer()
+        ):
+            results.append({
+                "client_attempt_id": client_attempt_id,
+                "ok": False,
+                "error": "Invalid order selection.",
+            })
+            continue
+        try:
+            order_id = int(raw_order_id)
+            if order_id < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            results.append({
+                "client_attempt_id": client_attempt_id,
+                "ok": False,
+                "error": "Invalid order selection.",
+            })
+            continue
+
+        outcome = attempt.get("result")
+        if not isinstance(outcome, str) or outcome not in {"delivered", "failed"}:
+            results.append({
+                "client_attempt_id": client_attempt_id,
+                "ok": False,
+                "error": "Choose delivered or failed.",
+            })
+            continue
+        try:
+            location = _validate_mobile_visit_location(attempt.get("visit_location"))
+            result = db.record_mobile_delivery_attempt(
+                rep_id=rep["id"],
+                client_attempt_id=str(parsed_id),
+                order_id=order_id,
+                result=outcome,
+                failure_reason=attempt.get("failure_reason", ""),
+                note=attempt.get("note", ""),
+                cash_collected=attempt.get("cash_collected", 0),
+                visit_location=location,
+                delivered_items=attempt.get("delivered_items"),
+            )
+        except ValueError as exc:
+            results.append({
+                "client_attempt_id": client_attempt_id,
+                "ok": False,
+                "error": str(exc),
+            })
+            continue
+        results.append({
+            "client_attempt_id": str(parsed_id),
+            "ok": True,
+            **result,
+        })
+    return jsonify({"results": results})
+
+
+@app.route("/api/mobile/handovers/sync", methods=["POST"])
+def api_mobile_handovers_sync():
+    rep = get_mobile_rep()
+    if rep is None:
+        return jsonify({"error": "Authentication required."}), 401
+    handovers = get_json_payload().get("handovers")
+    if not isinstance(handovers, list) or not handovers or len(handovers) > 20:
+        return jsonify({"error": "Provide between 1 and 20 handovers."}), 400
+
+    results = []
+    for handover in handovers:
+        if not isinstance(handover, dict):
+            results.append({"ok": False, "error": "Invalid handover record."})
+            continue
+        handover_id = handover.get("client_handover_id")
+        try:
+            parsed_id = uuid.UUID(str(handover_id))
+            if str(parsed_id) != str(handover_id).lower():
+                raise ValueError
+        except (ValueError, AttributeError):
+            results.append({
+                "client_handover_id": handover_id,
+                "ok": False,
+                "error": "Handover ID must be a UUID.",
+            })
+            continue
+
+        handover_date = handover.get("handover_date")
+        try:
+            if not isinstance(handover_date, str):
+                raise ValueError
+            datetime.strptime(handover_date, "%Y-%m-%d")
+        except ValueError:
+            results.append({
+                "client_handover_id": handover_id,
+                "ok": False,
+                "error": "Handover date must use YYYY-MM-DD format.",
+            })
+            continue
+        try:
+            result = db.create_mobile_delivery_handover(
+                rep_id=rep["id"],
+                client_handover_id=str(parsed_id),
+                attempt_ids=handover.get("attempt_ids"),
+                declared_cash=handover.get("declared_cash"),
+                handover_date=handover_date,
+                note=handover.get("note", ""),
+            )
+        except ValueError as exc:
+            results.append({
+                "client_handover_id": handover_id,
+                "ok": False,
+                "error": str(exc),
+            })
+            continue
+        results.append({
+            "client_handover_id": str(parsed_id),
+            "ok": True,
+            **result,
+        })
     return jsonify({"results": results})
 
 
@@ -1096,6 +1476,7 @@ def login():
             return redirect(url_for("login"))
 
         session["admin"] = True
+        session["admin_username"] = username
 
         flash("Welcome back!", "success")
 
@@ -1112,6 +1493,41 @@ def logout():
     flash("Logged out.", "success")
 
     return redirect(url_for("login"))
+
+
+@app.route("/language/<code>")
+def set_language(code):
+    if code not in UI_LANGUAGES:
+        code = "en"
+
+    destination = request.args.get("next", "")
+    parsed_destination = urlsplit(destination)
+    if (
+        not parsed_destination.path.startswith("/")
+        or parsed_destination.path.startswith("//")
+        or parsed_destination.scheme
+        or parsed_destination.netloc
+        or "\\" in parsed_destination.path
+        or any(ord(char) < 32 for char in destination)
+    ):
+        destination = url_for("home")
+    else:
+        destination = parsed_destination.path
+        if parsed_destination.query:
+            destination += f"?{parsed_destination.query}"
+        if parsed_destination.fragment:
+            destination += f"#{parsed_destination.fragment}"
+
+    response = redirect(destination)
+    response.set_cookie(
+        "gtm_lang",
+        code,
+        max_age=365 * 24 * 60 * 60,
+        secure=request.is_secure,
+        httponly=True,
+        samesite="Lax",
+    )
+    return response
 
 
 # ------------------------
@@ -1561,7 +1977,11 @@ def admin_product_delete(product_id):
 
     product = db.get_product(product_id)
 
-    db.delete_product(product_id)
+    try:
+        db.delete_product(product_id)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin_products"))
 
     name = product["Product Name"] if product else "Product"
 
@@ -1693,7 +2113,11 @@ def admin_rep_delete(rep_id):
     if redirect_response is not None:
         return redirect_response
 
-    db.delete_rep(rep_id)
+    try:
+        db.delete_rep(rep_id)
+    except ValueError as exc:
+        flash(str(exc), "warning")
+        return redirect(url_for("admin_reps"))
 
     flash("Sales rep deleted.", "success")
 
@@ -1726,6 +2150,524 @@ def admin_orders():
     )
 
 
+@app.route("/admin/deliveries")
+def admin_deliveries():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    requested_date = request.args.get("date", "").strip()
+    try:
+        if requested_date:
+            datetime.strptime(requested_date, "%Y-%m-%d")
+    except ValueError:
+        flash("Date must use YYYY-MM-DD format.", "danger")
+        requested_date = ""
+    orders, reps = db.get_delivery_board()
+    day = requested_date or datetime.now().strftime("%Y-%m-%d")
+    return render_template(
+        "admin_deliveries.html",
+        orders=orders,
+        reps=reps,
+        handovers=db.get_delivery_handovers(day),
+        selected_date=day,
+    )
+
+
+@app.route("/admin/deliveries/<int:order_id>/assign", methods=["POST"])
+def admin_delivery_assign(order_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    try:
+        rep_id = int(request.form.get("rep_id", ""))
+        db.assign_delivery_order(
+            order_id,
+            rep_id,
+            actor=session.get("admin_username", ADMIN_USERNAME),
+        )
+    except (TypeError, ValueError) as exc:
+        flash(str(exc) or "Choose a valid delivery rep.", "danger")
+    else:
+        flash(f"Order #{order_id} assigned for delivery.", "success")
+    return redirect(url_for("admin_deliveries"))
+
+
+@app.route("/admin/deliveries/handovers/<int:handover_id>/verify", methods=["POST"])
+def admin_delivery_handover_verify(handover_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    try:
+        db.verify_delivery_handover(
+            handover_id,
+            request.form.get("received_cash", ""),
+            actor=session.get("admin_username", ADMIN_USERNAME),
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Cash handover verified.", "success")
+    return redirect(url_for(
+        "admin_deliveries",
+        date=request.form.get("date", "").strip() or datetime.now().strftime("%Y-%m-%d"),
+    ))
+
+
+@app.route("/admin/outlets", methods=["GET", "POST"])
+def admin_outlets():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        area = request.form.get("area", "").strip()
+        note = request.form.get("note", "").strip()
+        raw_type = request.form.get("shop_type", "").strip()
+        raw_limit = request.form.get("credit_limit", "").strip()
+        credit_limit = None
+        if raw_limit:
+            try:
+                credit_limit = float(raw_limit)
+            except ValueError:
+                flash("Credit limit must be a valid amount.", "danger")
+                return redirect(url_for("admin_outlets"))
+            if not math.isfinite(credit_limit) or credit_limit < 0:
+                flash("Credit limit must be zero or greater.", "danger")
+                return redirect(url_for("admin_outlets"))
+        try:
+            db.create_outlet(
+                name,
+                area,
+                note,
+                raw_type if raw_type in SHOP_TYPE_KEYS else None,
+                credit_limit,
+            )
+        except ValueError as exc:
+            flash(str(exc), "danger")
+        else:
+            flash(f"Outlet “{name}” added.", "success")
+        return redirect(url_for("admin_outlets"))
+
+    outlets = db.get_all_outlets()
+    return render_template(
+        "admin_outlets.html",
+        outlets=outlets,
+        shop_type_options=SHOP_TYPE_OPTIONS,
+    )
+
+
+@app.route("/admin/outlets/<int:outlet_id>")
+def admin_outlet_detail(outlet_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+
+    outlet = db.get_outlet(outlet_id)
+    if outlet is None:
+        flash("Outlet not found.", "danger")
+        return redirect(url_for("admin_outlets"))
+    return render_template(
+        "admin_outlet_detail.html",
+        outlet=outlet,
+        shop_type_options=SHOP_TYPE_OPTIONS,
+    )
+
+
+@app.route("/admin/outlets/<int:outlet_id>/edit", methods=["POST"])
+def admin_outlet_edit(outlet_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+
+    raw_limit = request.form.get("credit_limit", "").strip()
+    credit_limit = None
+    if raw_limit:
+        try:
+            credit_limit = float(raw_limit)
+        except ValueError:
+            flash("Credit limit must be a valid amount.", "danger")
+            return redirect(url_for("admin_outlet_detail", outlet_id=outlet_id))
+        if not math.isfinite(credit_limit) or credit_limit < 0:
+            flash("Credit limit must be zero or greater.", "danger")
+            return redirect(url_for("admin_outlet_detail", outlet_id=outlet_id))
+    raw_type = request.form.get("shop_type", "").strip()
+    try:
+        db.update_outlet(
+            outlet_id,
+            request.form.get("name", ""),
+            request.form.get("area", ""),
+            request.form.get("note", ""),
+            raw_type if raw_type in SHOP_TYPE_KEYS else None,
+            credit_limit,
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Outlet details updated.", "success")
+    return redirect(url_for("admin_outlet_detail", outlet_id=outlet_id))
+
+
+@app.route("/admin/outlets/<int:outlet_id>/aliases", methods=["POST"])
+def admin_outlet_alias_add(outlet_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    try:
+        db.add_outlet_alias(outlet_id, request.form.get("alias", ""))
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Outlet alias added.", "success")
+    return redirect(url_for("admin_outlet_detail", outlet_id=outlet_id))
+
+
+@app.route("/admin/outlets/<int:outlet_id>/aliases/<int:alias_id>/delete", methods=["POST"])
+def admin_outlet_alias_delete(outlet_id, alias_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    db.delete_outlet_alias(outlet_id, alias_id)
+    flash("Outlet alias removed.", "success")
+    return redirect(url_for("admin_outlet_detail", outlet_id=outlet_id))
+
+
+@app.route("/admin/sales-report")
+def admin_sales_report():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+
+    today = datetime.now().date()
+    first_of_month = today.replace(day=1)
+    start_date = request.args.get("from", first_of_month.isoformat()).strip()
+    end_date = request.args.get("to", today.isoformat()).strip()
+    try:
+        parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Choose valid start and end dates.", "danger")
+        return redirect(url_for("admin_sales_report"))
+    if parsed_start > parsed_end:
+        flash("The start date must be on or before the end date.", "danger")
+        return redirect(url_for("admin_sales_report", **{"from": start_date, "to": end_date}))
+
+    rep_name = request.args.get("rep", "").strip()
+    rep_options = db.get_order_rep_names()
+    if rep_name and rep_name not in rep_options:
+        flash("That sales representative is not in the order history.", "danger")
+        return redirect(url_for("admin_sales_report", **{"from": start_date, "to": end_date}))
+    report = db.get_sales_report(start_date, end_date, rep_name or None)
+    return render_template(
+        "admin_sales_report.html",
+        report=report,
+        start_date=start_date,
+        end_date=end_date,
+        rep_name=rep_name,
+        rep_options=rep_options,
+    )
+
+
+@app.route("/admin/inventory")
+def admin_inventory():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+
+    products = db.get_inventory_products()
+    raw_product_pk = request.args.get("product_id", "").strip()
+    selected_product_pk = None
+    if raw_product_pk:
+        try:
+            selected_product_pk = int(raw_product_pk)
+        except ValueError:
+            flash("Choose a valid product.", "danger")
+            return redirect(url_for("admin_inventory"))
+        if not any(product["id"] == selected_product_pk for product in products):
+            flash("Product not found.", "danger")
+            return redirect(url_for("admin_inventory"))
+
+    return render_template(
+        "admin_inventory.html",
+        products=products,
+        movements=db.get_stock_movements(selected_product_pk),
+        selected_product_pk=selected_product_pk,
+        total_units=sum(product["quantity"] for product in products),
+        stocked_products=sum(product["quantity"] > 0 for product in products),
+    )
+
+
+@app.route("/admin/inventory/movement", methods=["POST"])
+def admin_inventory_movement():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+
+    try:
+        product_pk = int(request.form.get("product_pk", ""))
+        movement_type = request.form.get("movement_type", "").strip()
+        db.record_stock_movement(
+            product_pk,
+            request.form.get("quantity", ""),
+            movement_type,
+            reference=request.form.get("reference", ""),
+            note=request.form.get("note", ""),
+            actor=session.get("admin_username", ADMIN_USERNAME),
+        )
+    except (TypeError, ValueError) as exc:
+        flash(str(exc) or "Enter a valid stock movement.", "danger")
+        return redirect(url_for("admin_inventory"))
+    flash("Stock movement recorded.", "success")
+    return redirect(url_for("admin_inventory", product_id=product_pk))
+
+
+@app.route("/admin/stock-counts")
+def admin_stock_counts():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    return render_template("admin_stock_counts.html", counts=db.get_stock_counts())
+
+
+@app.route("/admin/stock-counts/create", methods=["POST"])
+def admin_stock_count_create():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    try:
+        count_id = db.create_stock_count(
+            actor=session.get("admin_username", ADMIN_USERNAME)
+        )
+    except Exception as exc:
+        app.logger.exception("Failed to create stock count")
+        flash(f"Could not create stock count: {exc}", "danger")
+        return redirect(url_for("admin_stock_counts"))
+    flash("Stock count created. Enter the physical quantity for every product.", "success")
+    return redirect(url_for("admin_stock_count_detail", count_id=count_id))
+
+
+@app.route("/admin/stock-counts/<int:count_id>")
+def admin_stock_count_detail(count_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    count, lines = db.get_stock_count(count_id)
+    if count is None:
+        flash("Stock count not found.", "danger")
+        return redirect(url_for("admin_stock_counts"))
+    return render_template(
+        "admin_stock_count_detail.html",
+        count=count,
+        lines=lines,
+    )
+
+
+@app.route("/admin/stock-counts/<int:count_id>/save", methods=["POST"])
+def admin_stock_count_save(count_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    count, lines = db.get_stock_count(count_id)
+    if count is None:
+        flash("Stock count not found.", "danger")
+        return redirect(url_for("admin_stock_counts"))
+    try:
+        counts = {
+            line["id"]: request.form.get(f"count_{line['id']}", "")
+            for line in lines
+        }
+        db.save_stock_count(count_id, counts)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Physical quantities saved.", "success")
+    return redirect(url_for("admin_stock_count_detail", count_id=count_id))
+
+
+@app.route("/admin/stock-counts/<int:count_id>/approve", methods=["POST"])
+def admin_stock_count_approve(count_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    try:
+        db.approve_stock_count(
+            count_id, actor=session.get("admin_username", ADMIN_USERNAME)
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Count approved; stock balances and the ledger were updated.", "success")
+    return redirect(url_for("admin_stock_count_detail", count_id=count_id))
+
+
+@app.route("/admin/stock-counts/<int:count_id>/delete", methods=["POST"])
+def admin_stock_count_delete(count_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    try:
+        db.delete_stock_count(count_id)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin_stock_count_detail", count_id=count_id))
+    flash("Draft stock count deleted.", "success")
+    return redirect(url_for("admin_stock_counts"))
+
+
+def _purchase_order_form_context(form_data=None):
+    products = db.get_inventory_products()
+    suppliers = sorted({
+        product["supplier"].strip()
+        for product in products
+        if product["supplier"] and product["supplier"].strip()
+    }, key=str.casefold)
+    return {
+        "products": products,
+        "suppliers": suppliers,
+        "form_data": form_data or {
+            "supplier": "",
+            "invoice_number": "",
+            "order_date": datetime.now().strftime("%Y-%m-%d"),
+            "note": "",
+            "lines": [{}],
+        },
+    }
+
+
+@app.route("/admin/purchases")
+def admin_purchases():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    return render_template(
+        "admin_purchases.html", purchase_orders=db.get_purchase_orders()
+    )
+
+
+@app.route("/admin/purchases/new", methods=["GET", "POST"])
+def admin_purchase_order_new():
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    if request.method == "POST":
+        product_pks = request.form.getlist("product_pk")
+        quantities = request.form.getlist("quantity")
+        unit_costs = request.form.getlist("unit_cost")
+        line_count = max(len(product_pks), len(quantities), len(unit_costs))
+        lines = []
+        form_lines = []
+        try:
+            for index in range(line_count):
+                product_pk = product_pks[index] if index < len(product_pks) else ""
+                quantity = quantities[index] if index < len(quantities) else ""
+                unit_cost = unit_costs[index] if index < len(unit_costs) else ""
+                form_lines.append({
+                    "product_pk": product_pk,
+                    "quantity": quantity,
+                    "unit_cost": unit_cost,
+                })
+                if not any((product_pk.strip(), quantity.strip(), unit_cost.strip())):
+                    continue
+                if not product_pk.strip():
+                    raise ValueError("Choose a product for every non-empty purchase line.")
+                lines.append({
+                    "product_pk": product_pk,
+                    "quantity": quantity,
+                    "unit_cost": unit_cost or 0,
+                })
+            purchase_order_id = db.create_purchase_order(
+                request.form.get("supplier", ""),
+                lines,
+                order_date=request.form.get("order_date"),
+                invoice_number=request.form.get("invoice_number", ""),
+                note=request.form.get("note", ""),
+                actor=session.get("admin_username", ADMIN_USERNAME),
+            )
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            return render_template(
+                "admin_purchase_order_form.html",
+                **_purchase_order_form_context({
+                    "supplier": request.form.get("supplier", ""),
+                    "invoice_number": request.form.get("invoice_number", ""),
+                    "order_date": request.form.get("order_date", ""),
+                    "note": request.form.get("note", ""),
+                    "lines": form_lines or [{}],
+                }),
+            )
+        flash("Purchase order created. Receive quantities only after goods arrive.", "success")
+        return redirect(
+            url_for("admin_purchase_order_detail", purchase_order_id=purchase_order_id)
+        )
+    return render_template(
+        "admin_purchase_order_form.html", **_purchase_order_form_context()
+    )
+
+
+@app.route("/admin/purchases/<int:purchase_order_id>")
+def admin_purchase_order_detail(purchase_order_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    purchase_order, items = db.get_purchase_order(purchase_order_id)
+    if purchase_order is None:
+        flash("Purchase order not found.", "danger")
+        return redirect(url_for("admin_purchases"))
+    return render_template(
+        "admin_purchase_order_detail.html",
+        purchase_order=purchase_order,
+        items=items,
+    )
+
+
+@app.route(
+    "/admin/purchases/<int:purchase_order_id>/receive", methods=["POST"]
+)
+def admin_purchase_order_receive(purchase_order_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    purchase_order, items = db.get_purchase_order(purchase_order_id)
+    if purchase_order is None:
+        flash("Purchase order not found.", "danger")
+        return redirect(url_for("admin_purchases"))
+    quantities = {
+        item["id"]: request.form.get(f"received_{item['id']}", "")
+        for item in items
+    }
+    try:
+        db.receive_purchase_order(
+            purchase_order_id,
+            quantities,
+            actor=session.get("admin_username", ADMIN_USERNAME),
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Received quantities added to inventory and recorded in the ledger.", "success")
+    return redirect(
+        url_for("admin_purchase_order_detail", purchase_order_id=purchase_order_id)
+    )
+
+
+@app.route(
+    "/admin/purchases/<int:purchase_order_id>/cancel", methods=["POST"]
+)
+def admin_purchase_order_cancel(purchase_order_id):
+    redirect_response = require_admin()
+    if redirect_response is not None:
+        return redirect_response
+    try:
+        db.cancel_purchase_order(purchase_order_id)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Purchase order cancelled.", "success")
+    return redirect(
+        url_for("admin_purchase_order_detail", purchase_order_id=purchase_order_id)
+    )
+
+
 @app.route("/admin/orders/<int:order_id>")
 def admin_order_detail(order_id):
 
@@ -1750,8 +2692,11 @@ def admin_order_status(order_id):
         return redirect_response
 
     new_status = request.form.get("status", "New").strip() or "New"
-
-    db.update_order_status(order_id, new_status)
+    try:
+        db.update_order_status(order_id, new_status)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin_order_detail", order_id=order_id))
 
     flash(f"Order #{order_id} marked as {new_status}.", "success")
 
@@ -1765,7 +2710,11 @@ def admin_order_delete(order_id):
     if redirect_response is not None:
         return redirect_response
 
-    db.delete_order(order_id)
+    try:
+        db.delete_order(order_id)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin_order_detail", order_id=order_id))
 
     flash(f"Order #{order_id} deleted.", "success")
 

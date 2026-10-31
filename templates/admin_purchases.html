@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Purchasing{% endblock %}
+{% block content %}
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Purchasing</h2>
+        <p class="text-muted mb-0">Track supplier orders and receive stock into the inventory ledger.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('admin_inventory') }}" class="btn btn-outline-primary"><i class="bi bi-boxes"></i> Inventory</a>
+        <a href="{{ url_for('admin_purchase_order_new') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> New purchase order</a>
+    </div>
+</div>
+
+<section class="dashboard-card">
+    <div class="card-header-custom mb-3"><i class="bi bi-truck"></i> Supplier orders <span class="text-muted">({{ purchase_orders|length }})</span></div>
+    <div class="table-responsive">
+        <table class="table align-middle product-table mb-0">
+            <thead><tr><th>Order</th><th>Supplier</th><th>Date</th><th>Status</th><th class="text-end">Lines</th><th class="text-end">Received</th><th class="text-end">Order value</th><th></th></tr></thead>
+            <tbody>
+            {% for order in purchase_orders %}
+                <tr>
+                    <td><a class="fw-semibold" href="{{ url_for('admin_purchase_order_detail', purchase_order_id=order.id) }}">{{ order.order_code }}</a>{% if order.invoice_number %}<small class="d-block text-muted">Invoice {{ order.invoice_number }}</small>{% endif %}</td>
+                    <td>{{ order.supplier }}</td>
+                    <td>{{ order.order_date }}</td>
+                    <td><span class="badge {% if order.status == 'received' %}text-bg-success{% elif order.status == 'cancelled' %}text-bg-secondary{% elif order.status == 'partial' %}text-bg-warning{% else %}text-bg-primary{% endif %}">{{ order.status|title }}</span></td>
+                    <td class="text-end">{{ order.line_count }}</td>
+                    <td class="text-end">{{ '%g'|format(order.received_quantity) }} / {{ '%g'|format(order.ordered_quantity) }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(order.total_cost) }} Ks</td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_purchase_order_detail', purchase_order_id=order.id) }}">Open</a></td>
+                </tr>
+            {% else %}
+                <tr><td colspan="8" class="text-center text-muted py-4">No supplier orders yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

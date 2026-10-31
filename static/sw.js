@@ -91,7 +91,8 @@
 // normal sentence casing for the card presentation.
 // v30->v31: moved the price status below the product name as the quieter
 // option 3 card placement.
-const CACHE_NAME = 'gtm-catalog-v36';
+// v40->v41: precache persistent three-language UI support for existing PWAs.
+const CACHE_NAME = 'gtm-catalog-v41';
 const PRODUCT_PAGES_CACHE = 'gtm-product-pages-v1';
 const PRODUCT_IMAGES_CACHE = 'gtm-product-images-v1';
 const GALLERY_PAGES_CACHE = 'gtm-gallery-pages-v1';
@@ -103,12 +104,14 @@ const STATIC_ASSETS = [
     '/static/js/app.js',
     '/static/js/admin.js',
     '/static/js/order.js',
+    '/static/js/offline-orders.js',
     '/static/js/precache.js',
     '/static/js/status.js',
     '/static/js/catalog-state.js',
     '/static/js/catalog-filters.js',
     '/static/js/price-badges.js',
     '/static/js/gallery.js',
+    '/static/js/language.js',
     '/static/manifest.json'
 ];
 
@@ -176,6 +179,13 @@ self.addEventListener('fetch', (event) => {
     }
 
     const url = new URL(request.url);
+
+    // Mobile catalog requests are bearer-authenticated. Never persist an
+    // Authorization-bearing request or its response in Cache Storage.
+    if (url.pathname.startsWith('/api/mobile/')) {
+        event.respondWith(fetch(request));
+        return;
+    }
 
     // Gallery pages (/gallery and /gallery/<category>): cache-and-serve
     // from GALLERY_PAGES_CACHE, same pattern as /product/ below and for

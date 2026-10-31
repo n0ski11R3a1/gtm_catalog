@@ -437,10 +437,14 @@ body:has(.admin-app-shell) { min-height: 100vh; background: #f6f5f0; }
 .admin-side-nav a, .admin-catalog-link, .admin-logout-link { border-radius: 10px; }
 .admin-side-nav a.active { border-color: rgba(195, 221, 203, .12); background: rgba(199, 226, 208, .11); box-shadow: inset 3px 0 0 #a4cfb2; }
 .admin-side-nav a.active i { color: #c3e0cb; }
+.ui-language-control { display: grid; gap: 6px; margin: 0 12px 12px; color: #b7c5bb; font-size: 11px; font-weight: 700; }
+.ui-language-control select { width: 100%; min-height: 36px; border: 1px solid rgba(255,255,255,.16); border-radius: 8px; padding: 0 9px; color: #f5f7f4; background: #294438; font: inherit; }
 .admin-catalog-link { border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.05); }
 .admin-workspace, .admin-content { min-width: 0; }
 .admin-content { width: min(100%, 1500px); padding: 36px 42px 60px; }
 .admin-shell { padding: 0 !important; }
+.public-language-control { display: flex; width: min(100% - 32px, 1500px); align-items: center; justify-content: flex-end; gap: 8px; margin: 9px auto 0; color: #56665b; font-size: 12px; font-weight: 700; }
+.public-language-control select { min-height: 34px; border: 1px solid #d6dfd6; border-radius: 8px; padding: 0 9px; color: #254333; background: #fffefa; font: inherit; }
 .admin-page-header h2, .admin-page-title h1 { color: #23382d; font-family: var(--font-display); letter-spacing: -.045em; }
 .admin-page-header p, .admin-page-title p { color: #778078; }
 .admin-page-kicker { color: #65756a; }
@@ -518,6 +522,8 @@ body:has(.login-btn) .card { border: 1px solid var(--border) !important; border-
     }
     .admin-brand { grid-column: 1 / -1; padding: 0 2px 4px; }
     .admin-sidebar-label, .admin-sidebar-spacer { display: none; }
+    .ui-language-control { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; justify-content: flex-end; margin: 0; }
+    .ui-language-control select { width: auto; min-width: 130px; }
     .admin-side-nav { grid-column: 1 / -1; display: flex; gap: 5px; overflow-x: auto; scrollbar-width: thin; }
     .admin-side-nav a { flex: 0 0 auto; min-height: 39px; padding: 0 10px; font-size: 11px; }
     .admin-side-nav a i { font-size: 14px; }

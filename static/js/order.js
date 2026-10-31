@@ -48,7 +48,12 @@ function loadCart() {
 
 function saveCart(cart) {
     try {
-        localStorage.setItem(CART_KEY, JSON.stringify(cart));
+        const serialized = JSON.stringify(cart);
+        const previous = localStorage.getItem(CART_KEY);
+        if (previous !== serialized) {
+            localStorage.removeItem(IDEMPOTENCY_KEY_STORAGE);
+        }
+        localStorage.setItem(CART_KEY, serialized);
     } catch (e) {
         // Storage unavailable (private browsing, etc.) - cart just won't persist.
     }
@@ -322,7 +327,7 @@ function clearOrder() {
 // Submit order
 // --------------------------------------
 
-function submitOrder() {
+async function submitOrder() {
     const cart = loadCart();
     const repNameSelect = document.getElementById('repNameSelect');
     const outletNameInput = document.getElementById('outletNameInput');
@@ -359,6 +364,19 @@ function submitOrder() {
             errorEl.textContent = 'Your order list is empty.';
             errorEl.style.display = '';
         }
+        return;
+    }
+
+    if (typeof submitOfflineCapableOrder === 'function' && await submitOfflineCapableOrder({
+        cart,
+        outletName,
+        repName,
+        submitBtn,
+        errorEl,
+        successEl,
+        repNameSelect,
+        outletNameInput,
+    })) {
         return;
     }
 

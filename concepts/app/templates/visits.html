@@ -1,0 +1,38 @@
+{% extends 'base.html' %}{% block title %}{{ t('Location History') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🚶 Location History (ရောက် မှတ်တမ်း)') }}</h1>
+<p class="muted">✅ <b>{{ t('သေချာ') }}</b>{{ t('= အဲဒီ ဆိုင်မှာ order တင်ခဲ့တယ်။ 🔵 ') }}<b>{{ t('ဖြစ်နိုင်ခြေ') }}</b>{{ t(' = order မပါပေမယ့် Catalog ဖွင့်ချိန် ဆိုင် အနား (30 m အတွင်း) မှာ တွေ့လို့ မှတ်ထားတာ။ တစ်ရက် + ဆိုင် တစ်ဆိုင် + rep တစ်ယောက် = မှတ်တမ်း တစ်ခု တည်း။') }}</p>
+<form method="get" class="row">
+  <label>{{ t('From') }} <input type="date" name="f" value="{{ f }}"></label>
+  <label>{{ t('To') }} <input type="date" name="t" value="{{ tend }}"></label>
+  <label>{{ t('ရောင်းသူ') }} <select name="rep"><option value="">{{ t('Rep အားလုံး') }}</option>{% for r in reps %}<option value="{{ r.id }}" {% if rep == r.id|string %}selected{% endif %}>{{ r.name }}{% if r.team %} ({{ r.team }}){% endif %}</option>{% endfor %}</select></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+  <a class="btn alt" href="/visits">{{ t('ဒီနေ့') }}</a>
+  <a class="btn alt" href="/visits?f={{ month_start }}">{{ t('ဒီလ') }}</a>
+</form>
+
+{% if sums %}
+<h3>{{ t('ကာလ အကျဉ်း (Rep အလိုက်)') }}</h3>
+<table>
+<tr><th>{{ t('ရောင်းသူ') }}</th><th>{{ t('Team') }}</th><th style="text-align:right">{{ t('ရောက် စုစုပေါင်း') }}</th><th style="text-align:right">{{ t('✅ သေချာ (order)') }}</th><th style="text-align:right">{{ t('🔵 ဖြစ်နိုင်ခြေ') }}</th><th style="text-align:right">{{ t('ဆိုင် အရေအတွက်') }}</th></tr>
+{% for s in sums %}<tr><td>{{ s.name }}</td><td>{{ s.team or '' }}</td><td class="num"><b>{{ s.tot }}</b></td><td class="num">{{ s.eff }}</td><td class="num">{{ s.prob }}</td><td class="num">{{ s.shops }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+<h3>{{ t('အသေးစိတ် မှတ်တမ်း ({n})', n=rows|length) }}</h3>
+<table>
+<tr><th>{{ t('ရက်') }}</th><th>{{ t('ရောင်းသူ') }}</th><th>{{ t('ဆိုင်') }}</th><th>{{ t('အမျိုးအစား') }}</th><th style="text-align:right">{{ t('အဲဒီနေ့ အဲဆိုင် အရောင်း') }}</th><th>{{ t('မှတ်ချိန်') }}</th></tr>
+{% for v in rows %}
+<tr>
+<td>{{ v.vdate }}</td>
+<td>{{ v.uname }}{% if v.uteam %} <span class="muted">({{ v.uteam }})</span>{% endif %}</td>
+<td><a href="/outlets/{{ v.outlet_id }}">{{ v.oname }}</a>{% if v.oarea %} <span class="muted">· {{ v.oarea }}</span>{% endif %}</td>
+<td>{% if v.kind=='order' %}{{ t('✅ သေချာ (order)') }}{% else %}{{ t('🔵 ဖြစ်နိုင်ခြေ') }}{% endif %}</td>
+<td class="num">{% if v.scnt %}{{ fmt_money(v.samt) }} <span class="muted">{{ t('({n} စောင်)', n=v.scnt) }}</span>{% else %}—{% endif %}</td>
+<td>{{ v.created_at[11:16] if v.created_at else '' }}</td>
+</tr>
+{% endfor %}
+</table>
+{% if not rows %}<p class="muted">{{ t('ဒီ ကာလ အတွင်း မှတ်တမ်း မရှိဘူး။') }}</p>{% endif %}
+<p class="hint">{{ t('မှတ်ချက်: 🔵 မှတ်တမ်းက Catalog ဖွင့်ထားချိန် ပဲ ဝင်တယ် (နောက်ကွယ် လိုက်ကြည့်နေတာ မဟုတ်)။ လိုင်း မရှိဘဲ မှတ်ထားတဲ့ မှတ်တမ်းဆို "မှတ်ချိန်" က လိုင်း ပြန် ရတဲ့ အချိန် ဖြစ်နေနိုင်တယ် — ရက် ကတော့ ဖုန်းက ရက် အမှန် ပဲ။ ဆိုင် နေရာ အမှတ် မရှိသေးတဲ့ ဆိုင် (တစ်ခါမှ order မဝင်ဖူးသေး) ကို 🔵 နဲ့ မဖမ်းနိုင်ဘူး။') }}</p>
+{% endblock %}

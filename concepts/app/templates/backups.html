@@ -1,0 +1,42 @@
+{% extends 'base.html' %}{% block title %}Backups — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('💾 Backup မိတ္တူများ') }}</h1>
+<p class="hint">{{ t('စာရင်း ဖိုင် ရဲ့ လုံခြုံ မိတ္တူ တွေ။ နေ့တိုင်း Owner/Finance တစ်ယောက် ယောက် ပထမဆုံး ဝင် တဲ့ အချိန် အလိုအလျောက် ၁ စောင် ယူ တယ်၊ နောက်ဆုံး ၁၅ စောင် ပဲ ထား တယ်။') }}</p>
+<p class="hint">⚠️ {{ t('ဒီ မိတ္တူ တွေ က ဒီ server ပေါ် မှာပဲ ရှိတယ် — ဖိုင် ပျက်/မှား ရင် ကာကွယ် ပေမယ့်၊ အကောင့် တစ်ခုလုံး ပျောက် သွား ရင် မပါ ဘူး။ ဒါ့ကြောင့် ၁၅ ရက် ၁ ကြိမ် လောက် download ဆွဲ ပြီး ကိုယ့် ဖုန်း/ကွန်ပျူတာ ထဲ သိမ်း ထား ပါ။') }}</p>
+<p>{{ t('နောက်ဆုံး download ဆွဲ ချိန်') }}: <b>{{ (last_dl or '')[:16] if last_dl else t('မဆွဲ ရသေးဘူး') }}</b></p>
+<form method="post" action="/backups/make"><button class="btn" type="submit">{{ t('ခု ယူ မယ်') }}</button></form>
+<div class="table-scroll"><table>
+<tr><th>{{ t('ဖိုင်') }}</th><th style="text-align:right">{{ t('အရွယ်') }}</th><th></th></tr>
+{% for f in files %}
+<tr><td>{{ f.name }}{% if f.safety %} <span class="pill gray">{{ t('🛟 safety') }}</span>{% endif %}</td><td class="num">{{ '%.1f'|format(f.size/1024) }} KB</td>
+<td><a class="btn alt" href="/backups/download/{{ f.name }}">{{ t('Download ဆွဲမယ်') }}</a></td></tr>
+{% endfor %}
+</table></div>
+{% if not files %}<p class="card">{{ t('မိတ္တူ မရှိသေးဘူး — "ခု ယူ မယ်" ကို နှိပ်ပါ။') }}</p>{% endif %}
+{% if can('backups.restore') %}
+<div class="card">
+<h2>{{ t('♻️ Restore') }}</h2>
+<p class="hint">⚠️ {{ t('Restore ဆို စာရင်း တစ်ခုလုံး ကို အဲ့ဒီ မိတ္တူ ရက်က အတိုင်း ပြန် ဖြစ် သွား မှာ — အဲ့ဒီ နောက်ပိုင်း စာရင်း အားလုံး ပျောက် မယ်။ မတင် ခင် လက်ရှိ စာရင်း ကို safety မိတ္တူ အလိုအလျောက် ယူ ထား ပေး တယ် — မှား ရင် အဲ့ဒီ safety ကနေ ပြန် restore လုပ် လို့ ရ တယ်။') }}</p>
+{% if last_restore %}<p>{{ t('နောက်ဆုံး Restore') }}: <b>{{ last_restore }}</b></p>{% endif %}
+<form method="post" action="/backups/restore">
+<input type="hidden" name="token" value="{{ tok_copy }}">
+<p><label>{{ t('Server ပေါ် က မိတ္တူ') }}<br>
+<select name="fname">
+{% for f in files %}<option value="{{ f.name }}">{{ f.name }}{% if f.safety %} {{ t('(safety)') }}{% endif %}</option>{% endfor %}
+</select></label></p>
+<p><label>{{ t('အတည်ပြု — ဖိုင် နာမည် အတိုင်း ရိုက်ပါ') }}<br>
+<input name="confirm" placeholder="{{ t('ဖိုင် နာမည် အတိုင်း') }}"></label></p>
+<button class="btn" type="submit">{{ t('♻️ Restore လုပ်မယ်') }}</button>
+</form>
+<hr>
+<form method="post" action="/backups/restore-upload" enctype="multipart/form-data">
+<input type="hidden" name="token" value="{{ tok_up }}">
+<p><label>{{ t('Download ဆွဲ ထား တဲ့ .db ဖိုင် တင်ပါ (100 MB အထိ)') }}<br>
+<input type="file" name="dbfile" accept=".db"></label></p>
+<p><label>{{ t('အတည်ပြု — RESTORE လို့ ရိုက်ပါ') }}<br>
+<input name="confirm" placeholder="RESTORE"></label></p>
+<button class="btn" type="submit">{{ t('📤 ဖိုင်တင် Restore လုပ်မယ်') }}</button>
+</form>
+</div>
+{% endif %}
+{% endblock %}

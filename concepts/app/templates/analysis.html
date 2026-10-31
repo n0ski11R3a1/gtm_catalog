@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+{% block title %}{{ t(stitle) }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t(stitle) }}</h1>
+<div class="card">
+  <div class="dashbtns">
+    {% for k, title in sections %}<a class="{{ 'btn' if k==s else 'btn alt' }}" href="/analysis?s={{ k }}&m={{ m }}">{{ t(title) }}</a>{% endfor %}
+  </div>
+  <p class="muted">{{ t('အဆင့် ခွဲပုံ — အစဉ်လိုက် စီ ပြီး အပေါ် ၁/၃ = အများဆုံး / အရောင်းသွက်, အလယ် ၁/၃ = ပုံမှန်, အောက် ၁/၃ = အနည်းဆုံး / အရောင်းနှေး, ၀ = လုံးဝမဝယ် / ရောင်းမထွက်။') }}</p>
+</div>
+{% if s != 'products' %}
+<form method="get" class="card">
+  <div class="row">
+    <input type="hidden" name="s" value="{{ s }}">
+    <label>{{ t('လ') }} <input type="month" name="m" value="{{ m }}"></label>
+    <button class="btn" type="submit">{{ t('ကြည့်') }}</button>
+  </div>
+</form>
+{% endif %}
+
+{% if s == 'shops' %}
+<section class="card">
+  <h2>{{ t('ဆိုင်များ — အမျိုးအစား အလိုက် ဝယ်ယူမှု') }}</h2>
+  <p class="muted">{{ t('ဝင် ခဲ့ တဲ့ ဆိုင် = ရွေး ထား တဲ့ လ မှာ visit မှတ်တမ်း ရှိ တဲ့ ဆိုင်။ ဝယ်ယူမှု = outlet နဲ့ ချိတ်ထား တဲ့ ဘောက်ချာ (ID သို့မဟုတ် နာမည် + နေရာ တူ)။ ပယ်ဖျက် ဘောက်ချာ မပါ။') }}</p>
+  <p class="muted">{{ t('ဝယ်ယူမှု စုစုပေါင်း {n} ကြိမ်', n=data.shops_total_buys) }}</p>
+  {% for st, sdata in shops %}
+  <h3>{{ st_labels[st] if st in st_labels else t('အမျိုးအစား မသတ်') }}</h3>
+  {% if sdata.bands.top %}<h4>{{ t('အများဆုံး') }}</h4>
+  <div class="table-scroll"><table>
+    <tr><th>#</th><th>{{ t('ဆိုင်') }}</th><th>{{ t('ဝယ်ယူမှု (ကြိမ်)') }}</th></tr>
+    {% for r in sdata.bands.top %}<tr><td>{{ r.rank }}</td><td>{{ r.name }} ({{ r.area }})</td><td>{{ r.buys }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% if sdata.bands.mid %}<h4>{{ t('ပုံမှန်') }}</h4>
+  <div class="table-scroll"><table>
+    <tr><th>#</th><th>{{ t('ဆိုင်') }}</th><th>{{ t('ဝယ်ယူမှု (ကြိမ်)') }}</th></tr>
+    {% for r in sdata.bands.mid %}<tr><td>{{ r.rank }}</td><td>{{ r.name }} ({{ r.area }})</td><td>{{ r.buys }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% if sdata.bands.bot %}<h4>{{ t('အနည်းဆုံး') }}</h4>
+  <div class="table-scroll"><table>
+    <tr><th>#</th><th>{{ t('ဆိုင်') }}</th><th>{{ t('ဝယ်ယူမှု (ကြိမ်)') }}</th></tr>
+    {% for r in sdata.bands.bot %}<tr><td>{{ r.rank }}</td><td>{{ r.name }} ({{ r.area }})</td><td>{{ r.buys }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% if sdata.never %}<h4>{{ t('လုံးဝမဝယ်') }}</h4>
+  <div class="table-scroll"><table>
+    <tr><th>{{ t('ဆိုင်') }}</th></tr>
+    {% for r in sdata.never %}<tr><td>{{ r.name }} ({{ r.area }})</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% endfor %}
+  {% if not shops %}<p class="muted">{{ t('မရှိ') }}</p>{% endif %}
+</section>
+{% endif %}
+
+{% if s == 'visits' %}
+<section class="card">
+  <h2>{{ t('Outlet များ — ဝင်ခဲ့တဲ့ အကြိမ်ရေ') }}</h2>
+  <p class="muted">{{ t('အော်ဒါဝင် = အော်ဒါ တင် တဲ့ ဝင် ခဲ့ မှု။ ခန့်မှန်းဝင် = Catalog ဖွင့် ပြီး ဆိုင် အနား ရောက် တဲ့ ဝင် ခဲ့ မှု။') }}</p>
+  <p class="muted">{{ t('ဝင်ခဲ့မှု စုစုပေါင်း {n} ကြိမ်', n=data.visits.total) }}</p>
+  {% for band, label in [(data.visits.bands.top, t('အများဆုံး')), (data.visits.bands.mid, t('ပုံမှန်')), (data.visits.bands.bot, t('အနည်းဆုံး'))] %}
+  {% if band %}<h3>{{ label }}</h3>
+  <div class="table-scroll"><table>
+    <tr><th>#</th><th>{{ t('ဆိုင်') }}</th><th>{{ t('ဝင်ခဲ့မှု (ကြိမ်)') }}</th><th>{{ t('အော်ဒါဝင်') }}</th><th>{{ t('ခန့်မှန်းဝင်') }}</th></tr>
+    {% for r in band %}<tr><td>{{ r.rank }}</td><td>{{ r.name }} ({{ r.area }})</td><td>{{ r.vc }}</td><td>{{ r.oc }}</td><td>{{ r.pc }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% endfor %}
+  {% if not data.visits.rows %}<p class="muted">{{ t('မရှိ') }}</p>{% endif %}
+</section>
+{% endif %}
+
+{% if s == 'products' %}
+<section class="card">
+  <h2>{{ t('ကုန်ပစ္စည်း — ရောင်းအား (စုစုပေါင်း)') }}</h2>
+  <p class="muted">{{ t('လ နဲ့ မဆိုင် — အစ က တည်း က စုစုပေါင်း။ ပယ်ဖျက် ဘောက်ချာ မပါ။ ရောင်းမထွက် = အရောင်း ဖွင့် ထား ပြီး တစ်ခါမှ မရောင်း ရ တဲ့ ပစ္စည်း။') }}</p>
+  <p class="muted">{{ t('ရောင်းအား စုစုပေါင်း {n}', n=data.prod_all.total_q) }}</p>
+  {% for band, label in [(data.prod_all.bands.top, t('အများဆုံး')), (data.prod_all.bands.mid, t('ပုံမှန်')), (data.prod_all.bands.bot, t('အနည်းဆုံး'))] %}
+  {% if band %}<h3>{{ label }}</h3>
+  <div class="table-scroll"><table>
+    <tr><th>#</th><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('ရောင်းအား') }}</th></tr>
+    {% for r in band %}<tr><td>{{ r.rank }}</td><td>{{ r.sku }} — {{ r.name }}</td><td>{{ r.q }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% endfor %}
+  {% if data.prod_all.unsold %}<h3>{{ t('ရောင်းမထွက်') }}</h3>
+  <div class="table-scroll"><table>
+    <tr><th>{{ t('ပစ္စည်း') }}</th></tr>
+    {% for r in data.prod_all.unsold %}<tr><td>{{ r.sku }} — {{ r.name }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+</section>
+{% endif %}
+
+{% if s == 'month' %}
+<section class="card">
+  <h2>{{ t('ကုန်ပစ္စည်း — အချိန်ကာလ အလိုက် (ဒီလ)') }}</h2>
+  <p class="muted">{{ t('ရွေး ထား တဲ့ လ အတွက်။ ပယ်ဖျက် ဘောက်ချာ မပါ။ ရောင်းမထွက် = ဒီလ မှာ မရောင်း ရ ပြီး အရောင်း ဖွင့် ထား တဲ့ ပစ္စည်း။') }}</p>
+  <p class="muted">{{ t('ရောင်းအား စုစုပေါင်း {n}', n=data.prod_month.total_q) }}</p>
+  {% for band, label in [(data.prod_month.bands.top, t('အရောင်းသွက်')), (data.prod_month.bands.mid, t('ပုံမှန်')), (data.prod_month.bands.bot, t('အရောင်းနှေး'))] %}
+  {% if band %}<h3>{{ label }}</h3>
+  <div class="table-scroll"><table>
+    <tr><th>#</th><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('ရောင်းအား') }}</th></tr>
+    {% for r in band %}<tr><td>{{ r.rank }}</td><td>{{ r.sku }} — {{ r.name }}</td><td>{{ r.q }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% endfor %}
+  {% if data.prod_month.unsold %}<h3>{{ t('ရောင်းမထွက်') }}</h3>
+  <div class="table-scroll"><table>
+    <tr><th>{{ t('ပစ္စည်း') }}</th></tr>
+    {% for r in data.prod_month.unsold %}<tr><td>{{ r.sku }} — {{ r.name }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+</section>
+{% endif %}
+
+{% if s == 'profit' %}
+<section class="card">
+  <h2>{{ t('အမြတ် — ပစ္စည်း အလိုက် (ဒီလ)') }}</h2>
+  <p class="muted">{{ t('အမြတ် = (ရောင်းဈေး × အရေအတွက် − လိုင်း discount − ဘောက်ချာ discount ခွဲဝေ) − ကုန်ကျစရိတ် × အရေအတွက်။ ကုန်ကျစရိတ် = ရောင်းချိန် Actual, မရှိ ရင် လက်ရှိ Actual။ ပယ်ဖျက် ဘောက်ချာ မပါ။') }}</p>
+  <p class="muted">{{ t('အမြတ် စုစုပေါင်း {n} Ks', n="{:,.0f}".format(data.profit.total)) }}</p>
+  {% if data.profit.nosnap %}<p class="muted">{{ t('snapshot မရှိ လိုင်း {n} ခု — လက်ရှိ actual_base နဲ့ တွက်ထား', n=data.profit.nosnap) }}</p>{% endif %}
+  {% for band, label in [(data.profit.bands.top, t('အများဆုံး')), (data.profit.bands.mid, t('ပုံမှန်')), (data.profit.bands.bot, t('အနည်းဆုံး'))] %}
+  {% if band %}<h3>{{ label }}</h3>
+  <div class="table-scroll"><table>
+    <tr><th>#</th><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('အမြတ် (Ks)') }}</th></tr>
+    {% for r in band %}<tr><td>{{ r.rank }}</td><td>{{ r.sku }} — {{ r.name }}</td><td>{% if r.profit < 0 %}🔴 {% endif %}{{ "{:,.0f}".format(r.profit) }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% endfor %}
+  {% if not data.profit.ranked %}<p class="muted">{{ t('မရှိ') }}</p>{% endif %}
+</section>
+{% endif %}
+
+{% if s == 'expenses' %}
+<section class="card">
+  <h2>{{ t('အသုံးစရိတ် — အမျိုးအစား အလိုက် (ဒီလ)') }}</h2>
+  <p class="muted">{{ t('ရွေး ထား တဲ့ လ ရဲ့ အသုံးစရိတ်, အမျိုးအစား အလိုက်။') }}</p>
+  <p class="muted">{{ t('အသုံးစရိတ် စုစုပေါင်း {n} Ks', n="{:,.0f}".format(data.expenses.total)) }}</p>
+  {% for band, label in [(data.expenses.bands.top, t('အများဆုံး')), (data.expenses.bands.mid, t('ပုံမှန်')), (data.expenses.bands.bot, t('အနည်းဆုံး'))] %}
+  {% if band %}<h3>{{ label }}</h3>
+  <div class="table-scroll"><table>
+    <tr><th>#</th><th>{{ t('အမျိုးအစား') }}</th><th>Ks</th><th>{{ t('အကြိမ်') }}</th></tr>
+    {% for r in band %}<tr><td>{{ r.rank }}</td><td>{{ r.cat or '—' }}</td><td>{{ "{:,.0f}".format(r.tot) }}</td><td>{{ r.c }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+  {% endfor %}
+  {% if not data.expenses.rows %}<p class="muted">{{ t('မရှိ') }}</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

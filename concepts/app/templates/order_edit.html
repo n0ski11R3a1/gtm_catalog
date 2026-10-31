@@ -1,0 +1,23 @@
+{% extends 'base.html' %}{% from '_tabs.html' import ord_tabs %}{% block title %}{{ o.code }} {{ t('ပြင်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ ord_tabs('ord', perms) }}
+<h1>✏️ {{ o.code }} {{ t('ပြင်ရန်') }} — {{ o.outlet }}</h1>
+<p class="hint">{{ t('မပို့ရသေးတဲ့ ဘောက်ချာမို့ ပြင်လို့ရတာ — ဈေး မပြောင်းဘူး၊') }} <b>{{ t('အရေအတွက်') }}</b>{{ t(' နဲ့ ') }}<b>{{ t('ပစ္စည်းအလိုက် လျှော့ဈေး') }}</b>{{ t(' ပြင်လို့ရတယ် (၀ ထည့်ရင် အဲဒီ line ဖြုတ်မယ်)။ ပြင်တိုင်း မှတ်တမ်း ကျန်ပြီး Warehouse/Finance ဆီ အသိပေးမယ်။ ဘောက်ချာ နံပါတ် မပြောင်းဘူး။') }}{% if side in ('sales','warehouse') %}<br>{{ t('သင့် ပြင်ခွင့်: {used}/{cap} ကြိမ် သုံးပြီး — ဒီ ပြင်တာ က အကြိမ် {n} မြောက် ဖြစ်မယ်။', used=counts.get(side, 0), cap=EDIT_CAP, n=counts.get(side, 0) + 1) }}{% endif %}</p>
+<form method="post" class="card">
+<table>
+<tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th>{{ t('ဈေး') }}</th><th>{{ t('လက်ရှိ stock') }}</th><th>{{ t('အရေအတွက်') }}</th><th>{{ t('လျှော့ဈေး (Ks)') }}</th></tr>
+{% for i in items %}
+<tr><td>{{ i.sku }}</td><td>{{ i.name }} <small class="muted">{{ t('လက်လီ') if i.tier=='retail' else t('လက်ကား') }}</small></td>
+<td>{{ fmt_money(i.price) }}</td>
+<td>{{ i.stock|int if i.stock == i.stock|int else i.stock }}</td>
+<td><input name="qty_{{ i.id }}" type="number" step="any" min="0" value="{{ i.qty|int if i.qty == i.qty|int else i.qty }}" style="width:100px"></td>
+<td><input name="disc_{{ i.id }}" type="number" step="any" min="0" value="{{ (i.discount or 0)|int if (i.discount or 0) == (i.discount or 0)|int else i.discount }}" style="width:100px"></td></tr>
+{% endfor %}
+</table>
+<div class="row">
+  {% if legacy_disc %}<label>{{ t('အရင် လုံးပေါင်း လျှော့ဈေး (Ks)') }} <input name="discount" type="number" step="any" min="0" value="{{ legacy_disc|int if legacy_disc == legacy_disc|int else legacy_disc }}" style="width:120px"></label>{% else %}<span class="muted">{{ t('လျှော့ဈေး စုစုပေါင်း: {amt} Ks (ပစ္စည်း အတန်း ချင်းက ပေါင်းတာ)', amt=fmt_money(o.discount)) }}</span>{% endif %}
+  <button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>
+  <a class="btn alt" href="/orders/{{ o.id }}">{{ t('မပြင်တော့ဘူး') }}</a>
+</div>
+</form>
+{% endblock %}

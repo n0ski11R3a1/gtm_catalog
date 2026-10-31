@@ -1,0 +1,48 @@
+{% extends 'base.html' %}{% block title %}{{ t('လချုပ် အမြတ်') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('📈 လချုပ် အမြတ်') }}</h1>
+<form method="get" class="row">
+  <label>{{ t('လ') }} <input type="month" name="m" value="{{ m }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+</form>
+<p class="muted">{{ t('အရောင်း/အရင်း ကိန်းတွေက ') }}<b>{{ t('ပို့ပြီး') }}</b>{{ t(' ဘောက်ချာတွေကို ဘောက်ချာ ရက် ရှိတဲ့ လနဲ့ တွက်တယ်။ အရင်း ကို နှစ်မျိုး ပြထားတယ် — Actual ဈေး နဲ့ Base ဈေး (ရောင်းတဲ့ အချိန်က မှတ်ထားတဲ့ ဈေး ရှိရင် အဲ့ဒါ၊ မရှိသေးတဲ့ အရင် ဘောက်ချာတွေဆို လက်ရှိ ဈေး နဲ့ တွက်တယ်)။ Net အမြတ် = အရောင်း − အရင်း − အဝယ် အပို ကုန်ကျ − အသုံးစရိတ်။') }}</p>
+<div class="grid-cards">
+  <div class="card"><div class="muted">{{ t('အရောင်း (ပို့ပြီး {c} စောင်)', c=sales.c) }}</div><h2>{{ fmt_money(sales.v) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('အရင်း (Actual)') }}</div><h2>{{ fmt_money(cogs.v) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('အမြတ် (Margin)') }}</div><h2>{{ fmt_money(profit) }} <small>({{ '%.1f'|format(margin) }}%)</small></h2></div>
+  <div class="card"><div class="muted">{{ t('ဒီလ ငွေ ဝင်ငွေ (Payments)') }}</div><h2>{{ fmt_money(cashin.v) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('Credit ကျန်ငွေ (လက်ရှိ, ဘောက်ချာ {c})', c=credit_c) }}</div><h2 style="color:#b45309">{{ fmt_money(credit_now) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('အဝယ် အပို ကုန်ကျ (ဒီလ)') }}</div><h2>{{ fmt_money(buy_extra.v) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('အသုံးစရိတ် (ဒီလ)') }}</div><h2>{{ fmt_money(exp_total) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('Net အမြတ် (Margin)') }}</div><h2>{{ fmt_money(net) }} <small>({{ '%.1f'|format(net_margin) }}%)</small></h2></div>
+  <div class="card"><div class="muted">{{ t('အရင်း (Base)') }}</div><h2>{{ fmt_money(cogs_base.v) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('အမြတ် (Margin · Base)') }}</div><h2>{{ fmt_money(profit_base) }} <small>({{ '%.1f'|format(margin_base) }}%)</small></h2></div>
+  <div class="card"><div class="muted">{{ t('Net အမြတ် (Base)') }}</div><h2>{{ fmt_money(net_base) }} <small>({{ '%.1f'|format(net_margin_base) }}%)</small></h2></div>
+</div>
+<h3>{{ t('💸 အသုံးစရိတ် အကျဉ်း (ဒီလ) — ') }}<a href="/expenses?m={{ m }}">{{ t('အသေးစိတ် / မှတ်ရန်') }}</a></h3>
+{% if exp_cats %}
+<table>
+<tr><th>{{ t('Category') }}</th><th style="text-align:right">{{ t('အကြောင်း အရေအတွက်') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th></tr>
+{% for c in exp_cats %}<tr><td>{{ c.category }}</td><td class="num">{{ c.c }}</td><td class="num">{{ fmt_money(c.v) }}</td></tr>{% endfor %}
+<tr><td><b>{{ t('စုစုပေါင်း') }}</b></td><td></td><td class="num"><b>{{ fmt_money(exp_total) }}</b></td></tr>
+</table>
+{% else %}<p class="muted">{{ t('ဒီလ အသုံးစရိတ် မမှတ်ရသေးဘူး။') }}</p>{% endif %}
+<h3>{{ t('💰 Cash Summary (ငွေ အဝင်/အထွက်, ဒီလ)') }}</h3>
+<table>
+<tr><th>{{ t('အချက်') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th></tr>
+<tr><td>{{ t('ငွေ အဝင် — ဘောက်ချာ ငွေ ရရှိ (Payments {c} ကြောင်း)', c=cashin.c) }}</td><td class="num">{{ fmt_money(cashin.v) }}</td></tr>
+{% for g in cashin_groups %}<tr><td style="padding-left:22px">{{ t('ငွေ အဝင် — ') }}{{ t(g.label) }} ({{ g.c }})</td><td class="num">{{ fmt_money(g.v) }}</td></tr>{% endfor %}
+<tr><td>{{ t('ငွေ အထွက် — Supplier ရှင်းပြီး (Settlement {c} ခု)', c=settle_out.c) }}</td><td class="num">{{ fmt_money(settle_out.v) }}</td></tr>
+<tr><td>{{ t('ငွေ အထွက် — အသုံးစရိတ်') }}</td><td class="num">{{ fmt_money(exp_total) }}</td></tr>
+<tr><td><b>{{ t('ဒီလ ငွေ အဝင် − အထွက်') }}</b> <span class="muted">{{ t('(ဘဏ် လက်ကျန် မဟုတ် — ဒီလ ရဲ့ ငွေ ရွေ့လျားမှု ပဲ)') }}</span></td><td class="num"><b>{{ fmt_money(cash_move) }}</b></td></tr>
+</table>
+{% if cogs.nosnap %}<p class="hint">{{ t('⚠️ ဒီ လရဲ့ ပစ္စည်း အတန်း {n} တန်း (စုစုပေါင်း {total} ထဲ) က ရောင်းချိန် အရင်း မှတ်ထားတာ မရှိသေးလို့ လက်ရှိ Actual နဲ့ တွက်ထားတယ် — အမြတ် ကိန်း နည်းနည်း ခန့်မှန်း ဖြစ်နိုင်တယ်။ နောင် ဘောက်ချာ အသစ်တွေက ရောင်းချိန်မှာ မှတ်ထားမှာ မို့ အတိအကျ ဖြစ်မယ်။', n=cogs.nosnap, total=cogs.lines) }}</p>{% endif %}
+{% if cogs_base.nosnap %}<p class="hint">{{ t('⚠️ ဒီ လရဲ့ ပစ္စည်း အတန်း {n} တန်း (စုစုပေါင်း {total} ထဲ) က ရောင်းချိန် Base ဈေး မှတ်ထားတာ မရှိသေးလို့ လက်ရှိ Base နဲ့ တွက်ထားတယ် — Base အမြတ် ကိန်း နည်းနည်း ခန့်မှန်း ဖြစ်နိုင်တယ်။ နောင် ဘောက်ချာ အသစ်တွေက ရောင်းချိန်မှာ မှတ်ထားမှာ မို့ အတိအကျ ဖြစ်မယ်။', n=cogs_base.nosnap, total=cogs_base.lines) }}</p>{% endif %}
+<h3>{{ t('ရောင်းသူ အလိုက် (ဒီ လ, ပို့ပြီး)') }}</h3>
+<table>
+<tr><th>{{ t('ရောင်းသူ') }}</th><th style="text-align:right">{{ t('ဘောက်ချာ') }}</th><th style="text-align:right">{{ t('အရောင်း') }}</th><th style="text-align:right">{{ t('အရင်း') }}</th><th style="text-align:right">{{ t('အမြတ်') }}</th><th style="text-align:right">{{ t('အရင်း (Base)') }}</th><th style="text-align:right">{{ t('အမြတ် (Margin · Base)') }}</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.name }}{% if r.office %} 🏢{% endif %}</td><td class="num">{{ r.c }}</td><td class="num">{{ fmt_money(r.v) }}</td><td class="num">{{ fmt_money(r.cogs) }}</td><td class="num"><b>{{ fmt_money(r.profit) }}</b></td><td class="num">{{ fmt_money(r.cogs_base) }}</td><td class="num"><b>{{ fmt_money(r.profit_base) }}</b></td></tr>
+{% endfor %}
+</table>
+{% endblock %}

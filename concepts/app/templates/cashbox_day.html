@@ -1,0 +1,117 @@
+{% extends 'base.html' %}{% from '_denom.html' import denom_counter %}{% block title %}{{ t('🧰 Cashbox') }} {{ day }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🧰 Cashbox') }} — {{ day }}</h1>
+{% if fg.frozen %}<p><span class="pill green">{{ t('ပိတ်ပြီးပြီ ✅') }}</span> {{ t('ပိတ်ပြီးသား နေ့ ကို ပြင် လို့ မရဘူး') }}</p>
+{% elif row and row.status == 'counted' %}<p><span class="pill amber">{{ t('ရေတွက် ပြီးပြီ — အတည်ပြု စောင့် နေ တယ်') }}</span></p>
+{% else %}<p><span class="pill blue">{{ t('ဖွင့် ထား တယ်') }}</span></p>{% endif %}
+{% if fg.changed_after_close %}<p><b style="color:#c62828">{{ t('ပိတ် ပြီး နောက် ပြောင်း သွား တယ် — ပြင်ဆင် မှတ်တမ်း ကို ဖွင့် ထား တဲ့ နေ့ မှာ ထည့်ပါ') }}</b></p>{% endif %}
+<div class="card">
+{% set ns = namespace(ai=0, ao=0, mi=0, mo=0) %}
+{% for l in auto_lines %}{% if l.dir == 'in' %}{% set ns.ai = ns.ai + l.amount %}{% else %}{% set ns.ao = ns.ao + l.amount %}{% endif %}{% endfor %}
+{% for e in manual_rows %}{% if e.direction == 'in' %}{% set ns.mi = ns.mi + e.amount %}{% else %}{% set ns.mo = ns.mo + e.amount %}{% endif %}{% endfor %}
+<p style="margin:.2rem 0">{{ t('အဖွင့်') }}: <b>{% if fg.opening is not none %}{{ fmt_money(fg.opening) }} Ks{% else %}—{% endif %}</b>
+{% if fg.opening is not none and not fg.frozen %}<span class="hint">({{ t('အရင် နေ့ အပိတ် ကနေ အလို ဆက်') }})</span>{% endif %}<br>
+{{ t('အဝင်') }}: {{ t('အလို ဝင်') }} {{ fmt_money(ns.ai) }} Ks + {{ t('လက် နဲ့ မှတ်တမ်း') }} {{ fmt_money(ns.mi) }} Ks<br>
+{{ t('အထွက်') }}: {{ t('အလို ဝင်') }} {{ fmt_money(ns.ao) }} Ks + {{ t('လက် နဲ့ မှတ်တမ်း') }} {{ fmt_money(ns.mo) }} Ks<br>
+<b>{{ t('အပိတ် (စာရင်း)') }}: {% if fg.book is not none %}{{ fmt_money(fg.book) }} Ks{% else %}—{% endif %}</b>
+{% if fg.counted is not none %}<br>{{ t('ရေတွက် အပိတ်') }}: <b>{{ fmt_money(fg.counted) }} Ks</b>
+{% if fg.diff is not none and (fg.diff|abs > 0.5) %}<br><b style="color:#c62828">{{ t('ကွာခြားချက်') }}: {{ fmt_money(fg.diff) }} Ks</b>{% if row.diff_reason %} ({{ row.diff_reason }}){% endif %}
+{% else %}<br><span class="pill green">{{ t('ကိုက်တယ် ✅') }}</span>{% endif %}{% endif %}</p>
+{% if row and row.counted_by %}<p class="hint">{{ t('ရေတွက် သူ') }}: {{ byname.get(row.counted_by, '') }}{% if row.verified_by %} · {{ t('အတည်ပြု သူ') }}: {{ byname.get(row.verified_by, '') }}{% endif %}</p>{% endif %}
+</div>
+{% if fg.opening is none and not fg.frozen %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('ပထမ နေ့ — လက် နဲ့ ရေတွက် ထည့်ပါ') }}</h3>
+  <form method="post" action="/cashbox/{{ day }}/seed">
+    {{ denom_counter('cb_') }}
+    <div style="display:flex;gap:.5rem;align-items:end;flex-wrap:wrap">
+    <label>{{ t('အဖွင့် ငွေ (Ks)') }} <input name="amount" inputmode="decimal"></label>
+    <button class="btn" type="submit">{{ t('မှတ်မယ်') }}</button>
+    </div>
+    <p class="hint">{{ t('အမျိုးအစား ဖြည့်ထားရင် အဲ့ဒီ ပေါင်းလဒ်ကို အဖွင့် အဖြစ် မှတ်မယ်။') }}</p>
+  </form>
+</div>
+{% endif %}
+<div class="card">
+<h3 style="margin-top:0">{{ t('တန်ဖိုး အလိုက် ရွက်ရေ') }}</h3>
+{% if denoms.partial %}<p class="hint">{{ t('ရွက်ရေ မပြည့် စုံ') }} — {% if not denoms.opening_known %}{{ t('အဖွင့် ရွက်ရေ မသိ') }} · {% endif %}{% if denoms.unsplit_in > 0.5 %}{{ t('ရွက်ရေ မမှတ် ထား တဲ့ အဝင်') }} {{ fmt_money(denoms.unsplit_in) }} Ks · {% endif %}{% if denoms.unsplit_out > 0.5 %}{{ t('ရွက်ရေ မမှတ် ထား တဲ့ အထွက်') }} {{ fmt_money(denoms.unsplit_out) }} Ks{% endif %}</p>{% endif %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('တန်') }}</th><th style="text-align:right">{{ t('အဖွင့် အရွက်') }}</th><th style="text-align:right">{{ t('ဝင် အရွက်') }}</th><th style="text-align:right">{{ t('ထွက် အရွက်') }}</th><th style="text-align:right">{{ t('စာရင်း အရွက်') }}</th><th style="text-align:right">{{ t('ရေတွက် အရွက်') }}</th><th style="text-align:right">{{ t('ကွာ (အရွက်)') }}</th></tr>
+{% for r in denoms.rows %}<tr><td>{{ '{:,}'.format(r.value) }}</td>
+<td class="num">{% if r.opening is not none %}{{ r.opening }}{% else %}—{% endif %}</td>
+<td class="num">{{ r.inn }}</td><td class="num">{{ r.out }}</td>
+<td class="num">{% if r.book is not none %}{{ r.book }}{% else %}—{% endif %}</td>
+<td class="num">{% if r.counted is not none %}{{ r.counted }}{% else %}—{% endif %}</td>
+<td class="num">{% if r.diff is not none %}<b{% if r.diff != 0 %} style="color:#c62828"{% endif %}>{{ r.diff }}</b>{% else %}—{% endif %}</td></tr>{% endfor %}
+</table></div>
+<p class="hint">{{ t('ညှိ စစ်') }}: {{ t('ရွက်ရေ မှ တန်ဖိုး') }} {{ t('အဝင်') }} {{ fmt_money(denoms.denom_in_val) }} Ks + {{ t('ရွက်ရေ မမှတ်') }} {{ fmt_money(denoms.unsplit_in) }} Ks = {{ fmt_money(denoms.money_in) }} Ks {% if denoms.bal_in_ok %}✅{% else %}⚠️{% endif %} · {{ t('အထွက်') }} {{ fmt_money(denoms.denom_out_val) }} Ks + {{ fmt_money(denoms.unsplit_out) }} Ks = {{ fmt_money(denoms.money_out) }} Ks {% if denoms.bal_out_ok %}✅{% else %}⚠️{% endif %}</p>
+</div>
+<div class="card">
+<h3 style="margin-top:0">{{ t('နေ့ အလိုက် မှတ်တမ်း') }} — {{ day }}</h3>
+{% if auto_lines or manual_rows %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('အကြောင်းအရာ') }}</th><th>{{ t('မှတ်သူ') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th>{{ t('ရွက်ရေ') }}</th><th></th></tr>
+{% for l in auto_lines %}
+<tr><td>{% if l.dir == 'in' %}<span class="pill green">{{ t('အဝင်') }}</span>{% else %}<span class="pill amber">{{ t('အထွက်') }}</span>{% endif %} {{ t('အလို ဝင်') }} — <a href="{{ l.link }}">{{ l.label }}</a></td>
+<td>{{ l.by }}</td><td class="num">{{ fmt_money(l.amount) }} Ks</td><td>{% if l.denom_fmt %}{{ l.denom_fmt }}{% else %}<span class="hint">{{ t('ရွက်ရေ မမှတ်') }}</span>{% endif %}</td><td><a href="/cashbox/denom/{{ l.src }}/{{ l.sid }}">{% if l.denom_fmt %}{{ t('ရွက်ရေ ပြင်') }}{% else %}{{ t('ရွက်ရေ ဖြည့်') }}{% endif %}</a></td></tr>
+{% endfor %}
+{% for e in manual_rows %}
+<tr><td>{% if e.direction == 'in' %}<span class="pill green">{{ t('အဝင်') }}</span>{% else %}<span class="pill amber">{{ t('အထွက်') }}</span>{% endif %}
+{% if e.kind == 'topup' %}{{ t('ဖြည့် (Digital/Banking ထဲ)') }} → {{ t(dict(PAY_METHODS)[e.dest]) if e.dest in dict(PAY_METHODS) else e.dest }}{% elif e.kind == 'adjust' %}{{ t('ပြင်ဆင် မှတ်တမ်း') }}{% else %}{{ t('လက် နဲ့ မှတ်တမ်း') }}{% endif %}{% if e.note %} — {{ e.note }}{% endif %}</td>
+<td>{{ e.byname or '' }}</td><td class="num">{{ fmt_money(e.amount) }} Ks</td><td>{% if e.denom_fmt %}{{ e.denom_fmt }}{% else %}<span class="hint">{{ t('ရွက်ရေ မမှတ်') }}</span>{% endif %}</td>
+<td><a href="/cashbox/denom/entry/{{ e.id }}">{% if e.denom_fmt %}{{ t('ရွက်ရေ ပြင်') }}{% else %}{{ t('ရွက်ရေ ဖြည့်') }}{% endif %}</a>{% if not fg.frozen %} <form method="post" action="/cashbox/entry/{{ e.id }}/delete" onsubmit="return confirm('{{ t('ဖျက်မှာ သေချာလား?') }}')" style="display:inline"><button type="submit">{{ t('ဖျက်') }}</button></form>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="hint">{{ t('ဒီနေ့ မှတ်တမ်း မရှိသေးဘူး။') }}</p>{% endif %}
+</div>
+{% if not fg.frozen %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('လက် နဲ့ မှတ်တမ်း') }}</h3>
+  <form method="post" action="/cashbox/{{ day }}/entry" id="cb-entry">
+    <div class="row">
+    <label>{{ t('အမျိုးအစား') }} <select name="kind" id="cb-kind">
+      <option value="manual">{{ t('လက် နဲ့ မှတ်တမ်း') }}</option>
+      <option value="topup">{{ t('ဖြည့် (Digital/Banking ထဲ)') }}</option>
+      <option value="adjust">{{ t('ပြင်ဆင် မှတ်တမ်း') }}</option>
+    </select></label>
+    <label id="cb-dir-wrap">{{ t('အဝင် / အထွက်') }} <select name="direction"><option value="in">{{ t('အဝင်') }}</option><option value="out">{{ t('အထွက်') }}</option></select></label>
+    <label id="cb-dest-wrap" hidden>{{ t('ဘယ် အုပ်စု ထဲ ဖြည့် မလဲ') }} <select name="dest"><option value="digital">{{ t('Digital Pay') }}</option><option value="bank">{{ t('ဘဏ်') }}</option></select></label>
+    <label>{{ t('ပမာဏ (Ks)') }} <input name="amount" inputmode="decimal" required></label>
+    </div>
+    <label>{{ t('အကြောင်းအရာ') }} <input name="note" placeholder="{{ t('ဥပမာ — ဘဏ် အပ် ငွေ / ပိုင်ရှင် ထုတ် ငွေ') }}"></label>
+    {{ denom_counter('cb_e_') }}
+    <button class="btn" type="submit">{{ t('မှတ်မယ်') }}</button>
+  </form>
+  <script>(function(){var k=document.getElementById('cb-kind'),d=document.getElementById('cb-dir-wrap'),g=document.getElementById('cb-dest-wrap');function s(){var t=k.value==='topup';d.hidden=t;g.hidden=!t;}k.addEventListener('change',s);s();})();</script>
+</div>
+<div class="card">
+  <h3 style="margin-top:0">{{ t('🧮 ငွေသား ရေတွက် ပိတ်') }}</h3>
+  {% if fg.opening is none %}<p class="hint">{{ t('အဖွင့် အရင် ထည့်ပါ') }}</p>
+  {% else %}
+  <form method="post" action="/cashbox/{{ day }}/count">
+    {{ denom_counter('cb_') }}
+    <div style="display:flex;gap:.5rem;align-items:end;flex-wrap:wrap">
+    <label>{{ t('လက်တွေ့ ရေတွက် ရတဲ့ ငွေသား (Ks)') }} <input name="amount" inputmode="decimal"></label>
+    <label>{{ t('ကွာခြားချက် အကြောင်း (ကွာ ရင် ရေး ရ မယ်)') }} <input name="diff_reason"></label>
+    <button class="btn" type="submit">{{ t('ရေတွက် မှတ်မယ်') }}</button>
+    </div>
+    <p class="hint">{{ t('အမျိုးအစား ဖြည့်ထားရင် အဲ့ဒီ ပေါင်းလဒ်ကို ရေတွက်ငွေ အဖြစ် မှတ်မယ်။ ကွာခြားချက် ရှိ ရင် အကြောင်း ရေး မှ ပိတ် လို့ ရမယ် — ကွာ တာ က ပိတ် တာ ကို တား မထားဘူး။') }}</p>
+  </form>
+  {% if row and row.status == 'counted' %}
+  <form method="post" action="/cashbox/{{ day }}/verify" style="margin-top:.5rem"><button class="btn" type="submit">{{ t('ပိတ်ရန် အတည်ပြု') }}</button></form>
+  <p class="hint">{{ t('ရေတွက် သူ နဲ့ အတည်ပြု သူ မတူ ရမယ်') }}</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+{% if bundle and (row and row.counted_denom) %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('အမျိုးအစား ခွဲ (၁၀၀ ရွက် တစ်တွဲ)') }}</h3>
+  <div class="table-scroll"><table>
+  <tr><th>{{ t('တန်') }}</th><th style="text-align:right">{{ t('အရွက်') }}</th><th style="text-align:right">{{ t('အတွဲ (၁၀၀ ရွက်)') }}</th><th style="text-align:right">{{ t('ကျန် အရွက်') }}</th></tr>
+  {% for b in bundle %}<tr><td>{{ '{:,}'.format(b.value) }}</td><td class="num">{{ b.leaves }}</td><td class="num">{{ b.bundles }}</td><td class="num">{{ b.loose }}</td></tr>{% endfor %}
+  <tr><td><b>{{ t('စုစုပေါင်း') }}</b></td><td class="num" colspan="3"><b>{{ fmt_money(fg.counted) }} Ks</b></td></tr>
+  </table></div>
+</div>
+{% endif %}
+{% endblock %}

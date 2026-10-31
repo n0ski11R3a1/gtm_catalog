@@ -1,0 +1,111 @@
+{% extends 'base.html' %}{% from '_tabs.html' import ord_tabs %}{% from '_denom.html' import denom_counter %}{% block title %}{{ o.code }} — GTM ERP{% endblock %}
+{% block body %}
+{{ ord_tabs('ord', perms) }}
+<h1>{{ t('ဘောက်ချာ') }} — {{ o.outlet }}</h1>
+<p><span class="doccode">{{ o.code }}</span> · {{ t('နေရာ') }}: {{ o.area or '' }}{% if olabel and olabel != o.outlet %} · {{ t('ဆိုင်') }}: <b>{{ olabel }}</b>{% endif %} · {{ t('Rep') }}: {{ o.rep or '' }}{% if o.team %} ({{ o.team }}){% endif %} · {{ t('ရက်') }}: {{ o.odate }} · {{ t('အခြေအနေ') }}: <b>{{ t('အသစ်') if o.status=='new' else (t('ပို့ပြီး') if o.status=='delivered' else t('ပယ်ဖျက်')) }}</b>{% if o.partial %} · <span class="pill blue">{{ t('တစ်ပိုင်း ပို့ပြီး') }}</span>{% endif %}{% if o.status=='cancelled' and o.cancel_reason %} · {{ o.cancel_reason }}{% endif %} · {{ t('ငွေ') }}: <b>{{ t('ရပြီး') if o.paid else (t('တစ်ပိုင်း ရပြီး') if received > 0 else t('မရသေး')) }}</b>{% if o.offline %} · {{ t('📴 Offline က တင်ထား') }}{% endif %}{% if assignee_name %} · {{ t('ပို့သူ') }}: <b>{{ assignee_name }}</b>{% endif %}</p>
+{% if flags %}<div class="flags">{% for f in flags %}<div>⚠️ {{ f }}</div>{% endfor %}</div>{% endif %}
+{% if o.credit_warn %}<div class="flags"><div>⚠️ {{ t('ဒီ ဘောက်ချာ ဖွင့်ချိန်တုန်းက ဆိုင်မှာ ငွေ မရသေးတဲ့ ဘောက်ချာ ရှိနေခဲ့တယ် — ဒါက နောက် တစ်စောင် ထပ်တိုးတဲ့ အကြွေး ဘောက်ချာ') }}</div></div>{% endif %}
+{% if can_attach %}
+<div class="card" style="border:2px solid #b45309">
+  <h3 style="margin-top:0">❓ {{ t('ဆိုင် မသဲကွဲ') }}</h3>
+  <p class="hint">{{ t('ဒီ ဘောက်ချာ ဘယ် ဆိုင် အတွက် လဲ မသဲကွဲသေးဘူး — ဆိုင် ရွေး တွဲပါ') }}</p>
+  {% for c in ambig_cands %}
+  <form method="post" action="/orders/{{ o.id }}/attach-outlet" style="display:inline-block;margin:3px 0">
+    <input type="hidden" name="outlet_id" value="{{ c.id }}">
+    <button class="btn" type="submit">{{ c.label }} — {{ t('ဒီ ဆိုင် နဲ့ တွဲမယ်') }}</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+<div class="table-scroll"><table class="tbl-order-items">
+<tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th>{{ t('ဈေးအမျိုးအစား') }}</th><th>{{ t('ဈေး') }}</th><th>{{ t('အရေအတွက်') }}</th><th>{{ t('လျှော့ဈေး') }}</th><th>{{ t('စုစုပေါင်း') }}</th></tr>
+{% for i in items %}
+<tr><td>{{ i.sku }}</td><td>{{ i.name }}{% if i.cancelled_qty %} <span class="hint">({{ t('{c} ကုန်မရ — ပယ်', c='%g'|format(i.cancelled_qty)) }})</span>{% endif %}</td><td>{{ t('လက်လီ') if i.tier=='retail' else t('လက်ကား') }}</td><td>{{ fmt_money(i.price) }}</td><td>{{ i.qty }}</td><td>{{ ('- ' + fmt_money(i.discount)) if i.discount else '—' }}</td><td>{{ fmt_money(i.qty*i.price - (i.discount or 0)) }}</td></tr>
+{% endfor %}
+<tr><td colspan="6">{{ t('အခွန်မပါ စုစုပေါင်း') }}</td><td>{{ fmt_money(subtotal) }}</td></tr>
+<tr><td colspan="6">{{ t('လျှော့ဈေး') }}</td><td>- {{ fmt_money(o.discount) }}</td></tr>
+<tr><td colspan="6"><b>{{ t('စုစုပေါင်း') }}</b></td><td><b>{{ fmt_money(total) }}</b></td></tr>
+</table></div>
+<div class="order-totals-mobile">
+  <div><span>{{ t('အခွန်မပါ စုစုပေါင်း') }}</span><span>{{ fmt_money(subtotal) }}</span></div>
+  <div><span>{{ t('လျှော့ဈေး') }}</span><span>- {{ fmt_money(o.discount) }}</span></div>
+  <div class="grand"><span>{{ t('စုစုပေါင်း') }}</span><span>{{ fmt_money(total) }} Ks</span></div>
+</div>
+<div class="row">
+  {% if can('invoice.print') %}<a class="btn" href="/orders/{{ o.id }}/invoice" target="_blank">{{ t('🧾 Invoice (A5) ထုတ်ရန်') }}</a>{% endif %}
+  {% if can_edit %}<a class="btn alt" href="/orders/{{ o.id }}/edit">{{ t('✏️ ပြင်ရန် (အရေအတွက်)') }}</a>{% endif %}
+  {% if o.paid and o.status == 'new' and not can('audit.view') %}<span class="hint">{{ t('💰 ငွေကောက်ခံပြီးသား ဘောက်ချာ — ပြင်လို့ မရတော့ပါ') }}</span>{% endif %}
+  {% if sales_lock == 'printed' %}<span class="hint">{{ t('🖨 Print ထုတ်ပြီးသား ဘောက်ချာ — အရောင်း ပြင်ခွင့် ပိတ်ပြီး (Warehouse ကို ဆက်သွယ်ပါ)') }}</span>{% endif %}
+  {% if sales_lock == 'day' %}<span class="hint">{{ t('📅 ကောက်ခဲ့တဲ့ နေ့ ကျော်သွားပြီ — Sales ပြင်ခွင့် ပိတ်ပြီ (Warehouse ကို ဆက်သွယ်ပါ)') }}</span>{% endif %}
+  {% if sales_lock == 'hours' %}<span class="hint">{{ t('🕠 ရုံးချိန် (မနက် ၈:၃၀ – ညနေ ၅:၃၀) မဟုတ်တော့ပါ — Sales ပြင်ခွင့် ပိတ်ပြီ (Warehouse ကို ဆက်သွယ်ပါ)') }}</span>{% endif %}
+  {% if o.printed_at and can('products.view') %}<span class="hint">{{ t('🖨 Print ထုတ်ပြီး:') }} {{ o.printed_at }}</span>{% endif %}
+  {% if o.status=='new' and can('orders.status.deliver') %}
+  <form method="post" action="/orders/{{ o.id }}/status" onsubmit="return confirm('{{ t('ပို့ပြီးပြီလို့ မှတ်ပြီး stock နှုတ်မလား?') }}')"><input type="hidden" name="status" value="delivered"><button class="btn alt" type="submit">{{ t('🚚 ပို့ပြီး (stock နှုတ်)') }}</button></form>
+  <a class="btn alt" href="/deliver/{{ o.id }}">{{ t('အရေအတွက် ပြင် ပို့ရန်') }}</a>
+  {% endif %}
+  {% if o.status=='new' and can('dashboard.delivery_own') and o.assigned_to == me.id %}
+  <a class="btn" href="/deliver/{{ o.id }}">{{ t('🚚 ပို့မယ်') }}</a>
+  {% endif %}
+  {% if o.status=='new' and can('delivery.assign') and deliverers %}
+  <form method="post" action="/orders/{{ o.id }}/assign" class="row">
+    <label>{{ t('ပို့သူ') }} <select name="user_id">{% for u in deliverers %}<option value="{{ u.id }}" {% if o.assigned_to == u.id %}selected{% endif %}>{{ u.name }}</option>{% endfor %}</select></label>
+    <button class="btn alt" type="submit">{{ t('တာဝန် ပေးမယ်') }}</button>
+  </form>
+  {% endif %}
+  {% if o.status=='new' and can('orders.status.cancel') %}
+  <form method="post" action="/orders/{{ o.id }}/status" onsubmit="return confirm('{{ t('Order ကို ပယ်ဖျက်မလား?') }}')"><input type="hidden" name="status" value="cancelled"><button class="btn danger" type="submit">{{ t('ပယ်ဖျက်') }}</button></form>
+  {% endif %}
+</div>
+<div class="card">
+  <h3 style="margin-top:0">{{ t('💰 ငွေ ရရှိ မှတ်တမ်း') }}</h3>
+  <p>{{ t('စုစုပေါင်း') }}: <b>{{ fmt_money(total) }} Ks</b> · {{ t('ရပြီး') }}: <b>{{ fmt_money(received) }} Ks</b> · {{ t('ကျန်') }}: <b>{{ fmt_money(balance) }} Ks</b>{% if o.paid %} · <span class="pill green">{{ t('အပြည့် ရပြီး') }}</span>{% elif o.status == 'delivered' and received > 0 %} · <span class="pill blue">{{ t('တစ်စိတ်တစ်ပိုင်း ရပြီး (Credit)') }}</span>{% endif %}</p>
+  {% if pending_collect %}<p class="hint">⏳ {{ t('စစ်ရန် ကျန် — Delivery ကောက် ထား') }}: <b>{{ fmt_money(pending_collect) }} Ks</b> — {{ t('ပို့သူ မှတ်ထားတာ — ရုံး က စစ်ပြီး အတည်ပြုမှ "ရပြီး" ဖြစ်မယ်') }}</p>{% endif %}
+  {% if payments %}
+  <table>
+  <tr><th>{{ t('ရက်') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th>{{ t('ငွေ ပေးတဲ့ နည်း') }}</th><th>{{ t('မှတ်ချက်') }}</th><th>{{ t('မှတ်သူ') }}</th><th></th></tr>
+  {% for p in payments %}<tr><td>{{ p.rdate or '' }}</td><td class="num">{{ fmt_money(p.amount) }}</td><td>{{ t(dict(PAY_METHODS).get(p.method or 'cash', p.method or '')) }}{% if not p.verified %} · <span class="pill amber">{{ t('စစ်ရန် ကျန်') }}</span>{% endif %}</td><td>{{ p.note or '' }}</td><td>{{ p.by_name or '' }}</td>
+  <td>{% if can('payments.delete') %}<form method="post" class="inline" action="/orders/{{ o.id }}/payment/{{ p.id }}/delete" onsubmit="return confirm('{{ t('ဒီ ငွေ မှတ်တမ်း ဖျက်မလား?') }}')"><button type="submit">{{ t('ဖျက်') }}</button></form>{% endif %}</td></tr>{% endfor %}
+  </table>
+  {% else %}<p class="hint">{{ t('ငွေ ရရှိ မှတ်တမ်း မရှိသေးပါ') }}</p>{% endif %}
+  {% if can('payments.record') %}
+  {% if o.status == 'delivered' and balance > 0.5 %}
+  <form method="post" action="/orders/{{ o.id }}/payment" class="row">
+    <input type="hidden" name="ftok" value="{{ pay_ftok }}">
+    <label>{{ t('ပမာဏ (Ks)') }} <input type="number" step="any" name="amount" value="{{ '%.0f'|format(balance) }}" required></label>
+    <label>{{ t('ရက်') }} <input type="date" name="rdate" value="{{ today_s }}"></label>
+    <label>{{ t('ငွေ ပေးတဲ့ နည်း') }} <select name="method">{% for k, lbl in PAY_METHODS %}<option value="{{ k }}">{{ t(lbl) }}</option>{% endfor %}</select></label>
+    <label>{{ t('မှတ်ချက်') }} <input type="text" name="note" placeholder="{{ t('ဥပမာ: ဆိုင် တစ်ဝက် ပေး') }}"></label>
+    <label>&nbsp;<button class="btn" type="submit">{{ t('ငွေ မှတ်') }}</button></label>
+    {{ denom_counter('op_', 'amount', 'method') }}
+  </form>
+  <p class="hint">{{ t('ပမာဏမှာ ကျန်ငွေ အပြည့် ထည့်ထားပြီး — တစ်ပိုင်း ပဲ ရရင် ရတဲ့ ပမာဏ ပြင်ထည့်ပါ။ အပြည့် ရတာနဲ့ "ရပြီး" အလိုအလျောက် ဖြစ်သွားမယ်။') }}</p>
+  {% elif o.status != 'delivered' and o.status != 'cancelled' %}
+  <p class="hint">{{ t('💰 ငွေ မှတ်ဖို့ အရင် 🚚 ပို့ပြီး မှတ်ရပါမယ် (ပို့ပြီးမှ ငွေ ရတဲ့ စနစ်)') }}</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% if loc %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('📍 နေရာ မှတ်တမ်း') }}</h3>
+  <p>{{ t('ရောင်း တဲ့ နေရာ') }}: {% if loc.sale %}<a href="https://www.google.com/maps?q={{ loc.sale[0] }},{{ loc.sale[1] }}" target="_blank" rel="noopener">📍 {{ t('နေရာ ကြည့်ရန်') }}</a>{% else %}{{ t('မရှိ') }}{% endif %}
+  · {{ t('ပို့ တဲ့ နေရာ') }}: {% if loc.del %}<a href="https://www.google.com/maps?q={{ loc.del[0] }},{{ loc.del[1] }}" target="_blank" rel="noopener">📍 {{ t('နေရာ ကြည့်ရန်') }}</a>{% else %}{{ t('မရှိ') }}{% endif %}
+  {% if loc.dist %} · {{ t('အကွာအဝေး') }}: <b>~{{ loc.dist }}</b>{% endif %}</p>
+  {% if loc.att and loc.att.gps_flag %}
+    {% if loc.att.checked_by %}
+    <p>✓ {{ t('စစ်ပြီး') }} — {{ loc.checker or '' }} · {{ (loc.att.checked_at or '')[:16] }}</p>
+    {% else %}
+    <div class="flags"><div>⚠️ {{ t('ရောင်း တဲ့ နေရာ နဲ့ ပို့ တဲ့ နေရာ ~{dist} ခြား နေ တယ် — စစ် ကြည့် ပါ', dist=loc.flag_dist) }}</div></div>
+    {% if can('gps.check_mark') %}<form method="post" action="/attempts/{{ loc.att.id }}/gps-check"><button class="btn alt" type="submit">{{ t('✓ စစ်ပြီး') }}</button></form>{% endif %}
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+<p class="hint">{{ t('ပြင်ဆင်ခွင့် သုံးပြီး: Sales {a}/{cap} ကြိမ် · Warehouse {b}/{cap} ကြိမ်', a=counts.get('sales', 0), cap=EDIT_CAP, b=counts.get('warehouse', 0)) }}{% if counts.get('owner', 0) %} {{ t('· Owner {n} ကြိမ်', n=counts.get('owner', 0)) }}{% endif %}</p>
+{% if edits %}
+<h3>{{ t('ပြင်ဆင်မှု မှတ်တမ်း') }}</h3>
+<table>
+<tr><th>{{ t('အချိန်') }}</th><th>{{ t('ပြင်သူ') }}</th><th>{{ t('ပြောင်းလဲမှု') }}</th></tr>
+{% for e in edits %}<tr><td>{{ e.created_at }}</td><td>{{ e.byname or '' }} <small class="muted">({{ {'sales':'Sales','warehouse':'Warehouse','owner':'Owner'}.get(e.by_role, e.by_role or 'Owner') }} {{ t('ပြင် #{n}', n=e.seq) }})</small></td><td>{{ e.summary }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

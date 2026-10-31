@@ -1,0 +1,14 @@
+{% extends 'base.html' %}{% block title %}{{ t('ပထမဆုံး Setup') }} — GTM ERP{% endblock %}
+{% block body %}
+<div class="card narrow">
+  <img class="logo-login" src="/static/logo.png" alt="GTM Distribution">
+  <h1>{{ t('ပထမဆုံး Setup') }}</h1>
+  <p>{{ t('Owner (Ko) account ဆောက်ပါ။ ဒီ account က အကုန် လုပ်လို့ရတယ်။') }}</p>
+  <form method="post">
+    <label>{{ t('နာမည်') }} <input name="name" required></label>
+    <label>{{ t('Username') }} <input name="username" required autocomplete="username"></label>
+    <label>{{ t('Password (အနည်းဆုံး ၆ လုံး)') }} <input name="password" type="password" required autocomplete="new-password"></label>
+    <button class="btn" type="submit">{{ t('Owner account ဆောက်မယ်') }}</button>
+  </form>
+</div>
+{% endblock %}

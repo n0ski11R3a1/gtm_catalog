@@ -1,0 +1,80 @@
+{% extends 'base.html' %}{% block title %}{{ t('Sales စစ်ဆေး') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('📊 Sales စစ်ဆေး') }}</h1>
+<p class="hint">{{ t('{f} မှ {t} အထိ · တင်သမျှ = အဲ့ဒီ ကာလမှာ ထည့်လိုက်တဲ့ ဘောက်ချာ အကုန် (ပယ်ဖျက် အပါ) · ကိန်းဂဏန်း ပုံစံ: ပမာဏ (ဘောက်ချာ စောင်)', f=f, t=tend) }}</p>
+<div class="tabs">
+  <a href="/sales-report?f={{ today_s }}&t={{ today_s }}{% if rep_sel %}&rep={{ rep_sel }}{% endif %}" class="{{ 'on' if f == today_s and t == today_s }}">{{ t('ဒီနေ့') }}</a>
+  <a href="/sales-report?f={{ month_start }}&t={{ today_s }}{% if rep_sel %}&rep={{ rep_sel }}{% endif %}" class="{{ 'on' if f == month_start and t == today_s }}">{{ t('ဒီလ') }}</a>
+  <a href="/sales-report?f=1970-01-01&t={{ today_s }}{% if rep_sel %}&rep={{ rep_sel }}{% endif %}" class="{{ 'on' if f == '1970-01-01' }}">{{ t('အစအဆုံး') }}</a>
+</div>
+<form method="get" action="/sales-report" class="row">
+  {% if rep_sel %}<input type="hidden" name="rep" value="{{ rep_sel }}">{% endif %}
+  <label>{{ t('မှ') }} <input type="date" name="f" value="{{ f }}"></label>
+  <label>{{ t('အထိ') }} <input type="date" name="t" value="{{ tend }}"></label>
+  <label>&nbsp;<button class="btn" type="submit">{{ t('ကြည့်') }}</button></label>
+</form>
+
+<h2>{{ t('Rep အလိုက် စွမ်းဆောင်ချက်') }}</h2>
+<div class="table-scroll"><table>
+<tr><th>Rep</th><th>Team</th><th style="text-align:right">{{ t('တင်သမျှ') }}</th><th style="text-align:right">{{ t('ပို့ပြီး') }}</th><th style="text-align:right">{{ t('ပို့ရန် ကျန်') }}</th><th style="text-align:right">{{ t('ပယ်ဖျက်') }}</th><th style="text-align:right">{{ t('ပျမ်းမျှ') }}</th><th style="text-align:right">{{ t('ငွေ ရပြီး') }}</th><th style="text-align:right">{{ t('Credit (ငွေကျန်)') }}</th><th style="text-align:right">{{ t('မရသေး (မပို့ရသေး)') }}</th><th style="text-align:right">SKU</th><th style="text-align:right">Outlet</th><th style="text-align:right">{{ t('ဆိုင် သစ် 🆕') }}</th></tr>
+{% for r in reps %}
+<tr><td><a href="/sales-report?f={{ f }}&t={{ tend }}&rep={{ r.id }}">{{ r.name }}</a>{% if not r.active %} ({{ t('ပိတ်ထား') }}){% endif %}</td><td>{{ r.team }}</td>
+<td class="num"><b>{{ '{:,.0f}'.format(r.sm.all.v) }}</b> ({{ r.sm.all.c }})</td>
+<td class="num">{{ '{:,.0f}'.format(r.sm.delivered.v) }} ({{ r.sm.delivered.c }})</td>
+<td class="num">{{ '{:,.0f}'.format(r.sm.new.v) }} ({{ r.sm.new.c }})</td>
+<td class="num">{{ '{:,.0f}'.format(r.sm.cancelled.v) }} ({{ r.sm.cancelled.c }})</td>
+<td class="num">{{ '{:,.0f}'.format(r.avg) }}</td>
+<td class="num">{{ '{:,.0f}'.format(r.recv_v) }} ({{ r.paid_c }})</td><td class="num">{{ '{:,.0f}'.format(r.credit_v) }} ({{ r.credit_c }})</td><td class="num">{{ '{:,.0f}'.format(r.sm.new.v) }} ({{ r.sm.new.c }})</td>
+<td class="num">{{ r.skus }}</td><td class="num">{{ r.outlets }}</td><td class="num">{{ r.new_outlets }}</td></tr>
+{% endfor %}
+</table></div>
+<p class="hint">{{ t('ပျမ်းမျှ = ပယ်ဖျက် မပါတဲ့ ဘောက်ချာ တစ်စောင်ချင်း ပျမ်းမျှ တန်ဖိုး · ငွေ ရပြီး = လက်ခံ ရရှိပြီး ငွေ စုစုပေါင်း (ကွင်းထဲက ကိန်းက အပြည့် ရပြီး ဘောက်ချာ စောင်) · Credit = ပို့ပြီး ငွေကျန် ရှိနေတဲ့ ပမာဏ (လိုက် ကောက်ရမယ့် ကိန်း) · မရသေး (မပို့ရသေး) = မပို့ရသေးတဲ့ ဘောက်ချာများ၏ တန်ဖိုး') }}</p>
+
+<h2>{{ t('🏢 ရုံး အရောင်း') }}</h2>
+<p class="hint">{{ t('Owner / Warehouse အကောင့်များမှ ထည့်သော ဘောက်ချာများ — Rep များ၏ အရောင်း မဟုတ်ပါ') }}</p>
+<div class="table-scroll"><table>
+<tr><th style="text-align:right">{{ t('တင်သမျှ') }}</th><th style="text-align:right">{{ t('ပို့ပြီး') }}</th><th style="text-align:right">{{ t('ပို့ရန် ကျန်') }}</th><th style="text-align:right">{{ t('ပယ်ဖျက်') }}</th><th style="text-align:right">{{ t('ငွေ ရပြီး') }}</th><th style="text-align:right">{{ t('Credit (ငွေကျန်)') }}</th><th style="text-align:right">{{ t('မရသေး (မပို့ရသေး)') }}</th></tr>
+<tr><td class="num"><b>{{ '{:,.0f}'.format(office.sm.all.v) }}</b> ({{ office.sm.all.c }})</td>
+<td class="num">{{ '{:,.0f}'.format(office.sm.delivered.v) }} ({{ office.sm.delivered.c }})</td>
+<td class="num">{{ '{:,.0f}'.format(office.sm.new.v) }} ({{ office.sm.new.c }})</td>
+<td class="num">{{ '{:,.0f}'.format(office.sm.cancelled.v) }} ({{ office.sm.cancelled.c }})</td>
+<td class="num">{{ '{:,.0f}'.format(office.recv_v) }} ({{ office.paid_c }})</td>
+<td class="num">{{ '{:,.0f}'.format(office.credit_v) }} ({{ office.credit_c }})</td>
+<td class="num">{{ '{:,.0f}'.format(office.sm.new.v) }} ({{ office.sm.new.c }})</td></tr>
+</table></div>
+
+<h2>{{ t('ဆိုင် အမျိုးအစား အလိုက်') }}</h2>
+<p class="hint">{{ t('အမျိုးအစား မသတ်မှတ်ရသေးတဲ့ ဆိုင် နဲ့ ဆိုင် မှတ်တမ်း နဲ့ မချိတ်မိတဲ့ ဘောက်ချာတွေကို "မသတ်မှတ်ရသေး" ထဲ ထည့်တွက်တယ် · ပယ်ဖျက် ဘောက်ချာများ မပါဝင်ပါ') }}</p>
+<div class="table-scroll"><table>
+<tr><th>{{ t('ဆိုင် အမျိုးအစား') }}</th><th style="text-align:right">{{ t('ဝယ်ဖူး စုစုပေါင်း') }}</th><th style="text-align:right">{{ t('ဘောက်ချာ') }}</th></tr>
+{% for r in type_rows %}
+<tr><td colspan="3"><b>{{ r.name }}</b></td></tr>
+{% for k, lbl in shop_types %}{% if r.cells[k].c %}<tr><td>{{ t(lbl) }}</td><td class="num">{{ '{:,.0f}'.format(r.cells[k].v) }}</td><td class="num">{{ r.cells[k].c }}</td></tr>{% endif %}{% endfor %}
+<tr><td>{{ t('မသတ်မှတ်ရသေး') }}</td><td class="num">{{ '{:,.0f}'.format(r.cells['unset'].v) }}</td><td class="num">{{ r.cells['unset'].c }}</td></tr>
+{% endfor %}
+<tr><td colspan="3"><b>{{ type_tot.name }}</b></td></tr>
+{% for k, lbl in shop_types %}{% if type_tot.cells[k].c %}<tr><td><b>{{ t(lbl) }}</b></td><td class="num"><b>{{ '{:,.0f}'.format(type_tot.cells[k].v) }}</b></td><td class="num"><b>{{ type_tot.cells[k].c }}</b></td></tr>{% endif %}{% endfor %}
+<tr><td><b>{{ t('မသတ်မှတ်ရသေး') }}</b></td><td class="num"><b>{{ '{:,.0f}'.format(type_tot.cells['unset'].v) }}</b></td><td class="num"><b>{{ type_tot.cells['unset'].c }}</b></td></tr>
+</table></div>
+
+<h2>{{ t('Team နှိုင်းယှဉ်') }}</h2>
+<div class="table-scroll"><table>
+<tr><th>Team</th><th style="text-align:right">{{ t('တင်သမျှ') }}</th><th style="text-align:right">{{ t('ပို့ပြီး') }}</th><th style="text-align:right">{{ t('ပို့ရန် ကျန်') }}</th><th style="text-align:right">{{ t('ပယ်ဖျက်') }}</th></tr>
+{% for tm in teams %}<tr><td>{{ tm.tm }}</td><td class="num"><b>{{ '{:,.0f}'.format(tm.sm.all.v) }}</b> ({{ tm.sm.all.c }})</td><td class="num">{{ '{:,.0f}'.format(tm.sm.delivered.v) }} ({{ tm.sm.delivered.c }})</td><td class="num">{{ '{:,.0f}'.format(tm.sm.new.v) }} ({{ tm.sm.new.c }})</td><td class="num">{{ '{:,.0f}'.format(tm.sm.cancelled.v) }} ({{ tm.sm.cancelled.c }})</td></tr>{% endfor %}
+{% if not teams %}<tr><td colspan="5" class="hint">{{ t('ဒီ ရက်ပိုင်းမှာ အရောင်း မရှိသေးပါ') }}</td></tr>{% endif %}
+</table></div>
+
+<h2>{{ t('SKU ထွက်အား') }} — {{ sel_name }}</h2>
+<div class="tabs">
+  <a href="/sales-report?f={{ f }}&t={{ tend }}" class="{{ 'on' if not rep_sel }}">{{ t('Rep အားလုံး') }}</a>
+  {% for r in reps %}<a href="/sales-report?f={{ f }}&t={{ tend }}&rep={{ r.id }}" class="{{ 'on' if rep_sel == r.id|string }}">{{ r.name }}</a>{% endfor %}
+  <a href="/sales-report?f={{ f }}&t={{ tend }}&rep=office" class="{{ 'on' if rep_sel == 'office' }}">{{ t('🏢 ရုံး') }}</a>
+  <a href="/sales-report?f={{ f }}&t={{ tend }}&rep=all" class="{{ 'on' if rep_sel == 'all' }}">{{ t('အကုန်လုံး (Rep + ရုံး)') }}</a>
+</div>
+<div class="table-scroll"><table>
+<tr><th>SKU</th><th>{{ t('ပစ္စည်း') }}</th><th style="text-align:right">{{ t('တင်သမျှ') }}</th><th style="text-align:right">{{ t('ပို့ပြီး') }}</th><th style="text-align:right">{{ t('ပို့ရန်') }}</th><th style="text-align:right">{{ t('ပယ်ဖျက်') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th style="text-align:right">{{ t('ဘောက်ချာ') }}</th></tr>
+{% for s in skus %}<tr><td>{{ s.sku }}</td><td>{{ s.name }} ({{ s.unit }})</td><td class="num">{{ '{:,.0f}'.format(s.q_all) if s.q_all == s.q_all|int else s.q_all }}</td><td class="num">{{ '{:,.0f}'.format(s.q_del) if s.q_del == s.q_del|int else s.q_del }}</td><td class="num">{{ '{:,.0f}'.format(s.q_new) if s.q_new == s.q_new|int else s.q_new }}</td><td class="num">{{ '{:,.0f}'.format(s.q_can) if s.q_can == s.q_can|int else s.q_can }}</td><td class="num">{{ '{:,.0f}'.format(s.amt) }}</td><td class="num">{{ s.ords }}</td></tr>{% endfor %}
+{% if not skus %}<tr><td colspan="8" class="hint">{{ t('ဒီ ရက်ပိုင်းမှာ အရောင်း မရှိသေးပါ') }}</td></tr>{% endif %}
+</table></div>
+<p class="hint">{{ t('SKU ပမာဏ နဲ့ ဘောက်ချာ အရေအတွက်မှာ ပယ်ဖျက် ဘောက်ချာများ မပါဝင်ပါ · ပမာဏ = ပစ္စည်းအလိုက် လျှော့ဈေး နှုတ်ပြီး အမှန် တန်ဖိုး') }}</p>
+{% endblock %}

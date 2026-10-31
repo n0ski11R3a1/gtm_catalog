@@ -1,0 +1,28 @@
+{% extends 'base.html' %}{% block title %}{{ t('အသိပေးချက်များ') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🔔 အသိပေးချက်များ — ဘောက်ချာ ပြင်ဆင်မှုများ') }}</h1>
+<p class="hint">{{ t('ဘောက်ချာ တစ်ခု ပြင်တိုင်း ဒီမှာ မှတ်တမ်း ပေါ်တယ် — ဘယ်သူ၊ ဘယ်အချိန်၊ ဘာတွေ ပြောင်းခဲ့လဲ။ လိုအပ်ရင် ပြင်တဲ့ သူကို ပြန် မေးလို့ရအောင်။') }}</p>
+{% if alerts %}
+<h2>{{ t('စစ်ရန် ကျန် အသိပေးချက်များ') }}</h2>
+{% for al in alerts %}<div class="flags"><div>⚠️ {{ al.text }} — <a href="{{ al.href }}">{{ t('ကြည့်မယ်') }}</a></div></div>{% endfor %}
+{% endif %}
+{% if audit_rows %}
+<h2>{{ t('📋 မှတ်တမ်း စစ် — သတိပေးချက်များ') }}</h2>
+{% for a in audit_rows %}
+<div class="flags"><div>⚠️ {{ audit_sum(a.summary) }} <span class="muted">— {{ a.byname or '' }} · {{ a.created_at }}</span>
+{% if a.handled_by %} <span class="pill green">{{ t('ကိုင်တွယ်ပြီး — {name}', name=a.handledname or '') }} · {{ a.handled_at }}</span>
+{% else %}<form method="post" action="/audit/{{ a.id }}/handled" style="display:inline"><input type="hidden" name="to" value="notifications"><button class="btn alt" type="submit">{{ t('ကိုင်တွယ်ပြီး မှတ်မယ်') }}</button></form>{% endif %}
+</div></div>
+{% endfor %}
+{% endif %}
+<table>
+<tr><th>{{ t('အချိန်') }}</th><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('ဆိုင်') }}</th><th>{{ t('ပြင်သူ') }}</th><th>{{ t('ပြောင်းလဲမှု') }}</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.created_at }}</td><td><a href="/orders/{{ r.order_id }}">{{ r.code }}</a></td><td>{{ r.outlet }}</td>
+<td>{{ r.byname or '' }} <small class="muted">({{ {'sales':'Sales','warehouse':'Warehouse','owner':'Owner'}.get(r.by_role, r.by_role or '') }})</small></td>
+<td>{{ r.summary }}{% if r.attempt_id %}{% if r.gps_checked_at %} <span class="pill green">✓ {{ t('စစ်ပြီး') }} — {{ r.gps_checked_name or '' }}</span>{% else %} <span class="pill amber">{{ t('စစ်ရန် ကျန်') }}</span>{% endif %}{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="5" class="muted">{{ t('ပြင်ဆင်မှု မှတ်တမ်း မရှိသေးဘူး') }}</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends 'base.html' %}{% block title %}{{ t('ဆိုင်များ') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🏪 ဆိုင်များ ({n})', n=outs|length) }}</h1>
+{% if can('settings.office') %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('🏢 ရုံး တည်နေရာ — Pin/Visit ချန်ရန် (20 m)') }}</h3>
+  {% if office %}<p>{{ t('မှတ်ထားပြီး:') }} <b>{{ office[0] }}, {{ office[1] }}</b> · <a href="https://maps.google.com/?q={{ office[0] }},{{ office[1] }}" target="_blank">📍 Map</a></p>
+  {% else %}<p class="muted">{{ t('မမှတ်ရသေးဘူး — ရုံးမှာ ထိုင်ရင်း အောက်က ခလုတ်ကို နှိပ်ပါ။') }}</p>{% endif %}
+  <form method="post" action="/settings/office" id="offForm">
+    <input type="hidden" name="lat" id="offLat"><input type="hidden" name="lng" id="offLng">
+    <button class="btn" type="button" onclick="setOffice()">{{ t('📍 လက်ရှိ နေရာ ကို ရုံး အဖြစ် မှတ်မယ်') }}</button>
+    {% if office %}<button class="btn alt" type="submit" name="clear" value="1" onclick="return confirm(tf('ရုံး တည်နေရာ ဖျက်မှာလား?'))">{{ t('ဖျက်မယ်') }}</button>{% endif %}
+  </form>
+  <script>
+  function setOffice(){
+    if(!navigator.geolocation){ alert(tf('ဒီ browser မှာ GPS မရဘူး')); return; }
+    navigator.geolocation.getCurrentPosition(function(p){
+      document.getElementById('offLat').value = p.coords.latitude;
+      document.getElementById('offLng').value = p.coords.longitude;
+      document.getElementById('offForm').submit();
+    }, function(e){ alert(tf('GPS မရဘူး — Location ဖွင့်ပြီး ထပ်စမ်းပါ')); }, {enableHighAccuracy:true, timeout:15000});
+  }
+  </script>
+</div>
+{% endif %}
+<p class="muted">{{ t('Owner / Finance သာ မြင်ရတယ်။ ကျန်ငွေ (Credit) အများဆုံး ဆိုင် အရင် စီထားတယ်။ ဆိုင် နာမည် နှိပ်ရင် အသေးစိတ် (ဘောက်ချာများ · Credit · ရောက် မှတ်တမ်း) ကြည့်လို့ရတယ်။') }}</p>
+{% if dup_pairs %}
+<div class="card">
+  <h3 style="margin-top:0">🔀 {{ t('ထပ် နေ နိုင် တဲ့ ဆိုင်') }}</h3>
+  <p class="hint">{{ t('နေရာ pin ချင်း ၄၀ m အတွင်း ကပ်နေတဲ့ ဆိုင်တွေ — ဆိုင် တစ် ဆိုင် တည်း ဖြစ်နိုင်တယ်။ ပေါင်းသင့်ရင် ပေါင်းပါ၊ ဆိုင် ကွဲ ဆိုရင် မှတ်ထားပါ။') }}</p>
+  {% for p in dup_pairs %}
+  <div class="row" style="align-items:center;border-top:1px solid #e5e7eb;padding:6px 0">
+    <span><a href="/outlets/{{ p.a.id }}"><b>{{ p.la }}</b></a> ↔ <a href="/outlets/{{ p.b.id }}"><b>{{ p.lb }}</b></a> · ~{{ p.dist }}</span>
+    <form method="post" action="/outlets/{{ p.a.id }}/merge" onsubmit="return confirm('{{ t('ဒီ ဆိုင် ကို ရွေးတဲ့ ဆိုင် ထဲ ပေါင်းမှာ သေချာလား? ဘောက်ချာ/မှတ်တမ်း အကုန် ရွှေ့မယ်') }}')">
+      <input type="hidden" name="target" value="{{ p.b.id }}">
+      <button class="btn alt" type="submit">{{ t('ပေါင်းမယ် (Merge)') }}</button>
+    </form>
+    <form method="post" action="/outlets/dup-dismiss">
+      <input type="hidden" name="a" value="{{ p.a.id }}"><input type="hidden" name="b" value="{{ p.b.id }}">
+      <button class="btn alt" type="submit">{{ t('ဆိုင် ကွဲ — မှန် တယ်') }}</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+<form method="get" class="row">
+  <input name="q" value="{{ q }}" placeholder="{{ t('ဆိုင် နာမည် ရှာရန်') }}">
+  <label>{{ t('ဆိုင် အမျိုးအစား') }} <select name="ty" onchange="this.form.submit()">
+    <option value="" {% if not ty %}selected{% endif %}>{{ t('အကုန်') }}</option>
+    {% for k, lbl in shop_types %}<option value="{{ k }}" {% if ty == k %}selected{% endif %}>{{ t(lbl) }}</option>{% endfor %}
+    <option value="unset" {% if ty == 'unset' %}selected{% endif %}>{{ t('မသတ်မှတ်ရသေး') }}</option>
+  </select></label>
+  <button class="btn" type="submit">{{ t('ရှာ') }}</button>
+  {% if q or ty %}<a class="btn alt" href="/outlets">{{ t('✖ ရှင်း') }}</a>{% endif %}
+</form>
+<table>
+<tr><th>{{ t('ဆိုင်') }}</th><th>{{ t('ရပ်ကွက်') }}</th><th>{{ t('ဆိုင် အမျိုးအစား') }}</th><th>📍</th><th style="text-align:right">{{ t('ဘောက်ချာ') }}</th><th style="text-align:right">{{ t('ဝယ်ဖူး စုစုပေါင်း') }}</th><th style="text-align:right">{{ t('ပေးပြီး') }}</th><th style="text-align:right">{{ t('ကျန်ငွေ (Credit)') }}</th><th>{{ t('နောက်ဆုံး ဝယ်ရက်') }}</th><th>{{ t('စတွေ့') }}</th></tr>
+{% for x in outs %}
+<tr>
+<td><a href="/outlets/{{ x.o.id }}"><b>{{ x.label }}</b></a>{% if x.is_new %} 🆕{% endif %}</td>
+<td>{{ x.o.area or '' }}</td>
+<td>{% if st_labels.get(x.o.shop_type) %}<span class="pill">{{ st_labels[x.o.shop_type] }}</span>{% else %}<span class="muted">{{ t('မသတ်မှတ်ရသေး') }}</span>{% endif %}</td>
+<td>{% if x.o.lat %}<a href="https://www.google.com/maps?q={{ x.o.lat }},{{ x.o.lng }}" target="_blank">📍 Map</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+<td class="num">{{ x.orders }}</td>
+<td class="num">{{ fmt_money(x.total) }}</td>
+<td class="num">{{ fmt_money(x.recv) }}</td>
+<td class="num">{% if x.balance > 0.5 %}<b style="color:#b45309">{{ fmt_money(x.balance) }}</b>{% else %}—{% endif %}</td>
+<td>{{ x.last or '—' }}</td>
+<td>{{ x.o.first_seen or '—' }}{% if x.creator %}<br><span class="muted">{{ x.creator }}</span>{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+{% if not outs %}<p class="muted">{{ t('ဆိုင် မရှိသေးဘူး — order တင်ရင် အလိုလို ပေါ်လာမယ်။') }}</p>{% endif %}
+{% endblock %}

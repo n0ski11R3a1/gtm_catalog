@@ -1,0 +1,25 @@
+{% extends 'base.html' %}{% from '_tabs.html' import adm_tabs %}{% block title %}{{ t('Roles') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ adm_tabs('roles') }}
+<h1>{{ t('Roles') }}</h1>
+<p class="hint">{{ t('အခန်း တစ်ခုက ခွင့်ပြုချက် အစု တစ်ခု ပါ။ အခန်း ပြောင်းမှ ခွင့်ပြုချက် ပြောင်းတယ် — ဌာန ပြောင်းတာက မပြောင်းဘူး။') }}</p>
+<form method="post" class="card">
+  <div class="row">
+    <label>{{ t('အခန်း အသစ် နာမည်') }} <input name="name" required></label>
+  </div>
+  <button class="btn" type="submit">{{ t('အခန်း အသစ် ဆောက်မယ်') }}</button>
+</form>
+<table>
+<tr><th>{{ t('အခန်း') }}</th><th>{{ t('အခန်း အမျိုးအစား') }}</th><th>{{ t('အသုံးပြုသူ အရေအတွက်') }}</th><th>{{ t('ခွင့်ပြုချက် အရေအတွက်') }}</th><th></th></tr>
+{% for r in rows %}
+<tr>
+<td>{{ r.label }}</td>
+<td>{{ t('System အခန်း') if r.is_system else t('ကိုယ်တိုင် ဆောက်ထားတဲ့ အခန်း') }}</td>
+<td>{{ r.uc }}</td>
+<td>{{ r.pc }}</td>
+<td><a class="btn alt" href="/roles/{{ r.id }}/edit">{{ t('ပြင်မယ်') }}</a>{% if not r.is_system and r.uc == 0 %} <form method="post" action="/roles/{{ r.id }}/delete" class="inline" onsubmit="return confirm('{{ t('ဒီ အခန်း ဖျက်မှာ သေချာလား?') }}')"><button class="btn alt" type="submit">{{ t('ဖျက်မယ်') }}</button></form>{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+<p class="hint">{{ t('System အခန်း — ဖျက်လို့ မရဘူး။ Owner အခန်းရဲ့ ခွင့်ပြုချက်တွေကို ဖြုတ်လို့ မရဘူး။') }}</p>
+{% endblock %}

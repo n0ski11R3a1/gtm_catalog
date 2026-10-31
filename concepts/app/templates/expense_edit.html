@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% from '_denom.html' import denom_counter %}{% block title %}{{ t('အသုံးစရိတ် ပြင်') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('💸 အသုံးစရိတ် ပြင်') }}</h1>
+<div class="card">
+  {% if e.denom %}<p style="margin-top:0">{{ t('မှတ်ထားတဲ့ အမျိုးအစား') }}: <span class="denom-line">🧮 {{ e.denom | denom }}</span></p>{% endif %}
+  <form method="post" class="row">
+    <label>{{ t('ရက်') }} <input type="date" name="edate" value="{{ e.edate }}" required></label>
+    <label>{{ t('Category') }} * <input name="category" list="catlist" autocomplete="off" required value="{{ e.category }}"><datalist id="catlist">{% for c in allcats %}<option value="{{ c }}">{% endfor %}</datalist></label>
+    <label>{{ t('အကြောင်းအရာ') }} <input name="detail" value="{{ e.detail or '' }}"></label>
+    <label>{{ t('ပမာဏ (Ks) *') }} <input name="amount" type="number" step="any" min="0" required value="{{ e.amount }}"></label>
+    <label>{{ t('ငွေ ပေးတဲ့ နည်း') }} <select name="method">{% for k, lbl in PAY_METHODS %}<option value="{{ k }}" {% if (e.method or 'cash') == k %}selected{% endif %}>{{ t(lbl) }}</option>{% endfor %}</select></label>
+    {{ denom_counter('ee_', 'amount', gate='method', values=denom_vals, show=(e.method or 'cash') == 'cash') }}
+    <button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>
+    <a class="btn alt" href="/expenses?m={{ (e.edate or '')[:7] }}">{{ t('မပြင်တော့ဘူး') }}</a>
+  </form>
+</div>
+{% endblock %}

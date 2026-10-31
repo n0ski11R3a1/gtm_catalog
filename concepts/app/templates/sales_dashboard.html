@@ -1,0 +1,63 @@
+{% extends 'base.html' %}{% block title %}{{ t('ပင်မ') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('မင်္ဂလာပါ') }}, {{ me.name }}{% if me.team %} ({{ me.team }}){% endif %}</h1>
+<p class="hint">{{ t('အကောင့် စတင်ချိန်: {since} မှ ယနေ့အထိ · မိမိ အရောင်း အချုပ်သာ ပြထားတယ်', since=since or '—') }}</p>
+<div id="editnotices"></div>
+<script>
+(function(){ try{ var k='gtm_edit_rejects'; var n=JSON.parse(localStorage.getItem(k)||'[]'); var el=document.getElementById('editnotices');
+ function draw(){ el.innerHTML=n.map(function(x,i){ return '<div class="card" style="border:1px solid #dc2626;background:#fef2f2">⚠️ <b>'+tf('ပြင်ချက် မဝင်လိုက်ဘူး')+'</b> — '+(x.code||'')+' : '+(x.reason||'')+' <button class="btn alt" data-i="'+i+'">'+tf('သိပြီ')+'</button></div>'; }).join('');
+  el.querySelectorAll('button').forEach(function(b){ b.onclick=function(){ n.splice(+b.getAttribute('data-i'),1); localStorage.setItem(k, JSON.stringify(n)); draw(); }; }); }
+ draw(); }catch(e){} })();
+</script>
+<h2>{{ t('မိမိ အရောင်း') }}</h2>
+<div class="grid">
+  <div class="stat"><span>{{ '{:,.0f}'.format(mine.life.v) }} Ks</span>{{ t('စုစုပေါင်း အရောင်း (ဘောက်ချာ {c} စောင်)', c=mine.life.c) }}</div>
+  <div class="stat"><span>{{ '{:,.0f}'.format(mine.month.v) }} Ks</span>{{ t('ဒီလ အရောင်း ({m}) · ဘောက်ချာ {c} စောင်', m=month_label, c=mine.month.c) }}</div>
+  <div class="stat"><span>{{ '{:,.0f}'.format(mine.day.v) }} Ks</span>{{ t('ဒီနေ့ အရောင်း · ဘောက်ချာ {c} စောင်', c=mine.day.c) }}</div>
+  <div class="stat"><span>{{ unpaid_own }}</span>{{ t('ငွေ မရသေးတဲ့ မိမိ ဘောက်ချာ') }}</div>
+</div>
+<h2>{{ t('ဒီလ SKU အခြေအနေ') }}</h2>
+<div class="grid">
+  <div class="stat"><span>{{ sku_open }}</span>{{ t('ရောင်းရန် ဖွင့်ထားသော SKU စုစုပေါင်း') }}</div>
+  <div class="stat"><span>{{ sku_sold }}</span>{{ t('ဒီလ မိမိ ရောင်းခဲ့ပြီးသော SKU အမျိုးအစားပေါင်း') }}</div>
+</div>
+{% if team_stats %}
+<h2>{{ t('Team ({name}) စုစုပေါင်း', name=team_stats.name) }}</h2>
+<div class="grid">
+  <div class="stat"><span>{{ '{:,.0f}'.format(team_stats.life.v) }} Ks</span>{{ t('Team စုစုပေါင်း အရောင်း (ဘောက်ချာ {c} စောင်)', c=team_stats.life.c) }}</div>
+  <div class="stat"><span>{{ '{:,.0f}'.format(team_stats.month.v) }} Ks</span>{{ t('Team ဒီလ အရောင်း (ဘောက်ချာ {c} စောင်)', c=team_stats.month.c) }}</div>
+</div>
+{% endif %}
+{% if leader %}
+<h2>{{ t('⭐ Sales Team Leader — အဖွဲ့လိုက် အခြေအနေ') }}</h2>
+{% if lp_on %}<p><a class="btn alt" href="/leader-prices">{{ t('📋 ဈေးနှုန်း စာရင်း (Base + Margin) — Leader သီးသန့်') }}</a></p>{% endif %}
+<div class="grid">
+  <div class="stat"><span>{{ '{:,.0f}'.format(leader.grand.day.v) }} Ks</span>{{ t('အဖွဲ့လိုက် ဒီနေ့ အရောင်း (ဘောက်ချာ {c} စောင်)', c=leader.grand.day.c) }}</div>
+  <div class="stat"><span>{{ '{:,.0f}'.format(leader.grand.month.v) }} Ks</span>{{ t('အဖွဲ့လိုက် ဒီလ အရောင်း (ဘောက်ချာ {c} စောင်)', c=leader.grand.month.c) }}</div>
+  <div class="stat"><span>{{ '{:,.0f}'.format(leader.grand.life.v) }} Ks</span>{{ t('အဖွဲ့လိုက် စုစုပေါင်း (ဘောက်ချာ {c} စောင်)', c=leader.grand.life.c) }}</div>
+</div>
+<table>
+<tr><th>{{ t('ရောင်းသူ') }}</th><th>{{ t('Team') }}</th><th>{{ t('ဒီနေ့') }}</th><th>{{ t('ဒီလ') }}</th><th>{{ t('စုစုပေါင်း') }}</th></tr>
+{% for m in leader.members %}
+<tr><td>{{ m.name }}{% if not m.active %} ({{ t('ပိတ်ထား') }}){% endif %}</td><td>{{ m.team }}</td>
+<td>{{ '{:,.0f}'.format(m.day.v) }} Ks ({{ m.day.c }})</td><td>{{ '{:,.0f}'.format(m.month.v) }} Ks ({{ m.month.c }})</td><td>{{ '{:,.0f}'.format(m.life.v) }} Ks ({{ m.life.c }})</td></tr>
+{% endfor %}
+</table>
+<h3>{{ t('အဖွဲ့လိုက် နောက်ဆုံး Orders') }}</h3>
+<table>
+<tr><th>{{ t('ဘောက်ချာနံပါတ်') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('ရောင်းသူ') }}</th><th>{{ t('Team') }}</th><th>{{ t('ရက်') }}</th><th>{{ t('ပမာဏ') }}</th></tr>
+{% for o in leader.recent_all %}
+<tr><td><a href="/orders/{{ o.id }}">{{ o.code }}</a></td><td>{{ o.outlet }}</td><td>{{ o.rep or '' }}</td><td>{{ o.team or '—' }}</td><td>{{ o.odate }}</td><td>{{ '{:,.0f}'.format(o.total) }} Ks</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+<p><a class="btn" href="/catalog">{{ t('📱 Catalog ဖွင့်ရန်') }}</a> <a class="btn alt" href="/orders">{{ t('မိမိ ဘောက်ချာများ') }}</a></p>
+<h2>{{ t('နောက်ဆုံး မိမိ Orders') }}</h2>
+<table>
+<tr><th>{{ t('ဘောက်ချာနံပါတ်') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('Team') }}</th><th>{{ t('ရက်') }}</th><th>{{ t('ပမာဏ') }}</th></tr>
+{% for o in recent %}
+<tr><td><a href="/orders/{{ o.id }}">{{ o.code }}</a></td><td>{{ o.outlet }}</td><td>{{ o.team or '—' }}</td><td>{{ o.odate }}</td>
+<td>{{ '{:,.0f}'.format(o.total) }} Ks</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

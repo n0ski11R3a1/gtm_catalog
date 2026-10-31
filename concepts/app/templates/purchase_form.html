@@ -1,0 +1,39 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% from '_picker.html' import picker_field, picker_assets %}{% block title %}{{ t('အဝယ် အသစ်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('new', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('အဝယ် သွင်းရန် (ဂိုထောင်)') }}</h1>
+<p class="hint">{{ t('သွင်းလိုက်တာနဲ့ stock ထဲ ပေါင်းထည့်ပြီး "စစ်ရန်ကျန်" ဖြစ်မယ် — Finance/Ko က ဈေး စစ်ပြီး အတည်ပြုပေးမယ်။') }}</p>
+<form method="post" class="card">
+  <div class="row">
+    <label>Supplier <input name="supplier" required></label>
+    <label>{{ t('Supplier ဘောက်ချာ နံပါတ် (ရှိမှ ထည့်)') }} <input name="invoice_no" autocomplete="off"></label>
+    <label>{{ t('ရက်') }} <input name="pdate" type="date"></label>
+  </div>
+  <p class="hint">{{ t('မရှိရင် အလွတ်ထားပါ — မထည့်လည်း ရတယ်') }}</p>
+  <div id="lines">
+    <div class="row line">
+      {{ picker_field('pid') }}
+      <input name="qty" type="number" step="any" min="0" placeholder="{{ t('အရေအတွက်') }}">
+      <input name="cost" placeholder="{{ t('ဝယ်ဈေး (၁ ခု)') }}">
+      <input name="exp" type="date" title="{{ t('သက်တမ်း ကုန်ရက် (ရှိရင်)') }}">
+    </div>
+  </div>
+  <button type="button" class="btn alt" onclick="addLine()">{{ t('+ နောက် ၁ မျိုး') }}</button>
+  <div class="row">
+    <label>{{ t('အပို ကုန်ကျ (ကားခ စသည်)') }} <input name="extra_cost" type="number" step="any" min="0" placeholder="0"></label>
+    <label>{{ t('အပို ကုန်ကျ က ဘာအတွက် လဲ') }} <input name="extra_note" placeholder="{{ t('ဥပမာ — ရန်ကုန် ကားခ') }}"></label>
+  </div>
+  <div class="row">
+    <label>{{ t('ငွေကြေး မှတ်ချက် (ရှိရင်)') }} — {{ t('ငွေကြေး အမျိုးအစား') }} <select name="fx_currency"><option value="">{{ t('— မရှိ —') }}</option><option value="USD">USD</option><option value="THB">THB</option><option value="RMB">RMB</option><option value="INR">INR</option></select></label>
+    <label>{{ t('နိုင်ငံခြား ငွေ ပမာဏ') }} <input name="fx_amount" type="number" step="any" min="0"></label>
+    <label>{{ t('လဲ နှုန်း (Ks)') }} <input name="fx_rate" type="number" step="any" min="0"></label>
+  </div>
+  <p class="hint">{{ t('မှတ်ချက် ပဲ — စာရင်း ထဲ မှာ Ks နဲ့ ပဲ တွက် ထား တယ်') }}</p>
+  <label>{{ t('မှတ်ချက်') }} <input name="note"></label>
+  <button class="btn" type="submit">{{ t('သွင်းမယ်') }}</button>
+</form>
+{{ picker_assets(prods) }}
+<script>
+function addLine(){ var d=document.querySelector('.line').cloneNode(true); d.querySelectorAll('input').forEach(i=>i.value=''); var l=d.querySelector('.ppick-list'); if(l){ l.innerHTML=''; l.style.display='none'; } document.getElementById('lines').appendChild(d); }
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% from '_tabs.html' import inv_tabs %}{% block title %}Stock Count — GTM ERP{% endblock %}
+{% block body %}
+{{ inv_tabs('count', perms) }}
+<h1>{{ t('🔢 Stock စစ်ဆေး') }}</h1>
+<p class="hint">{{ t('ဂိုဒေါင် မှာ လက်တွေ့ ရေတွက် ပြီး စာရင်း နဲ့ တိုက် စစ် တာ။ ပစ္စည်း မိသားစု (ထုပ် နဲ့ အလိပ်) ကို အ သေး ဆုံး အရေအတွက် နဲ့ ၁ ကြိမ် ပဲ ရေး ရမယ်။ Owner အတည်ပြု မှ စာရင်း ညှိ မယ်။') }}</p>
+{% if can('stock_count.create') %}
+<form method="post" action="/stock-count/create"><button class="btn" type="submit">{{ t('ရေတွက် အသစ် စမယ်') }}</button></form>
+{% endif %}
+<div class="table-scroll"><table>
+<tr><th>#</th><th>{{ t('ရက်') }}</th><th>{{ t('စသူ') }}</th><th>{{ t('ရေပြီး / စုစုပေါင်း') }}</th><th>{{ t('အခြေအနေ') }}</th><th></th></tr>
+{% for c in rows %}
+<tr><td>{{ c.id }}</td><td>{{ c.cdate }}</td><td>{{ c.byname or '' }}</td><td>{{ c.done_n }} / {{ c.tot_n }}</td>
+<td>{% if c.status == 'approved' %}<span class="pill green">{{ t('အတည်ပြုပြီး') }}</span> <small class="muted">{{ c.aname or '' }}</small>{% else %}<span class="pill amber">{{ t('ရေးနေဆဲ') }}</span>{% endif %}</td>
+<td><a class="btn alt" href="/stock-count/{{ c.id }}">{{ t('ဖွင့်မယ်') }}</a></td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

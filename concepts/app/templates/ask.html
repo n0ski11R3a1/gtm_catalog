@@ -1,0 +1,40 @@
+{% extends 'base.html' %}{% from '_picker.html' import picker_field, picker_assets %}{% block title %}Ai Ask — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🤖 Ai မေးကြည့်') }}</h1>
+<p class="hint">{{ t('သိချင်တာ ကို ခလုတ် နှိပ် မေး — စာရင်း ထဲ က အမှန် တွေ နဲ့ တွက် ဖြေ မယ်။ ဈေးကွက် ဈေး တွေ က ကိုယ် တိုင် ထည့်ထား တာ နဲ့ ပဲ ယှဉ် တယ်။ အဖြေ အားလုံး အကြံ ပြု သက်သက် — ဈေး ပြင် တာ Ko ကိုယ် တိုင် ပဲ။') }}</p>
+<p><a class="btn alt" href="/ask/prices">{{ t('ဈေးကွက် ဈေး ထည့်ရန်') }}</a></p>
+<form method="get" class="card">
+  <h3 style="margin-top:0">{{ t('လုပ်ငန်း အကြောင်း') }}</h3>
+  <p>
+    <button class="btn alt" name="q" value="today_sales" type="submit">{{ t('ဒီနေ့ ဘယ် လောက် ရောင်း ရ လဲ') }}</button>
+    <button class="btn alt" name="q" value="month_profit" type="submit">{{ t('ဒီလ အမြတ်') }}</button>
+    <button class="btn alt" name="q" value="credit_out" type="submit">{{ t('အကြွေး ကျန်') }}</button>
+    <button class="btn alt" name="q" value="pending_checks" type="submit">{{ t('စစ်ရန် ကျန်') }}</button>
+    <button class="btn alt" name="q" value="month_expenses" type="submit">{{ t('ဒီလ အသုံးစရိတ်') }}</button>
+    <button class="btn alt" name="q" value="money_flow" type="submit">{{ t('ဒီနေ့ ငွေ အဝင်/အထွက်') }}</button>
+    <button class="btn alt" name="q" value="risk_list" type="submit">{{ t('⚠️ အန္တရာယ် ပစ္စည်းများ') }}</button>
+  </p>
+  <h3>{{ t('ပစ္စည်း ၁ မျိုး အကြောင်း (အရင် ရွေးပါ)') }}</h3>
+  <div class="row"><label>{{ t('ပစ္စည်း') }} {% if prod %}<b>{{ prod.sku }} {{ prod.name }}</b> <input type="hidden" name="pid" value="{{ prod.id }}"> <a href="/ask">{{ t('ပစ္စည်း ပြောင်းမယ်') }}</a>{% else %}{{ picker_field('pid') }}{% endif %}</label></div>
+  <p>
+    <button class="btn alt" name="q" value="prod_status" type="submit">{{ t('ဈေးကွက် နဲ့ ယှဉ် ရင် ဘယ်လို လဲ') }}</button>
+    <button class="btn alt" name="q" value="prod_endure" type="submit">{{ t('အရင်း တက် ရင် ဘယ် လောက် တောင့်ခံ နိုင် လဲ') }}</button>
+    <button class="btn alt" name="q" value="prod_price" type="submit">{{ t('ဈေး ဘယ် လောက် ထား ရင် ကောင်း မလဲ') }}</button>
+    <button class="btn alt" name="q" value="cheap_supplier" type="submit">{{ t('ဘယ် သူ ဆီ က အ သက်သာ ဆုံး လဲ') }}</button>
+  </p>
+  <h3>{{ t('ဆိုင် နဲ့ ဝယ်ရန်') }}</h3>
+  <p>
+    <button class="btn alt" name="q" value="oldest_debt" type="submit">{{ t('အကြွေး အကြာဆုံး ဆိုင်') }}</button>
+    <button class="btn alt" name="q" value="quiet_shops" type="submit">{{ t('မဝယ် တာ ကြာ ပြီ ဆိုင်') }}</button>
+    <button class="btn alt" name="q" value="to_buy" type="submit">{{ t('ဝယ် ရမယ့် ပစ္စည်း') }}</button>
+  </p>
+</form>
+{% if ans %}
+<div class="card">
+  <h3 style="margin-top:0">{% if ans.status == 'red' %}🔴{% elif ans.status == 'yellow' %}🟡{% elif ans.status == 'green' %}🟢{% endif %} {{ ans.title }}</h3>
+  {% for l in ans.lines %}<p style="margin:.25rem 0">{{ l }}</p>{% endfor %}
+  {% for h, lbl in ans.links %}<a class="btn alt" href="{{ h }}">{{ lbl }}</a> {% endfor %}
+</div>
+{% endif %}
+{{ picker_assets(prods) }}
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}{{ t('လုပ်ငန်း အချက်အလက်') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🏢 လုပ်ငန်း အချက်အလက်') }}</h1>
+<p class="muted">{{ t('Invoice, Settlement, Order Issue စာရွက်တွေရဲ့ ခေါင်းစဉ်မှာ ပေါ်မယ့် လုပ်ငန်း အချက်အလက်ပါ။ ဒီကနေ ပြင်လိုက်ရင် စာရွက်တိုင်း အသစ် ပေါ်မယ်။') }}</p>
+<form method="post" class="card">
+  <div class="row">
+    <label>{{ t('လုပ်ငန်း နာမည်') }} <input name="name" value="{{ biz.name }}"></label>
+  </div>
+  <div class="row">
+    <label>{{ t('လုပ်ငန်း လိပ်စာ') }} <input name="address" value="{{ biz.address }}"></label>
+  </div>
+  <div class="row">
+    <label>{{ t('ဖုန်း နံပါတ်များ') }} <input name="phones" value="{{ biz.phones }}" placeholder="09xxxxxxxxx, 09xxxxxxxxx"></label>
+  </div>
+  <p class="muted">{{ t('ဖုန်း အများ ကြီး ရှိရင် ကော်မာ (,) နဲ့ ခြား ရေးပါ။') }}</p>
+  <button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>
+</form>
+{% endblock %}

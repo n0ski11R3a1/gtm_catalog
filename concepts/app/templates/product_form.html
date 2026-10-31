@@ -1,0 +1,114 @@
+{% extends 'base.html' %}{% from '_tabs.html' import inv_tabs %}{% block title %}{{ t('ပစ္စည်း') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ inv_tabs('prod', perms) }}
+<h1>{{ t('ပစ္စည်း ပြင် — {sku}', sku=p.sku) if p else t('ပစ္စည်း အသစ်') }}</h1>
+
+{% if can('prices.edit') and not can('products.data_edit') and p %}
+<div class="card">
+  <p><b>{{ p.sku }} — {{ p.name }}</b><br>
+  <span class="muted">Category: {{ p.category or '' }} · Unit: {{ p.unit or '' }} · {{ t('ပါဝင်မှု') }}: {{ p.upc|int if p.upc else '—' }} · Supplier: {{ p.supplier or '' }}</span></p>
+  <p class="hint">{{ t('Finance အတွက် —') }} <b>{{ t('ဈေးနှုန်းများ သာ') }}</b> {{ t('ပြင်ခွင့် ရှိတယ်။ Unit / ပါဝင်မှု / နာမည် တွေက Warehouse နဲ့ Owner ရဲ့ အပိုင်း။') }}</p>
+  <form method="post">
+    <div class="row">
+      <label>{{ t('Base Price (အရင်း — လုပ်ငန်းသုံး)') }} <input name="base_price" value="{{ p.base_price|int if p.base_price else '' }}"></label>
+      <label>{{ t('Actual Base (အရင်းအမှန် ★)') }} <input name="actual_base" value="{{ p.actual_base|int if p.actual_base else '' }}"></label>
+    </div>
+    <div class="row">
+      <label>Retail <input name="retail" value="{{ p.retail|int if p.retail else '' }}"></label>
+      <label>Wholesale <input name="wholesale" value="{{ p.wholesale|int if p.wholesale else '' }}"></label>
+      <label>{{ t('B2C (မှတ်ရန်သီးသန့်)') }} <input name="b2c" value="{{ p.b2c|int if p.b2c else '' }}"></label>
+    </div>
+    <div class="row">
+      <label>Risk % <input name="risk_pct" type="number" step="any" min="0" value="{{ p.risk_pct if p.risk_pct else '' }}"></label>
+      <p class="hint">{{ t('ပျက်စီး/ပျောက် အတွက် လျာထား % — တွက်ဈေး ထဲမှာ ပဲ သုံးတယ်, ဈေး ကို အလိုအလျောက် မပြောင်း ဘူး') }}</p>
+    </div>
+    <div class="hint">
+      <p>{{ t('Margin (Base အခြေခံ) —') }} Retail: {{ '%.1f%%'|format((p.retail-p.base_price)/p.retail*100) if p.retail else '—' }} · Wholesale: {{ '%.1f%%'|format((p.wholesale-p.base_price)/p.wholesale*100) if p.wholesale else '—' }}</p>
+      <p>{{ t('Margin (Actual အခြေခံ ★) —') }} Retail: {{ '%.1f%%'|format((p.retail-p.actual_base)/p.retail*100) if p.retail and p.actual_base is not none else '—' }} · Wholesale: {{ '%.1f%%'|format((p.wholesale-p.actual_base)/p.wholesale*100) if p.wholesale and p.actual_base is not none else '—' }}</p>
+      <p>Difference (Base − Actual) ÷ Base: {{ '%.1f%%'|format((p.base_price-p.actual_base)/p.base_price*100) if p.base_price and p.actual_base is not none else '—' }}</p>
+    </div>
+    <button class="btn" type="submit">{{ t('ဈေးနှုန်းတွေ သိမ်းမယ်') }}</button>
+  </form>
+</div>
+
+{% else %}
+<form method="post" enctype="multipart/form-data" class="card">
+    <input type="hidden" name="rq" value="{{ request.args.get('rq','') }}"><input type="hidden" name="rcat" value="{{ request.args.get('rcat','') }}"><input type="hidden" name="rsup" value="{{ request.args.get('rsup','') }}"><input type="hidden" name="rsell" value="{{ request.args.get('rsell','') }}">
+  <label>{{ t('နာမည် *') }} <input name="name" required value="{{ p.name if p else '' }}"></label>
+  <div class="row">
+    <label>Category <input name="category" list="cats" value="{{ p.category if p else '' }}"><datalist id="cats">{% for c in cats %}<option>{{ c }}</option>{% endfor %}</datalist></label>
+    <label>Unit <input name="unit" value="{{ p.unit if p else '' }}"></label>
+    <label>{{ t('ပါဝင်မှု (Pack) — ၁ ဖာ/အိတ်/ပုံး မှာ ပါတဲ့ အရေအတွက်') }} <input name="upc" value="{{ p.upc|int if p and p.upc else '' }}" placeholder="{{ t('ဥပမာ 20') }}"></label>
+    <label>Supplier <input name="supplier" value="{{ p.supplier if p else '' }}"></label>
+  </div>
+  {% if can('prices.edit') and can('products.data_edit') %}
+  <div class="row">
+    <label>{{ t('Base Price (အရင်း — လုပ်ငန်းသုံး)') }} <input name="base_price" value="{{ p.base_price|int if p else '' }}"></label>
+    <label>{{ t('Actual Base (အရင်းအမှန် ★)') }} <input name="actual_base" value="{{ p.actual_base|int if p and p.actual_base else '' }}"></label>
+  </div>
+  <div class="row">
+    <label>Retail <input name="retail" value="{{ p.retail|int if p else '' }}"></label>
+    <label>Wholesale <input name="wholesale" value="{{ p.wholesale|int if p else '' }}"></label>
+    <label>{{ t('B2C (မှတ်ရန်သီးသန့်)') }} <input name="b2c" value="{{ p.b2c|int if p else '' }}"></label>
+    <label>Risk % <input name="risk_pct" type="number" step="any" min="0" value="{{ p.risk_pct if p and p.risk_pct else '' }}"></label>
+  </div>
+  <p class="hint">{{ t('ပျက်စီး/ပျောက် အတွက် လျာထား % — တွက်ဈေး ထဲမှာ ပဲ သုံးတယ်, ဈေး ကို အလိုအလျောက် မပြောင်း ဘူး') }}</p>
+  {% if p %}
+  <div class="hint">
+    <p>{{ t('Margin (Base အခြေခံ) —') }} Retail: {{ '%.1f%%'|format((p.retail-p.base_price)/p.retail*100) if p.retail else '—' }} · Wholesale: {{ '%.1f%%'|format((p.wholesale-p.base_price)/p.wholesale*100) if p.wholesale else '—' }}</p>
+    <p>{{ t('Margin (Actual အခြေခံ ★) —') }} Retail: {{ '%.1f%%'|format((p.retail-p.actual_base)/p.retail*100) if p.retail and p.actual_base is not none else '—' }} · Wholesale: {{ '%.1f%%'|format((p.wholesale-p.actual_base)/p.wholesale*100) if p.wholesale and p.actual_base is not none else '—' }}</p>
+    <p>Difference (Base − Actual) ÷ Base: {{ '%.1f%%'|format((p.base_price-p.actual_base)/p.base_price*100) if p.base_price and p.actual_base is not none else '—' }}</p>
+  </div>
+  {% endif %}
+  {% elif can('products.data_edit') and not can('prices.edit') and p %}
+  <div class="hint">
+    <p>{{ t('ဈေးနှုန်းများ (ကြည့်ရန်သာ — ပြင်ခွင့် Owner/Finance):') }} Base {{ fmt_money(p.base_price) }} · Retail {{ fmt_money(p.retail) }} · Wholesale {{ fmt_money(p.wholesale) }} · B2C {{ fmt_money(p.b2c) }}</p>
+    <p>{{ t('Warehouse ပြင်နိုင်တာ: နာမည် / Category / Unit / ပါဝင်မှု / Supplier / ပုံ ပဲ။') }}</p>
+  </div>
+  {% endif %}
+  <label>{{ t('ပုံ (WebP/JPG, max 5MB)') }} <input type="file" name="image" accept="image/*"></label>
+  {% if p and p.image %}<img class="thumb-lg" src="/static/product-images/{{ p.image }}" alt="">{% endif %}
+  <button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>
+</form>
+{% endif %}
+{% if pack_ctx %}
+<div class="card">
+<b>{{ t('🔗 အထုပ် ချိတ်ဆက်မှု') }}</b>
+{% if pack_ctx.mode == 'big' %}
+<p>{{ t('ဒီ ပစ္စည်းက {sku} — {name} ရဲ့ အထုပ် ကြီး ပါ — ၁ ထုပ် = {f} ခု။ stock အကုန် အခြေခံ ပစ္စည်းနဲ့ တစ်စု တည်း ထားတယ်။', sku=pack_ctx.base.sku, name=pack_ctx.base.name, f='%g'|format(pack_ctx.factor)) }}</p>
+{% if pack_ctx.locked %}<p class="hint">{{ t('နှုန်းကို ချိတ်ထားတုန်း ပြင်လို့ မရဘူး — stock မှတ်တမ်းတွေ ရှိနေလို့ပါ။ နှုန်း ပြောင်းချင်ရင် အရင် ချိတ်ဖြုတ်ပြီး အသစ် ပြန် ချိတ်ပါ။') }}</p>{% endif %}
+{% elif pack_ctx.mode == 'base' %}
+{% for m in pack_ctx.members %}<p>{{ t('ဒီ ပစ္စည်းရဲ့ အထုပ် ကြီး: {sku} — {name} (၁ ထုပ် = {f} ခု)', sku=m.sku, name=m.name, f='%g'|format(m.pack_factor or 1)) }}</p>{% endfor %}
+{% if pack_ctx.locked %}<p class="hint">{{ t('နှုန်းကို ချိတ်ထားတုန်း ပြင်လို့ မရဘူး — stock မှတ်တမ်းတွေ ရှိနေလို့ပါ။ နှုန်း ပြောင်းချင်ရင် အရင် ချိတ်ဖြုတ်ပြီး အသစ် ပြန် ချိတ်ပါ။') }}</p>{% endif %}
+{% else %}
+<p class="hint">{{ t('ဒီ ပစ္စည်းကို နောက် ပစ္စည်း တစ်ခုရဲ့ အထုပ် အဖြစ် ချိတ်လို့ ရတယ်။ ချိတ်ပြီးရင် stock က တစ်စု တည်း ဖြစ်သွားပြီး အထုပ် နဲ့ ဝင်/ထွက် တိုင်း အခြေခံ ပစ္စည်းပါ အလိုအလျောက် ပြောင်းမယ်။') }}</p>
+{% if pack_ctx.others %}
+<form method="post" action="/products/{{ p.id }}/pack-link">
+<label>{{ t('ချိတ်မယ့် ပစ္စည်း') }}</label>
+<div class="row"><select name="other_id" onchange="pkBig(this)">{% for b in pack_ctx.others %}<option value="{{ b.id }}" data-big="{{ b.big }}">{{ b.sku }} — {{ b.name }}</option>{% endfor %}</select>
+<input name="factor" type="number" step="any" min="1" placeholder="{{ t('နှုန်း — ၁ ထုပ် = အသေး ဘယ်နှစ် ခု') }}" style="width:220px">
+<button class="btn" type="submit">{{ t('ချိတ်မယ်') }}</button></div>
+<div class="row"><span>{{ t('ဘယ်ဟာက အကြီးလဲ?') }}</span>
+<label><input type="radio" name="big_side" value="this"> {{ p.name }}</label>
+<label><input type="radio" name="big_side" value="other"> <span id="pkOtherName">{{ pack_ctx.others[0].name }}</span></label></div>
+</form>
+<script>
+function pkBig(sel){ var f = sel.closest('form'); var opt = sel.options[sel.selectedIndex]; var other = f.querySelector('#pkOtherName'); if(other){ var txt = opt.text; var i = txt.indexOf(' — '); other.textContent = i >= 0 ? txt.slice(i + 3) : txt; } var meBig = {{ pack_ctx.me_big }} === 1; var ob = opt.getAttribute('data-big') === '1'; var rThis = f.querySelector('input[name=big_side][value=this]'); var rOther = f.querySelector('input[name=big_side][value=other]'); if(meBig !== ob){ if(ob){ rOther.checked = true; } else { rThis.checked = true; } } else { rThis.checked = false; rOther.checked = false; } }
+pkBig(document.querySelector('select[name=other_id]'));
+</script>
+{% else %}
+<p class="hint">{{ t('ဆက်စပ်တဲ့ (နာမည်တူ) ပစ္စည်း မရှိဘူး — ချိတ်လို့ မရဘူး') }}</p>
+{% endif %}
+{% endif %}
+{% if can('products.pack_unlink') and pack_ctx.mode in ('big','base') %}
+{% set bigid = p.id if pack_ctx.mode == 'big' else pack_ctx.members[0].id %}
+<form method="post" action="/products/{{ bigid }}/pack-unlink" onsubmit="return confirm('{{ t('ချိတ်ဖြုတ်မှာ သေချာလား?') }}')">
+<label>{{ t('ခု လက်ရှိ အပြည့် ဘယ်နှစ် ထုပ် ရှိလဲ (ရေတွက်ပြီး ထည့်ပါ)') }}</label>
+<div class="row"><input name="packs" type="number" step="1" min="0" style="width:120px">
+<button class="btn alt" type="submit">{{ t('ချိတ်ဖြုတ်မယ်') }}</button></div>
+<p class="hint">{{ t('ဖြုတ်လိုက်ရင် အပြည့် အရေအတွက်ကို အထုပ် ကြီး ဆီ ခွဲပေးပြီး ကျန်တဲ့ အဖြည်း ကို အခြေခံ ပစ္စည်းမှာ ထားမယ်။ ဖြုတ်တာကို Owner ပဲ လုပ်လို့ရတယ်။') }}</p>
+</form>
+{% endif %}
+</div>
+{% endif %}
+{% endblock %}

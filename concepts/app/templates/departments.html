@@ -1,0 +1,22 @@
+{% extends 'base.html' %}{% from '_tabs.html' import adm_tabs %}{% block title %}{{ t('ဌာနများ') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ adm_tabs('departments') }}
+<h1>{{ t('ဌာနများ') }}</h1>
+<p class="hint">{{ t('ဌာနက တံဆိပ် သက်သက်ပါ — ဌာန ပြောင်းတာက ခွင့်ပြုချက် လုံးဝ မပြောင်းဘူး။ ဌာန ဖျက်ရင် အဖွဲ့ဝင်တွေကို ဌာန မရှိအဖြစ် ပြန်ထားတယ်၊ ခွင့်ပြုချက်ကို မထိဘူး။') }}</p>
+<form method="post" class="card">
+  <div class="row">
+    <label>{{ t('ဌာန အသစ် နာမည်') }} <input name="name" required></label>
+  </div>
+  <button class="btn" type="submit">{{ t('ဌာန အသစ် ဆောက်မယ်') }}</button>
+</form>
+<table>
+<tr><th>{{ t('ဌာန') }}</th><th>{{ t('အဖွဲ့ဝင် အရေအတွက်') }}</th><th></th></tr>
+{% for r in rows %}
+<tr>
+<td><form method="post" action="/departments/{{ r.id }}/rename" class="row"><input name="name" value="{{ r.name }}" style="max-width:200px"><button class="btn alt" type="submit">{{ t('ပြင်') }}</button></form></td>
+<td>{{ r.uc }}</td>
+<td><form method="post" action="/departments/{{ r.id }}/delete" class="inline" onsubmit="return confirm('{{ t('ဒီ ဌာန ဖျက်မှာ သေချာလား? အဖွဲ့ဝင်တွေကို ဌာန မရှိအဖြစ် ပြန်ထားမယ်။') }}')"><button class="btn alt" type="submit">{{ t('ဖျက်မယ်') }}</button></form></td>
+</tr>
+{% endfor %}
+</table>
+{% endblock %}

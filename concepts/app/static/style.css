@@ -1,0 +1,355 @@
+* { box-sizing: border-box; }
+body { margin:0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background:#f5f6f8; color:#1a1a1a; }
+a { color:#1d4ed8; text-decoration:none; }
+.topbar { background:#1d4ed8; color:#fff; padding:10px 14px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.topbar a { color:#fff; margin-right:10px; }
+.topbar .brand { font-weight:700; font-size:18px; }
+.topbar nav { flex:1; }
+.topbar .who { font-size:13px; }
+/* v98: header language dropdowns only — the global select rule is width:100%,
+   which stretched the header dropdown across the whole row. Form selects keep
+   width:100%; only .lang-select goes compact. */
+select.lang-select { width:auto; margin-top:0; padding:3px 6px; font-size:13px; }
+.wrap { max-width:1280px; margin:0 auto; padding:14px; }
+.card { background:#fff; border:1px solid #e3e5e8; border-radius:10px; padding:14px; margin:12px 0; }
+.card.narrow { max-width:420px; margin:40px auto; }
+label { display:block; margin:8px 0; font-size:14px; }
+input, select, textarea { width:100%; padding:8px; border:1px solid #c9ccd1; border-radius:6px; margin-top:4px; font-size:15px; }
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+.row label, .row select, .row input { flex:1; min-width:130px; }
+.btn { display:inline-block; background:#1d4ed8; color:#fff; border:none; padding:9px 16px; border-radius:8px; font-size:15px; cursor:pointer; margin:6px 4px 6px 0; }
+.btn.alt { background:#e8ecf5; color:#1d4ed8; }
+.btn.danger { background:#dc2626; }
+.btn.sm { padding:5px 10px; font-size:13px; margin:0; }
+table { width:100%; border-collapse:collapse; background:#fff; font-size:14px; }
+tr.covered { opacity:.55; background:#f9fafb; }
+th, td { border-bottom:1px solid #e5e7eb; padding:7px 8px; text-align:left; vertical-align:top; }
+th { background:#eef2ff; }
+.table-scroll { overflow-x:auto; }
+.flash { background:#fef3c7; border:1px solid #f59e0b; padding:9px 12px; border-radius:8px; margin:10px 0; }
+.flags { background:#fee2e2; border:1px solid #dc2626; padding:10px 12px; border-radius:8px; margin:10px 0; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+.stat { background:#fff; border:1px solid #e3e5e8; border-radius:10px; padding:14px; font-size:14px; }
+.stat span { display:block; font-size:24px; font-weight:700; }
+.stat.warn span { color:#d97706; }
+.thumb { width:44px; height:44px; object-fit:cover; border-radius:6px; }
+.thumb-lg { width:120px; border-radius:8px; }
+.secret { color:#b91c1c; font-weight:600; }
+.hint { color:#6b7280; font-size:13px; }
+.inline { display:inline; }
+.inline input { width:auto; display:inline-block; }
+.nowrap { white-space:nowrap; }
+.plist .pitem, .grid-cards .pcard { background:#fff; border:1px solid #e3e5e8; border-radius:10px; }
+.plist .pitem { display:flex; gap:10px; align-items:center; padding:8px; margin:6px 0; }
+.plist .pitem img { width:52px; height:52px; object-fit:cover; border-radius:6px; }
+.plist .pinfo { flex:1; }
+.grid-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-top:10px; }
+.pcard img { width:100%; height:130px; object-fit:cover; border-radius:10px 10px 0 0; }
+.pcard .noimg { height:130px; display:flex; align-items:center; justify-content:center; background:#e8ecf5; color:#1d4ed8; font-weight:700; border-radius:10px 10px 0 0; }
+.pcard img.noimg-logo { object-fit:contain; background:#193059; }
+.pcard .pbody { padding:8px; }
+.pcard button, .pitem button { background:#e8ecf5; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; margin-top:4px; }
+.prices { margin:4px 0; font-size:14px; }
+.cartbox { position:sticky; bottom:0; }
+
+.logo-sm { height:34px; width:34px; object-fit:cover; border-radius:8px; vertical-align:middle; margin-right:6px; }
+.logo-login { display:block; width:92px; height:92px; object-fit:cover; border-radius:16px; margin:0 auto 10px; }
+.topbar .brand { display:inline-flex; align-items:center; }
+
+/* --- Catalog mobile polish (v0.1.2) --- */
+.grid-cards { gap: 12px; }
+.pcard .pbody { padding: 12px; }
+.pname { font-size: 15.5px; font-weight: 600; line-height: 1.55; min-height: 3.1em; }
+.pmeta { color: #6b7280; font-size: 12.5px; margin: 3px 0 6px; }
+.pcard .prices { font-size: 14.5px; line-height: 1.7; margin: 4px 0 8px; }
+.pbtns { display: flex; gap: 8px; }
+.pbtns button { flex: 1; padding: 10px 4px; font-size: 14px; border-radius: 8px; }
+.cartbox { padding: 0; overflow: hidden; }
+.cart-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 13px 14px; font-weight: 700; font-size: 16px; cursor: pointer; background: #eef2ff; }
+.cart-head #cartsummary { color: #1d4ed8; }
+.cart-head #cartchev { font-size: 13px; color: #6b7280; font-weight: 400; }
+.cart-body { padding: 12px 14px; max-height: 62vh; overflow-y: auto; }
+.cartbox.closed .cart-body { display: none; }
+@media (max-width: 560px) {
+  .pcard img { height: 118px; }
+  .wrap { padding: 10px; }
+}
+
+.muted { color:#6b7280; font-size:13.5px; }
+
+/* --- Responsive pass: phone / tablet / laptop / desktop (v0.1.3) --- */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; background:#fff; border:1px solid #e3e5e8; border-radius:10px; margin:10px 0; }
+.table-scroll > table { width: max-content; min-width: 100%; }
+.table-scroll th, .table-scroll td { padding: 8px 10px; }
+img { max-width: 100%; }
+@media (max-width: 900px) {
+  .topbar { gap: 6px; }
+  .topbar nav { order: 3; flex: 1 1 100%; display: flex; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .topbar nav a { white-space: nowrap; }
+  .topbar .who { margin-left: auto; }
+}
+@media (max-width: 560px) {
+  body { font-size: 15px; }
+  h1 { font-size: 21px; }
+  h2 { font-size: 17px; }
+  .wrap { padding: 10px; }
+  .topbar .brand { font-size: 16px; }
+  .topbar .who { font-size: 12px; }
+  table { font-size: 13px; }
+  .table-scroll th, .table-scroll td { padding: 6px 7px; }
+  .stat { padding: 10px; font-size: 13px; }
+  .stat span { font-size: 20px; }
+  .btn { padding: 9px 12px; font-size: 14px; }
+  .thumb { width: 38px; height: 38px; }
+}
+
+/* --- Desktop/laptop fit: no sideways scroll on wide screens (v0.1.4) --- */
+@media (min-width: 1024px) {
+  .table-scroll { overflow-x: visible; }
+  .table-scroll > table { width: 100%; min-width: 0; table-layout: fixed; }
+  .table-scroll th, .table-scroll td { overflow-wrap: break-word; }
+  .tbl-products th:nth-child(1)  { width: 6%; }   /* SKU */
+  .tbl-products th:nth-child(2)  { width: 3.5%; } /* image */
+  .tbl-products th:nth-child(3)  { width: 17%; }  /* name */
+  .tbl-products th:nth-child(4)  { width: 7.5%; } /* category */
+  .tbl-products th:nth-child(5)  { width: 4.5%; } /* unit */
+  .tbl-products th:nth-child(6)  { width: 4.5%; } /* stock */
+  .tbl-products th:nth-child(7)  { width: 6.5%; } /* base */
+  .tbl-products th:nth-child(8)  { width: 6.5%; } /* actual */
+  .tbl-products th:nth-child(9)  { width: 13%; }  /* margin */
+  .tbl-products th:nth-child(10) { width: 6.5%; } /* retail */
+  .tbl-products th:nth-child(11) { width: 7%; }   /* wholesale */
+  .tbl-products th:nth-child(12) { width: 6.5%; } /* b2c */
+  .tbl-products th:nth-child(13) { width: 6%; }   /* supplier */
+  .tbl-products th:nth-child(14) { width: 5%; }   /* actions */
+  .tbl-order-items th:nth-child(1) { width: 8%; }   /* SKU */
+  .tbl-order-items th:nth-child(2) { width: 28%; }  /* name */
+  .tbl-order-items th:nth-child(3) { width: 10%; }  /* tier */
+  .tbl-order-items th:nth-child(4) { width: 12%; }  /* price */
+  .tbl-order-items th:nth-child(5) { width: 9%; }   /* qty */
+  .tbl-order-items th:nth-child(6) { width: 13%; }  /* discount */
+  .tbl-order-items th:nth-child(7) { width: 20%; }  /* line total */
+}
+
+/* --- Products table micro-tune (v0.1.5) --- */
+@media (min-width: 1024px) {
+  .tbl-products th { white-space: nowrap; font-size: 12.5px; }
+  .tbl-products td:nth-child(1) { white-space: nowrap; }        /* SKU stays on one line */
+  .tbl-products th:nth-child(1)  { width: 6.5%; }
+  .tbl-products th:nth-child(3)  { width: 16.5%; }               /* name slightly narrower */
+  .tbl-products th:nth-child(9)  { width: 12%; }                 /* margin slightly narrower */
+  .tbl-products th:nth-child(11) { width: 7.5%; }                /* wholesale gets room for its header */
+}
+
+/* --- Products actions column: stack the stock-adjust form (v0.1.6) --- */
+@media (min-width: 1024px) {
+  .tbl-products th:nth-child(2)  { width: 3%; }    /* image */
+  .tbl-products th:nth-child(3)  { width: 14.5%; } /* name */
+  .tbl-products th:nth-child(14) { width: 8%; }    /* actions */
+  .tbl-products td:last-child { white-space: normal; }
+  .tbl-products td:last-child .inline { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .tbl-products td:last-child .inline input { width: 100%; min-width: 0; padding: 4px 6px; font-size: 13px; }
+  .tbl-products td:last-child .inline button { padding: 4px 6px; font-size: 12.5px; }
+}
+
+/* --- 14-inch laptop band: tighten so the fit holds at ~1024-1300px (v0.1.7) --- */
+@media (min-width: 1024px) and (max-width: 1300px) {
+  .wrap { padding: 10px; }
+  .tbl-products td { font-size: 12.5px; }
+  .tbl-products td small { font-size: 11px; line-height: 1.5; }
+  .tbl-products th, .tbl-products td { padding: 6px 7px; }
+}
+
+/* --- Order detail: totals readable on phone without sideways swipe (v0.2.1) --- */
+.order-totals-mobile { display: none; }
+@media (max-width: 900px) {
+  .order-totals-mobile { display: block; background:#fff; border:1px solid #e3e5e8; border-radius:10px; padding:10px 12px; margin:10px 0; }
+  .order-totals-mobile > div { display:flex; justify-content:space-between; gap:12px; padding:3px 0; font-size:14.5px; }
+  .order-totals-mobile > div span:last-child { font-variant-numeric: tabular-nums; text-align:right; }
+  .order-totals-mobile .grand { border-top:1px solid #e5e7eb; margin-top:5px; padding-top:7px; font-weight:700; font-size:16.5px; }
+}
+/* --- Order items on phones: sideways scroll inside .table-scroll (v48) ---
+   The old block forced this 7-column table into the screen width with a
+   fixed layout, which crushed money cells until digits stacked one per
+   line. Now the generic .table-scroll rules apply (width: max-content),
+   the name keeps a readable minimum, and numbers never wrap. */
+.tbl-order-items td:nth-child(1), .tbl-order-items td:nth-child(4),
+.tbl-order-items td:nth-child(5), .tbl-order-items td:nth-child(6),
+.tbl-order-items td:nth-child(7) { white-space: nowrap; }
+@media (max-width: 560px) {
+  .tbl-order-items th, .tbl-order-items td { padding: 6px 7px; }
+  .tbl-order-items td:nth-child(1) { font-size: 12px; }
+  .tbl-order-items td:nth-child(2) { min-width: 150px; }  /* name stays readable */
+}
+
+/* --- Deliver confirm on phones: hide SKU, keep name + qty box in reach (v48) --- */
+@media (max-width: 640px) {
+  .tbl-deliver th:nth-child(1), .tbl-deliver td:nth-child(1) { display: none; }  /* SKU */
+  .tbl-deliver td:nth-child(2) { min-width: 140px; }  /* name */
+  .tbl-deliver td:nth-child(3), .tbl-deliver td:nth-child(4) { white-space: nowrap; }
+}
+
+/* --- Consolidated nav: hub tab strips (v0.2) --- */
+.tabs { display:flex; gap:6px; flex-wrap:wrap; margin: 2px 0 14px; }
+.tabs a { padding: 7px 14px; border: 1.5px solid #1d4ed8; border-radius: 999px; color: #1d4ed8; text-decoration: none; font-weight: 600; background: #fff; font-size: 14px; }
+.tabs a.on { background: #1d4ed8; color: #fff; }
+
+/* --- Catalog price-change badge (v0.2.1) --- */
+.pbadge { font-size: 12.5px; font-weight: 700; margin: 1px 0 3px; }
+.pbadge.down { color: #d6336c; }
+.pbadge.up { color: #b45309; }
+
+/* --- Catalog IN STOCK pill + sellable state (v0.2.2) --- */
+.pcard { position: relative; }
+.stock-pill { position: absolute; top: 8px; right: 8px; background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.sell-pill { font-size: 12px; font-weight: 700; }
+.sell-pill.on { color: #15803d; }
+.sell-pill.off { color: #dc2626; }
+
+/* --- Topbar nav: uniform pills, even spacing (v0.2.3) --- */
+.topbar nav { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.topbar nav::-webkit-scrollbar { display: none; }
+.topbar nav a { margin: 0; padding: 7px 13px; background: rgba(255,255,255,.14); border-radius: 999px; font-size: 14px; line-height: 1.15; white-space: nowrap; display: inline-flex; align-items: center; }
+
+/* --- Topbar: current section highlight (v0.2.4) --- */
+.topbar nav a.on { background: #ffffff; color: #1d4ed8; font-weight: 700; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+
+/* --- Products table polish: compact actions, no mid-word unit breaks (v0.2.5) --- */
+@media (min-width: 1024px) {
+  .tbl-products th:nth-child(3) { width: 15.5%; }
+  .tbl-products th:nth-child(5) { width: 5.5%; }
+  .tbl-products td:nth-child(5) { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+  .tbl-products td:last-child .inline { display: inline-flex; flex-direction: row; flex-wrap: wrap; gap: 4px; margin-top: 4px; align-items: center; }
+  .tbl-products td:last-child .inline input { width: 68px; min-width: 0; padding: 4px 6px; font-size: 12.5px; }
+  .tbl-products td:last-child .inline input[name="delta"] { width: 46px; }
+  .tbl-products td:last-child .inline button { padding: 4px 9px; font-size: 12.5px; white-space: nowrap; }
+}
+
+/* --- Management dashboard: stat cards + status pills (v0.2.6) --- */
+.dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 10px; margin: 12px 0 6px; align-items: stretch; }
+.dstat { background: #fff; border: 1px solid #e3e5e8; border-radius: 12px; padding: 13px 14px; display: flex; gap: 11px; align-items: center; height: 100%; box-sizing: border-box; }
+.dstat .dic { font-size: 21px; background: #eef2ff; border-radius: 10px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.dstat span { display: block; font-size: 21px; font-weight: 700; line-height: 1.15; }
+.dstat label { display: block; color: #6b7280; font-size: 13px; margin-top: 2px; line-height: 1.45; word-break: keep-all; overflow-wrap: normal; }
+.dstat.warn { background: #fffbeb; border-color: #fcd34d; }
+.dstat.warn .dic { background: #fef3c7; }
+.dstat.warn span { color: #b45309; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.pill.blue { background: #dbeafe; color: #1d4ed8; }
+.pill.green { background: #dcfce7; color: #15803d; }
+.pill.gray { background: #e5e7eb; color: #4b5563; }
+.pill.amber { background: #fef3c7; color: #b45309; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* purchasing flow stepper (v0.2.7) */
+.flowcard{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px 14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.flowhead{font-weight:700;font-size:16px;margin-bottom:8px}
+.flowhead .muted{font-weight:400;font-size:13px}
+.steps{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.step{padding:7px 12px;border-radius:999px;background:#eef2ff;color:#1d4ed8;text-decoration:none;font-weight:600;font-size:14px}
+.step.on{background:#1d4ed8;color:#fff}
+.stepwrap{display:inline-flex;align-items:center;gap:6px}
+.arr{color:#9ca3af}
+.bdg{background:#dc2626;color:#fff;border-radius:999px;padding:0 7px;font-size:12px;font-weight:700}
+.step.on .bdg{background:#fff;color:#dc2626}
+.chkpill{background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:999px;padding:4px 10px;font-size:13px;font-weight:700;text-decoration:none}
+/* buy-area two path groups (v56): a labelled row per buying pattern */
+.grouplbl{font-weight:700;font-size:13.5px;color:#374151}
+.grouplbl .muted{font-weight:400;font-size:12.5px}
+/* v58: the two buy groups as tabs above one panel (Ko chose tab style).
+   The active tab is filled like .step.on and overlaps the panel's top
+   border by 1px, so it reads as connected to the path below it. */
+.buytabs{display:flex;gap:6px;margin-bottom:-1px;position:relative;z-index:1}
+.buytab{padding:8px 16px;border:1px solid #d1d5db;border-bottom:none;border-radius:12px 12px 0 0;background:#f3f4f6;color:#4b5563;text-decoration:none;font-weight:700;font-size:14px}
+.buytab.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+.buypanel{border:1px solid #d1d5db;border-radius:0 12px 12px 12px;padding:10px 12px;background:#fff}
+/* v59: the request-list kind switcher — the current view is filled like
+   .step.on, the others stay plain .btn.alt, so the view in front of you
+   is never in doubt. */
+.kindswitch{margin:10px 0 4px}
+.kindswitch .btn{background:#e8ecf5;color:#1d4ed8}
+.kindswitch .btn.on{background:#1d4ed8;color:#fff}
+/* v60: denomination counter (_denom.html) — shared by the four cash
+   points. flex-basis 100% so it takes its own line inside .row forms. */
+.denom{flex:1 1 100%;border:1px dashed #d1d5db;border-radius:10px;padding:8px 10px;margin:8px 0;background:#f9fafb}
+.denom[hidden]{display:none}
+.denom-head{font-weight:700;font-size:13.5px;margin-bottom:6px}
+.denom-grid{display:flex;flex-wrap:wrap;gap:6px 14px}
+.denom-row{display:inline-flex;align-items:center;gap:6px;font-size:13.5px}
+.denom-row input{width:64px}
+.denom-total{margin-top:6px;font-size:13.5px}
+.denom-warn{margin-top:6px;color:#b45309;font-weight:600;font-size:13.5px}
+.denom-warn[hidden]{display:none}
+.denom-line{font-size:13px;color:#374151}
+.steps[hidden]{display:none}
+.flowcard .steps + .steps{margin-top:8px;border-top:1px dashed #e5e7eb;padding-top:8px}
+.flowcard .buypanel .steps + .steps{margin-top:0;border-top:none;padding-top:0}
+.doccode{color:#6b7280;font-size:13px}
+
+/* two-step flow (v0.2.8) */
+.reclink{color:#374151;text-decoration:none;font-weight:600;font-size:14px;padding:7px 10px;border-radius:999px;background:#f3f4f6}
+.reclink.on{background:#111827;color:#fff}
+
+/* --- Products actions: two compact lines in a wider column (v0.2.9) ---
+   Fixes the 2026-10-16 screenshot: the actions column was only 8% wide, so
+   every control (pill, toggle, edit, +/-, note, Stock button) wrapped onto
+   its own line and each product row ballooned to ~190px tall. The cell is
+   now two explicit flex lines and the column gets 15% (name/margin trimmed). */
+.act-line { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.act-line .sell-pill { white-space: nowrap; }
+.act-line a { white-space: nowrap; }
+.act-line button { padding: 4px 8px; font-size: 12.5px; white-space: nowrap; }
+form.act-stock { margin-top: 5px; flex-wrap: nowrap; }
+form.act-stock input { padding: 4px 6px; font-size: 12.5px; min-width: 0; }
+form.act-stock input[name="delta"] { width: 42px; flex: 0 0 42px; }
+form.act-stock input[name="note"] { flex: 1 1 48px; }
+form.act-stock button { flex: 0 0 auto; }
+@media (min-width: 1024px) {
+  .tbl-products th:nth-child(3)  { width: 12.5%; } /* name trimmed */
+  .tbl-products th:nth-child(9)  { width: 11%; }   /* margin trimmed */
+  .tbl-products th:nth-child(14) { width: 15%; }   /* actions widened from 8% */
+  .tbl-products td:last-child { white-space: normal; }
+}
+@media (min-width: 1024px) and (max-width: 1300px) {
+  form.act-stock { flex-wrap: wrap; }
+  form.act-stock input[name="note"] { flex: 1 1 100%; order: 3; }
+}
+
+/* products filter state + anchored rows (v0.2.9) */
+.tbl-products tr[id]{scroll-margin-top:120px}
+
+.supchips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.supchip { display:inline-flex; gap:8px; align-items:center; flex-wrap:wrap; max-width:100%; padding:7px 12px; border:1px solid #e5e7eb; border-radius:999px; background:#f9fafb; }
+
+.backbar{margin:0 0 10px}
+.backbtn{display:inline-block;padding:6px 14px;border:1px solid #d1d5db;border-radius:999px;background:#fff;color:#374151;text-decoration:none;font-size:14px}
+
+/* v61: row action groups (requests lists, buy-list open slips) —
+   buttons wrap onto a second line instead of running off the right
+   edge on narrow screens (Ko's screenshot: Print half cut off). */
+.rowacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rowacts form{margin:0;display:inline-flex}
+
+/* v47: type-to-search product picker */
+.ppick{position:relative;display:inline-block;min-width:230px;vertical-align:top}
+.ppick-q{width:100%}
+.ppick-list{display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #c9ced6;border-radius:6px;z-index:60;max-height:230px;overflow:auto;box-shadow:0 4px 14px rgba(0,0,0,.16)}
+.ppick-it{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid #eee;padding:8px 10px;cursor:pointer;font:inherit}
+.ppick-it:hover{background:#f2f5fa}
+.ppick-none{padding:8px 10px;color:#888}
+/* v76: role-edit permission checklist — checkbox left, label beside it (the
+   old .row class stretched the checkbox and pushed text to the far right). */
+.permgroup{margin-top:1.1rem}
+.permgroup summary{cursor:pointer;font-weight:700;border-bottom:1px solid #d7dce3;padding:.2rem 0;list-style-position:inside}
+.permcheck{display:flex;align-items:center;gap:.5rem;padding:.35rem 0;cursor:pointer}
+.permcheck input{flex:none;min-width:0;width:18px;height:18px;margin:0;accent-color:#193059}
+
+/* v81: dashboard button groups — one card per group with a small heading,
+   buttons in an even flex wrap (no ragged paragraph wrap, no JS). Tap
+   targets unchanged: .btn padding/font stay as they are; only the
+   paragraph margin is replaced by the flex gap. */
+.dashgroups{display:grid;gap:12px;margin:12px 0}
+.dashgroup{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px 14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.dashgroup h3{margin:0 0 8px;font-size:15px}
+.dashbtns{display:flex;flex-wrap:wrap;gap:8px}
+.dashbtns .btn{margin:0}

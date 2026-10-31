@@ -35,7 +35,7 @@
     <div class="col-md-3">
         <div class="dashboard-card">
             <div class="text-muted small">Outlet</div>
-            <div class="fs-5 fw-semibold">{{ order['outlet_name'] }}</div>
+            <div class="fs-5 fw-semibold">{% if order.get('outlet_id') %}<a href="{{ url_for('admin_outlet_detail', outlet_id=order['outlet_id']) }}">{{ order['outlet_name'] }}</a>{% else %}{{ order['outlet_name'] }}{% endif %}</div>
         </div>
     </div>
     <div class="col-md-3">
@@ -57,6 +57,21 @@
             </form>
         </div>
     </div>
+</div>
+
+<div class="dashboard-card mb-3">
+    <h3 class="h6 fw-bold">Delivery record</h3>
+    <p class="mb-1">Assigned delivery rep: {{ order.delivery_rep_label or 'Not assigned' }}</p>
+    {% if order.latest_delivery %}
+    <p class="mb-1">Outcome: {% if order.delivery_partial %}partially delivered · {% else %}{{ order.latest_delivery.result }} · {% endif %}{{ order.latest_delivery.created_at|sqlitedatetime }}</p>
+    {% if order.delivery_items %}<ul class="mb-1">{% for item in order.delivery_items %}<li>{{ item.product_name }}: {{ item.delivered_quantity }} / {{ item.ordered_quantity }} delivered</li>{% endfor %}</ul>{% endif %}
+    {% if order.latest_delivery.result == 'failed' and order.latest_delivery.failure_reason %}<p class="mb-1">Failure reason: {{ order.latest_delivery.failure_reason }}</p>{% endif %}
+    {% if order.latest_delivery.note %}<p class="mb-1">Note: {{ order.latest_delivery.note }}</p>{% endif %}
+    {% if order.delivery_cash_collected > 0 %}<p class="mb-1">Cash collected across deliveries: {{ "{:,.2f}".format(order.delivery_cash_collected) }} Ks</p>{% endif %}
+    {% if order.latest_delivery.latitude is not none and order.latest_delivery.longitude is not none %}<a href="https://www.google.com/maps?q={{ order.latest_delivery.latitude }},{{ order.latest_delivery.longitude }}" target="_blank" rel="noopener noreferrer">Open recorded delivery location</a>{% endif %}
+    {% else %}
+    <p class="text-muted mb-0">No delivery attempt recorded.</p>
+    {% endif %}
 </div>
 
 {% if order.get('price_mismatch') %}

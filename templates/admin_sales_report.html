@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Sales report{% endblock %}
+{% block content %}
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div><h2 class="fw-bold mb-1">Sales performance</h2><p class="text-muted mb-0">Compare order activity across reps and products for a selected period.</p></div>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary"><i class="bi bi-speedometer2"></i> Dashboard</a>
+</div>
+
+<form method="get" class="dashboard-card row g-3 align-items-end mb-4">
+    <div class="col-sm-4 col-lg-3"><label class="form-label" for="reportFrom">From</label><input id="reportFrom" class="form-control" type="date" name="from" value="{{ start_date }}" required></div>
+    <div class="col-sm-4 col-lg-3"><label class="form-label" for="reportTo">To</label><input id="reportTo" class="form-control" type="date" name="to" value="{{ end_date }}" required></div>
+    <div class="col-sm-4 col-lg-4"><label class="form-label" for="reportRep">Sales rep</label><select id="reportRep" class="form-select" name="rep"><option value="">All reps</option>{% for rep in rep_options %}<option value="{{ rep }}" {% if rep_name == rep %}selected{% endif %}>{{ rep }}</option>{% endfor %}</select></div>
+    <div class="col-lg-2"><button class="btn btn-primary w-100" type="submit"><i class="bi bi-funnel"></i> Apply</button></div>
+</form>
+
+<section class="ops-overview mb-4" aria-label="Sales totals">
+    <article class="ops-card ops-card-primary"><div class="ops-card-icon"><i class="bi bi-receipt-cutoff"></i></div><div><span>Orders submitted</span><strong>{{ report.totals.order_count }}</strong><small>{{ report.totals.fulfilled_count }} fulfilled · {{ report.totals.pending_count }} pending · {{ report.totals.cancelled_count }} cancelled</small></div></article>
+    <article class="ops-card"><div class="ops-card-icon is-green"><i class="bi bi-cash-stack"></i></div><div><span>Submitted retail value</span><strong>{{ "{:,.0f}".format(report.totals.submitted_sales) }} <em>Ks</em></strong><small>Includes cancelled orders</small></div></article>
+    <article class="ops-card"><div class="ops-card-icon is-violet"><i class="bi bi-check2-circle"></i></div><div><span>Fulfilled retail value</span><strong>{{ "{:,.0f}".format(report.totals.fulfilled_sales) }} <em>Ks</em></strong><small>{{ report.totals.outlet_count }} distinct outlets</small></div></article>
+</section>
+
+<section class="dashboard-card mb-4">
+    <div class="card-header-custom mb-3"><i class="bi bi-people"></i> Performance by rep</div>
+    <div class="table-responsive"><table class="table align-middle product-table mb-0">
+        <thead><tr><th>Rep</th><th class="text-end">Orders</th><th class="text-end">Outlets</th><th class="text-end">Submitted</th><th class="text-end">Fulfilled</th><th class="text-end">Pending</th><th class="text-end">Cancelled</th></tr></thead>
+        <tbody>{% for rep in report.reps %}
+            <tr><td class="fw-semibold rep-name" translate="no">{{ rep.rep_name }}</td><td class="text-end">{{ rep.order_count }}</td><td class="text-end">{{ rep.outlet_count }}</td><td class="text-end">{{ "{:,.0f}".format(rep.submitted_sales) }} Ks</td><td class="text-end">{{ "{:,.0f}".format(rep.fulfilled_sales) }} Ks</td><td class="text-end">{{ rep.pending_count }}</td><td class="text-end">{{ rep.cancelled_count }}</td></tr>
+        {% else %}<tr><td colspan="7" class="text-center text-muted py-4">No orders in this date range.</td></tr>{% endfor %}</tbody>
+    </table></div>
+</section>
+
+<div class="row g-3">
+    <section class="col-lg-7">
+        <div class="dashboard-card h-100">
+            <div class="card-header-custom mb-3"><i class="bi bi-boxes"></i> Products ordered <small class="text-muted">Cancelled orders excluded</small></div>
+            <div class="table-responsive"><table class="table align-middle product-table mb-0">
+                <thead><tr><th>Product</th><th class="text-end">Quantity</th><th class="text-end">Orders</th><th class="text-end">Retail value</th></tr></thead>
+                <tbody>{% for product in report.products %}
+                    <tr><td><strong class="product-name" translate="no">{{ product.product_name }}</strong><small class="d-block text-muted" translate="no">{{ product.product_id }}</small></td><td class="text-end">{{ product.quantity }}</td><td class="text-end">{{ product.order_count }}</td><td class="text-end">{{ "{:,.0f}".format(product.sales) }} Ks</td></tr>
+                {% else %}<tr><td colspan="4" class="text-center text-muted py-4">No product sales in this date range.</td></tr>{% endfor %}</tbody>
+            </table></div>
+        </div>
+    </section>
+    <section class="col-lg-5">
+        <div class="dashboard-card h-100">
+            <div class="card-header-custom mb-3"><i class="bi bi-calendar3"></i> Daily activity</div>
+            <div class="table-responsive"><table class="table align-middle product-table mb-0">
+                <thead><tr><th>Date</th><th class="text-end">Orders</th><th class="text-end">Submitted</th></tr></thead>
+                <tbody>{% for day in report.daily %}
+                    <tr><td>{{ day.day }}</td><td class="text-end">{{ day.order_count }}</td><td class="text-end">{{ "{:,.0f}".format(day.submitted_sales) }} Ks</td></tr>
+                {% else %}<tr><td colspan="3" class="text-center text-muted py-4">No activity for this period.</td></tr>{% endfor %}</tbody>
+            </table></div>
+        </div>
+    </section>
+</div>
+{% endblock %}

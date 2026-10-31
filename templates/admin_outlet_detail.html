@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ outlet.name }} · Outlet{% endblock %}
+{% block content %}
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div><h2 class="fw-bold mb-1">{{ outlet.name }}</h2><p class="text-muted mb-0">{{ outlet.area or 'Area not set' }} · {{ outlet.order_count if outlet.order_count is defined else outlet.orders|length }} recent linked orders</p></div>
+    <a href="{{ url_for('admin_outlets') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Outlet directory</a>
+</div>
+
+<div class="row g-3">
+    <section class="col-lg-6">
+        <div class="dashboard-card h-100">
+            <h3 class="h5 fw-bold">Outlet profile</h3>
+            <form method="post" action="{{ url_for('admin_outlet_edit', outlet_id=outlet.id) }}" class="row g-3">
+                <div class="col-md-7"><label class="form-label" for="outletName">Name *</label><input id="outletName" class="form-control" name="name" value="{{ outlet.name }}" maxlength="200" required></div>
+                <div class="col-md-5"><label class="form-label" for="outletArea">Area / township</label><input id="outletArea" class="form-control" name="area" value="{{ outlet.area }}" maxlength="200"></div>
+                <div class="col-md-7"><label class="form-label" for="outletType">Outlet type</label><select id="outletType" class="form-select" name="shop_type"><option value="">Not set</option>{% for key, label in shop_type_options %}<option value="{{ key }}" {% if outlet.shop_type == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+                <div class="col-md-5"><label class="form-label" for="outletCreditLimit">Credit limit (Ks)</label><input id="outletCreditLimit" class="form-control" name="credit_limit" type="number" min="0" step="any" value="{{ outlet.credit_limit if outlet.credit_limit is not none else '' }}"></div>
+                <div class="col-12"><label class="form-label" for="outletNote">Distinguishing note</label><input id="outletNote" class="form-control" name="note" value="{{ outlet.note }}" maxlength="500"></div>
+                <div class="col-12"><button class="btn btn-primary" type="submit">Save outlet profile</button></div>
+            </form>
+            {% if outlet.credit_limit is not none %}<p class="small text-muted mt-3 mb-0">Credit limit is recorded for future collection tracking; this project does not yet record customer payments.</p>{% endif %}
+            {% if outlet.lat is not none and outlet.lng is not none %}
+            <p class="small text-muted mt-3 mb-0">Location was recorded from an opted-in field visit. <a href="https://www.google.com/maps?q={{ outlet.lat }},{{ outlet.lng }}" target="_blank" rel="noopener noreferrer">Open map</a></p>
+            {% else %}
+            <p class="small text-muted mt-3 mb-0">No GPS location recorded. A rep may attach it to an order visit with explicit consent.</p>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="col-lg-6">
+        <div class="dashboard-card h-100">
+            <h3 class="h5 fw-bold">Known spellings</h3>
+            <p class="small text-muted">Aliases help match field-entered names. If a spelling belongs to multiple outlets, the rep must choose which one.</p>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                {% for alias in outlet.aliases %}
+                <span class="badge rounded-pill bg-primary-subtle text-primary-emphasis d-inline-flex align-items-center gap-2">{{ alias.alias }}
+                    <form method="post" action="{{ url_for('admin_outlet_alias_delete', outlet_id=outlet.id, alias_id=alias.id) }}"><button type="submit" class="btn-close" aria-label="Remove {{ alias.alias }}"></button></form>
+                </span>
+                {% else %}<span class="text-muted">No aliases added.</span>{% endfor %}
+            </div>
+            <form method="post" action="{{ url_for('admin_outlet_alias_add', outlet_id=outlet.id) }}" class="d-flex gap-2">
+                <input class="form-control" name="alias" maxlength="200" placeholder="Add another spelling" required>
+                <button class="btn btn-outline-primary flex-shrink-0" type="submit">Add alias</button>
+            </form>
+        </div>
+    </section>
+</div>
+
+<section class="dashboard-card mt-3">
+    <h3 class="h5 fw-bold">Visit history</h3>
+    <div class="table-responsive"><table class="table align-middle product-table mb-0">
+        <thead><tr><th>Visited</th><th>Rep</th><th>Visit type</th><th>Location</th><th>Order</th></tr></thead>
+        <tbody>{% for visit in outlet.visits %}
+            <tr><td>{{ visit.visited_at|sqlitedatetime }}</td><td>{{ visit.rep_name or '—' }}</td><td>{{ visit.visit_type }}{% if visit.note %}<small class="d-block text-muted">{{ visit.note }}</small>{% endif %}</td><td>{% if visit.latitude is not none and visit.longitude is not none %}<a href="https://www.google.com/maps?q={{ visit.latitude }},{{ visit.longitude }}" target="_blank" rel="noopener noreferrer">Map</a><small class="d-block text-muted">±{{ '%g'|format(visit.accuracy or 0) }} m</small>{% else %}—{% endif %}</td><td>{% if visit.order_id %}<a href="{{ url_for('admin_order_detail', order_id=visit.order_id) }}">#{{ visit.order_id }}</a>{% else %}—{% endif %}</td></tr>
+        {% else %}<tr><td colspan="5" class="text-muted text-center py-3">No visits recorded yet.</td></tr>{% endfor %}</tbody>
+    </table></div>
+</section>
+
+<section class="dashboard-card mt-3">
+    <h3 class="h5 fw-bold">Recent orders</h3>
+    <div class="table-responsive"><table class="table align-middle product-table mb-0">
+        <thead><tr><th>Order</th><th>Date</th><th>Rep</th><th>Status</th><th class="text-end">Retail total</th></tr></thead>
+        <tbody>{% for order in outlet.orders %}
+            <tr><td><a href="{{ url_for('admin_order_detail', order_id=order.id) }}">#{{ order.id }}</a></td><td>{{ order.created_at|sqlitedatetime }}</td><td>{{ order.rep_name }}</td><td>{{ order.status }}</td><td class="text-end">{{ "{:,.0f}".format(order.total_retail) }} Ks</td></tr>
+        {% else %}<tr><td colspan="5" class="text-muted text-center py-3">No linked orders yet.</td></tr>{% endfor %}</tbody>
+    </table></div>
+</section>
+{% endblock %}

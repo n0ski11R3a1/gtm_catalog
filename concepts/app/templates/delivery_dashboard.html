@@ -1,0 +1,32 @@
+{% extends 'base.html' %}{% block title %}{{ t('🚚 ပို့ဆောင်') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🚚 ပို့ဆောင်') }}</h1>
+<div class="dash-grid">
+  <div class="dstat"><div class="dic">🧾</div><div><span>{{ todo|length }}</span><label>{{ t('ပို့ရန် ကျန်') }}</label></div></div>
+  <div class="dstat"><div class="dic">✅</div><div><span>{{ done }}</span><label>{{ t('ဒီနေ့ ပို့ပြီး') }}</label></div></div>
+  <div class="dstat"><div class="dic">💵</div><div><span>{{ '{:,.0f}'.format(expected) }} Ks</span><label>{{ t('ကောက်ရမယ့် ငွေ') }}</label></div></div>
+  <div class="dstat"><div class="dic">💰</div><div><span>{{ '{:,.0f}'.format(collected) }} Ks</span><label>{{ t('ကောက်ပြီး ငွေ') }}</label></div></div>
+  {% if pending %}<div class="dstat warn"><div class="dic">⏳</div><div><span>{{ '{:,.0f}'.format(pending) }} Ks</span><label>{{ t('စစ်ရန် ကျန် ငွေ') }}</label></div></div>{% endif %}
+</div>
+<h2>{{ t('ပို့ရန် ဘောက်ချာများ') }}</h2>
+{% if todo %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('နေရာ') }}</th><th>{{ t('ရက်') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th></th></tr>
+{% for x in todo %}
+<tr><td><a href="/orders/{{ x.o.id }}">{{ x.o.code }}</a></td><td>{{ x.o.outlet }}</td><td>{{ x.o.area or '' }}</td><td>{{ x.o.odate }}</td>
+<td class="num">{{ '{:,.0f}'.format(x.total) }} Ks</td><td><a class="btn" href="/deliver/{{ x.o.id }}">{{ t('🚚 ပို့မယ်') }}</a></td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="hint">{{ t('ပို့ ဘောက်ချာ မရှိသေးဘူး') }}</p>{% endif %}
+<h2>{{ t('ကိုယ့် ပို့ မှတ်တမ်း') }}</h2>
+{% if attempts %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('အချိန်') }}</th><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('အခြေအနေ') }}</th><th>{{ t('အကြောင်း') }}</th></tr>
+{% for a in attempts %}
+<tr><td>{{ (a.created_at or '')[:16] }}</td><td>{{ a.code }}</td><td>{{ a.outlet }}</td>
+<td>{% if a.result == 'delivered' %}<span class="pill green">{{ t('ပို့ပြီး') }}</span>{% else %}<span class="pill gray">{{ t('မပို့ဖြစ် — ဘောက်ချာ ပယ်ဖျက်') }}</span>{% endif %}</td>
+<td>{{ a.reason or '' }}{% if a.note %} · {{ a.note }}{% endif %}{% if a.lat is not none and a.lng is not none %} · <a href="https://www.google.com/maps?q={{ a.lat }},{{ a.lng }}" target="_blank" rel="noopener">📍 {{ t('နေရာ ကြည့်ရန်') }}</a>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="hint">{{ t('မပို့ဖြစ် မှတ်တမ်း မရှိဘူး') }}</p>{% endif %}
+{% endblock %}

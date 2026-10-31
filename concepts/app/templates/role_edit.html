@@ -1,0 +1,23 @@
+{% extends 'base.html' %}{% from '_tabs.html' import adm_tabs %}{% block title %}{{ t('အခန်း ပြင်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ adm_tabs('roles') }}
+<h1>{{ t('အခန်း ပြင်') }} — {{ label }}</h1>
+<p class="hint">{{ t('အသုံးပြုသူ') }} {{ uc }} {{ t('ယောက် ဒီ အခန်းကို သုံးနေတယ်။') }}{% if role.name == 'owner' %} {{ t('Owner အခန်းရဲ့ ခွင့်ပြုချက်တွေကို ဖြုတ်လို့ မရဘူး — ဒီ စာမျက်နှာက ကြည့်ရန်သာ ပါ။') }}{% endif %}</p>
+<form method="post" class="card">
+  <div class="row">
+    <label>{{ t('အခန်း နာမည်') }} <input name="name" value="{{ role.name }}" {% if role.is_system %}readonly{% endif %}></label>
+  </div>
+  {% for g in groups %}
+  {% set ns = namespace(n=0) %}{% for k in g.perms %}{% if k in cur %}{% set ns.n = ns.n + 1 %}{% endif %}{% endfor %}
+  <details class="permgroup">
+  <summary>{{ t(g.label) }} ({{ ns.n }}/{{ g.perms|length }})</summary>
+  {% for k in g.perms %}
+  <label class="permcheck"><input type="checkbox" name="perm" value="{{ key_idx[k] }}" {% if k in cur %}checked{% endif %} {% if role.name == 'owner' %}disabled{% endif %}> {{ t(perms_meta[k][1]) }}{% if perms_meta[k][4] %} ★{% endif %}</label>
+  {% endfor %}
+  </details>
+  {% endfor %}
+  <p class="hint">★ {{ t('အရင်းအမှန် နဲ့ ဆိုင်တဲ့ ခွင့်ပြုချက် — Owner နဲ့ Finance ပဲ ပေးသင့်တယ်။') }}</p>
+  {% if role.name != 'owner' %}<button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>{% endif %}
+  <a class="btn alt" href="/roles">{{ t('ပြန်သွားမယ်') }}</a>
+</form>
+{% endblock %}

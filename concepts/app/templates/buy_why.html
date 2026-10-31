@@ -1,0 +1,41 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}{{ t('ဘာလို့ လို နေ တာ လဲ') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('buy', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('ဘာလို့ လို နေ တာ လဲ') }}</h1>
+<p><span class="doccode">{{ w.prod.sku }}</span> <b>{{ w.prod.name }}</b> <small class="muted">{{ w.prod.unit or '' }}</small></p>
+{% if w.family_size > 1 %}<p class="hint">{{ t('ချိတ်ထားတဲ့ ပစ္စည်းတွေ ပေါင်း တွက်ထားတယ်') }}</p>{% endif %}
+
+<div class="card">
+<table>
+{% if not show_all %}
+<tr><td>{{ t('ဒီနေ့ လိုအပ်') }}</td><td><b data-k="today">{{ w.today_disp|int if w.today_disp == w.today_disp|int else w.today_disp }}</b></td></tr>
+<tr><td>{{ t('အရင် ကျန်') }}</td><td><b data-k="older">{{ w.older_disp|int if w.older_disp == w.older_disp|int else w.older_disp }}</b></td></tr>
+{% endif %}
+<tr><td>{{ t('စုစုပေါင်း') }}</td><td><b data-k="total">{{ w.total_disp|int if w.total_disp == w.total_disp|int else w.total_disp }}</b></td></tr>
+<tr><td>{{ t('လက်ရှိ stock') }}</td><td><b data-k="stock">{{ w.stock_disp|int if w.stock_disp == w.stock_disp|int else w.stock_disp }}</b></td></tr>
+<tr><td>{{ t('မှာထားပြီး (ရောက်ရန်)') }}</td><td><b data-k="onorder">{{ w.onorder_disp|int if w.onorder_disp == w.onorder_disp|int else w.onorder_disp }}</b></td></tr>
+<tr><td>{{ t('ဝယ်ရန် လို') }}</td><td><b class="needval" data-k="need">{{ w.need }}</b></td></tr>
+</table>
+</div>
+
+{% macro lines_table(rows) %}
+<table>
+<tr><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('ဆိုင်') }}</th><th>{{ t('ရက်') }}</th><th>SKU</th><th>{{ t('အရေအတွက်') }}</th></tr>
+{% for l in rows %}
+<tr><td><a href="/orders/{{ l.oid }}">{{ l.code }}</a></td><td>{{ l.outlet or '' }}</td><td>{{ l.odate }}</td><td>{{ l.sku }}</td><td>{{ l.qty|int if l.qty == l.qty|int else l.qty }} <small class="muted">{{ l.unit or '' }}</small></td></tr>
+{% endfor %}
+</table>
+{% endmacro %}
+
+{% if not today_lines and not older_lines and not all_lines %}
+<p class="muted card">{{ t('ဒီ ပစ္စည်း ကို လိုတဲ့ မပို့ရသေး ဘောက်ချာ မရှိဘူး') }}</p>
+{% elif show_all %}
+<h3>{{ t('မပို့ရသေး အကုန်') }}</h3>
+{{ lines_table(all_lines) }}
+{% else %}
+{% if today_lines %}<h3>{{ t('ဒီနေ့') }}</h3>
+{{ lines_table(today_lines) }}{% endif %}
+{% if older_lines %}<h3>{{ t('အရင် ကျန်') }}</h3>
+{{ lines_table(older_lines) }}{% endif %}
+{% endif %}
+{% endblock %}

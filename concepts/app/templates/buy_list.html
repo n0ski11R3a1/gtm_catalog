@@ -1,0 +1,71 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}{{ t('ဝယ်ရန် စာရင်း') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('buy', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('ဝယ်ရန် စာရင်း (ဝယ်ရမယ့် စာရင်း အမှန်)') }}</h1>
+<div class="tabs">
+  <a href="/buy-list?day={{ today_s }}" class="{{ 'on' if not show_all and day == today_s }}">{{ t('ဒီနေ့') }}</a>
+  <a href="/buy-list?day=all" class="{{ 'on' if show_all }}">{{ t('မပို့ရသေး အကုန်') }}</a>
+</div>
+<form method="get" action="/buy-list" class="row">
+  <label>{{ t('ရက် ရွေး') }} <input type="date" name="day" value="{{ '' if show_all else day }}"></label>
+  <label>&nbsp;<button class="btn" type="submit">{{ t('ကြည့်') }}</button></label>
+</form>
+{% if not show_all and older_orders %}
+<div class="flags">{{ t('⚠️ ဒီ ရက် မတိုင်ခင် မပို့ရသေး ဘောက်ချာ {n} စောင် ကျန်နေတယ်', n=older_orders) }}{% if older_short %} {{ t('· အဲ့ဒီထဲက ပစ္စည်း {n} မျိုး က stock/မှာထားပြီး နဲ့ မလုံလောက်သေးဘူး', n=older_short) }}{% endif %} — <a href="/buy-list?day=all">{{ t('အကုန် ကြည့်မယ်') }}</a> {{ t('(ဒီ စာမျက်နှာမှာ ဒီနေ့ ဘောက်ချာတွေပဲ ပြထားတယ်)') }}</div>
+{% endif %}
+<p class="hint">{% if show_all %}{{ t('မပို့ရသေး ဘောက်ချာ') }} <b>{{ t('အကုန်') }}</b>{{ t(' (ရက် မခွဲ) — ') }}<b>{{ t('ဝယ်ရန် လို = ဘောက်ချာ လိုအပ် − လက်ရှိ stock − မှာထားပြီး') }}</b>{% else %}<b>{{ t('{day} မှာ ကောက်တဲ့ ဘောက်ချာတွေ အတွက် — ', day=day) }}</b><b>{{ t('ဝယ်ရန် လို = ဒီနေ့ လိုအပ် − (stock + မှာထားပြီး − အရင်နေ့ လိုအပ်)') }}</b>{% endif %}{{ t('။ ပစ္စည်းတွေကို ') }}<b>{{ t('သူ့ Supplier အလိုက် ခွဲ') }}</b>{{ t(' ပြထားတယ် — Supplier တစ်ခု ချင်းစီ အတွက် အမှာ (Order Request) သီးခြား တင်ရမယ်။') }}</p>
+
+{% for g in groups %}
+<form method="post" action="/requests/from-buylist" class="card" onsubmit="var b=this.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='{{ t('ဖွင့်နေတယ်…') }}'; }">
+  <input type="hidden" name="day" value="{{ 'all' if show_all else day }}">
+  <input type="hidden" name="ftok" value="{{ g.ftok }}">
+  <h3 style="margin-top:0">Supplier — {{ t('အမည် မသိသေး') if g.supplier == 'Unknown' else g.supplier }}</h3>
+  <div class="row">
+    <label>Supplier <input name="supplier" required placeholder="{{ t('ဘယ်သူ့ဆီက ဝယ်မလဲ') }}" value="{{ '' if g.supplier == 'Unknown' else g.supplier }}"></label>
+    <label>{{ t('မှတ်ချက်') }} <input name="note" placeholder="{{ t('(ရှိရင်)') }}"></label>
+  </div>
+  {% if g.supplier == 'Unknown' %}<p class="hint">{{ t('⚠️ ဒီ ပစ္စည်းတွေမှာ Supplier မှတ်ထားတာ မရှိသေးဘူး — ဒီတစ်ခေါက် ဘယ်သူ့ဆီက ဝယ်မလဲ ရိုက်ထည့်ပေးပါ (အမြဲ ဝယ်နေကျ သူ ဆိုရင် Products မှာ သူ့ Supplier ကိုလည်း ပြင် မှတ်ထားပါ)။') }}</p>{% endif %}
+  <table>
+  <tr><th></th><th>SKU</th><th>{{ t('နာမည်') }}</th><th>{{ t('ဘောက်ချာ လိုအပ်') }}</th>{% if not show_all %}<th>{{ t('အရင်နေ့ ကျန် လိုအပ်') }}</th>{% endif %}<th>{{ t('လက်ရှိ stock') }}</th><th>{{ t('မှာထားပြီး (ရောက်ရန်)') }}</th><th>{{ t('ဝယ်ရန် လို') }}</th></tr>
+  {% for r in g.rows %}
+  {% set need = r.need %}
+  <tr{% if need == 0 and r.onorder > 0 %} class="covered"{% endif %}>
+    <td>{% if need > 0 %}<input type="checkbox" name="sel" value="{{ r.id }}" checked>{% endif %}</td>
+    <td>{{ r.sku }}</td><td><a href="/buy-list/why?pid={{ r.id }}&day={{ 'all' if show_all else day }}">🔍 {{ r.name }}</a> <small class="muted">{{ r.unit or '' }}</small></td>
+    <td>{{ r.demand|int if r.demand == r.demand|int else r.demand }}</td>
+    {% if not show_all %}<td>{{ r.older|int if r.older == r.older|int else r.older }}</td>{% endif %}
+    <td>{{ r.stock|int if r.stock == r.stock|int else r.stock }}</td>
+    <td>{{ r.onorder|int if r.onorder == r.onorder|int else r.onorder }}</td>
+    <td>{% if need > 0 %}<input name="qty_{{ r.id }}" type="number" step="any" min="0" value="{{ need|int if need == need|int else need }}" style="width:90px"> <b>{{ t('လို') }}</b>{% elif r.onorder > 0 %}<span class="muted">{{ t('✓ မှာ ပြီး — ရောက် ဖို့ စောင့် နေ') }}</span>{% else %}<span class="muted">{{ t('✓ လက်ကျန် ရှိ') }}</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </table>
+  {% if g.any_need %}<button class="btn" type="submit">{{ t('✓ ဒီ Supplier အတွက် အမှာ (Order Request) လုပ်မယ်') }}</button>{% elif g.any_ordered %}<p class="muted">{{ t('✓ အကုန် မှာ ပြီး — ကုန် ရောက် ဖို့ စောင့် နေ') }}</p>{% else %}<p class="muted">{{ t('✓ လက်ကျန် လုံလောက် — ဝယ် စရာ မလို') }}</p>{% endif %}
+</form>
+{% else %}
+<p class="muted card">{% if show_all %}{{ t('မပို့ရသေးတဲ့ ဘောက်ချာ မရှိသေးဘူး — ဘောက်ချာ ဝင်မှ ဒီ စာရင်း ပေါ်မယ်။') }}{% else %}{{ t('{day} မှာ ကောက်တဲ့ ဘောက်ချာ မရှိသေးဘူး (သို့) လိုအပ်ချက် အကုန် လုံလောက်နေပြီ။', day=day) }}{% endif %}</p>
+{% endfor %}
+
+<h2 style="margin-top:28px">{{ t('📋 မှာပြီး စလစ်များ (အမှာ)') }}</h2>
+<p>
+  {% if can('requests.create') %}<a class="btn" href="/requests/new">{{ t('+ အမှာ အသစ်') }}</a> {% endif %}<a class="btn alt" href="/requests">{{ t('စလစ် အားလုံး (ပိတ်ပြီးပါ) ကြည့်') }}</a>
+</p>
+{% if open_reqs %}
+<table>
+<tr><th>{{ t('အမှာ') }}</th><th>Supplier</th><th>{{ t('မှာတဲ့') }}</th><th>{{ t('ရောက်ပြီး') }}</th><th>{{ t('တင်သူ') }}</th><th>{{ t('အခြေအနေ') }}</th><th></th></tr>
+{% for r in open_reqs %}
+<tr>
+  <td><a href="/requests/{{ r.id }}">{{ r.code }}</a> {% if r.kind == 'direct' %}<span class="pill amber">{{ t('ကြို · Direct') }}</span>{% else %}<span class="pill blue">{{ t('Demand') }}</span>{% endif %}</td>
+  <td>{{ r.supplier or '' }}</td>
+  <td>{{ r.tq|int if r.tq == r.tq|int else r.tq }}</td>
+  <td>{{ r.rq|int if r.rq == r.rq|int else r.rq }}</td>
+  <td>{{ r.byname or '' }}</td>
+  <td>{{ t(OR_STATUS[r.status]) }}</td>
+  <td><div class="rowacts">{% if can('requests.receive') %}<a class="btn" href="/requests/{{ r.id }}/receive">{{ t('📥 ကုန်ရောက် သွင်း') }}</a><form method="post" action="/requests/{{ r.id }}/close" onsubmit="return confirm('{{ t('ကျန်တဲ့ {n} ခု မရောက်တော့ဘူးလို့ မှတ်ပြီး ပိတ်မလား?', n='%g' % (r.tq - r.rq)) }}')"><button class="btn sm alt" type="submit">{{ t('ကျန်တာ မရောက်တော့ — ပိတ်မယ်') }}</button></form>{% endif %}<a class="btn alt" href="/requests/{{ r.id }}/print" target="_blank">🖨 Print</a></div></td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="muted card">{{ t('ဖွင့်ထားတဲ့ စလစ် မရှိဘူး — အပေါ်က ဝယ်ရန် စာရင်းကနေ စလစ် ထုတ်လိုက်ရင် ဒီမှာ ပေါ်လာမယ်။') }}</p>
+{% endif %}
+{% endblock %}

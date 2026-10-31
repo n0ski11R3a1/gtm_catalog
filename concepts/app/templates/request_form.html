@@ -1,0 +1,31 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% from '_picker.html' import picker_field, picker_assets %}{% block title %}{{ t('အမှာ အသစ်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('req', perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('အမှာ အသစ် တင်ရန်') }}</h1>
+<p class="hint">{{ t('Supplier ဆီ မှာမယ့် ပစ္စည်းတွေ — ဒါက အစီအစဉ် ပဲ၊ stock မဝင်သေးဘူး။ ဈေး နောက်မှ ကုန်ရောက် သွင်းတဲ့ အခါ ထည့်ရမယ်။') }}</p>
+<form method="post" class="card" onsubmit="var b=this.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='{{ t('ဖွင့်နေတယ်…') }}'; }">
+  <input type="hidden" name="ftok" value="{{ ftok }}">
+  <div class="row">
+    <label>Supplier <input name="supplier" required></label>
+    <label>{{ t('မှတ်ချက်') }} <input name="note"></label>
+  </div>
+  <div class="row">
+    <span>{{ t('အမှာ အမျိုးအစား') }}:
+      <label><input type="radio" name="kind" value="demand"{% if kind_sel != 'direct' %} checked{% endif %}> {{ t('အမှာ — Demand Driven') }}</label>
+      <label><input type="radio" name="kind" value="direct"{% if kind_sel == 'direct' %} checked{% endif %}> {{ t('ကြို အမှာ — Direct Driven (ခရီး)') }}</label>
+    </span>
+  </div>
+  <div id="lines">
+    <div class="row line">
+      {{ picker_field('pid') }}
+      <input name="qty" type="number" step="any" min="0" placeholder="{{ t('မှာမယ့် အရေအတွက်') }}">
+    </div>
+  </div>
+  <button type="button" class="btn alt" onclick="addLine()">{{ t('+ နောက် ၁ မျိုး') }}</button>
+  <button class="btn" type="submit">{{ t('အမှာ တင်မယ်') }}</button>
+</form>
+{{ picker_assets(prods) }}
+<script>
+function addLine(){ var d=document.querySelector('.line').cloneNode(true); d.querySelectorAll('input').forEach(i=>i.value=''); var l=d.querySelector('.ppick-list'); if(l){ l.innerHTML=''; l.style.display='none'; } document.getElementById('lines').appendChild(d); }
+</script>
+{% endblock %}

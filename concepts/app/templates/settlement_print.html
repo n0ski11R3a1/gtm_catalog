@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="my"><head><meta charset="utf-8">
+<title>{{ st.code }} — Supplier Payment Invoice</title>
+<style>
+@page { size: A5 portrait; margin: 0; }
+body { font-family: sans-serif; font-size: 12px; color:#111; margin: 0; padding: 10mm; }
+h1 { font-size: 17px; margin: 0; }
+.head { border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 8px; }
+.head .title { text-align:center; font-size: 15px; font-weight: bold; margin-top: 4px; }
+.meta { display:flex; justify-content:space-between; margin-bottom:8px; }
+table { width:100%; border-collapse: collapse; }
+th, td { border-bottom: 1px solid #bbb; padding: 3px 4px; text-align: left; }
+td.n, th.n { text-align: right; }
+.tot td { border-top: 2px solid #111; font-weight: bold; }
+.sign { margin-top: 40px; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; }
+@media print { .noprint { display:none; } }
+.screenbar{margin:0 0 10px;font-family:sans-serif}.screenbar a,.screenbar button{display:inline-block;padding:6px 14px;border:1px solid #d1d5db;border-radius:999px;background:#fff;color:#374151;text-decoration:none;font-size:14px;cursor:pointer;margin-right:6px}@media print{.screenbar{display:none!important}}
+</style></head>
+<body>
+<div class="screenbar"><a href="{{ back_href or '/' }}">&#8592; {{ back_label_my or 'ပင်မ' }}</a><button type="button" onclick="window.close()">&#10006; {{ t('ဒီ tab ပိတ်ရန်') }}</button></div>
+
+<div class="head">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div><h1>{{ biz.name }}</h1><div>{{ biz.address }}</div>{% if biz.phones %}<div>☎ {{ biz.phones }}</div>{% endif %}</div>
+    <div>Ref: ရှင်းရန် <b>{{ st.code }}</b><br>Batch: {{ 'အမှာ' if batch_code.startswith('ORQ') else 'အဝယ်' }} {{ batch_code }}</div>
+  </div>
+  <div class="title">Supplier Payment Invoice</div>
+</div>
+<div class="meta">
+  <div>Supplier Name: <b>{{ st.supplier or '' }}</b><br>Address: ........................<br>Invoice Maker: {{ st.byname or '' }}</div>
+  <div>Date: {{ (st.sent_at or st.created_at)[:10] }}{% if st.status=='paid' %}<br>Paid: {{ st.paid_at }} ({{ {'cash': 'ငွေသား', 'digital': 'Digital Pay', 'bank': 'Banking'}.get(st.pay_method or '', st.pay_method or '') }}){% endif %}</div>
+</div>
+<table>
+<thead><tr><th>No.</th><th>Product Detail</th>{% if show_actual %}<th class="n">Price</th>{% endif %}<th class="n">Qty</th><th>Unit</th>{% if show_actual %}<th class="n">Amount</th>{% endif %}</tr></thead>
+<tbody>
+{% for i in lines %}
+<tr><td>{{ loop.index }}</td><td>{{ i.name }}</td>{% if show_actual %}<td class="n">{{ fmt_money(i.actual) if i.actual else '—' }}</td>{% endif %}<td class="n">{{ i.qty|int if i.qty==i.qty|int else i.qty }}</td><td>{{ i.unit or '' }}</td>{% if show_actual %}<td class="n">{{ fmt_money(i.amount) if i.amount is not none else '—' }}</td>{% endif %}</tr>
+{% endfor %}
+{% if rets %}
+<tr><td colspan="{{ 6 if show_actual else 4 }}" style="padding-top:8px;"><b>Supplier ပြန်ပို့ (Return)</b></td></tr>
+{% for r in rets %}
+<tr><td>{{ loop.index }}</td><td>{{ r.name }}{{ ' — ' + r.reason if r.reason else '' }}</td>{% if show_actual %}<td class="n">{{ fmt_money(r.cost) }}</td>{% endif %}<td class="n">{{ r.qty|int if r.qty==r.qty|int else r.qty }}</td><td>{{ r.unit or '' }}</td>{% if show_actual %}<td class="n">- {{ fmt_money(r.qty * r.cost) }}</td>{% endif %}</tr>
+{% endfor %}
+{% endif %}
+<tr><td colspan="{{ 5 if show_actual else 3 }}">Amt Total:</td><td class="n">{{ fmt_money(gross) }}</td></tr>
+{% if rv %}<tr><td colspan="{{ 5 if show_actual else 3 }}">Return:</td><td class="n">- {{ fmt_money(rv) }}</td></tr>{% endif %}
+{% if st.adjust %}<tr><td colspan="{{ 5 if show_actual else 3 }}">Discount{{ ' (' + st.adjust_note + ')' if st.adjust_note else '' }}:</td><td class="n">{{ fmt_money(st.adjust) }}</td></tr>{% endif %}
+<tr class="tot"><td colspan="{{ 5 if show_actual else 3 }}">Total:</td><td class="n">{{ fmt_money(final) }}</td></tr>
+</tbody>
+</table>
+<div class="sign">Cash Receiver Sign: ....................................</div>
+<button class="noprint" onclick="window.print()">🖨️ Print / PDF</button>
+</body></html>

@@ -1,0 +1,30 @@
+{% extends 'base.html' %}{% block title %}Stock Count — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🔢 Stock စစ်ဆေး') }} #{{ c.id }} — {{ c.cdate }}</h1>
+<p>{% if c.status == 'approved' %}<span class="pill green">{{ t('အတည်ပြုပြီး') }}</span> {{ t('လုပ်သူ') }}: {{ c.aname or '' }} · {{ (c.approved_at or '')[:16] }}{% else %}<span class="pill amber">{{ t('ရေးနေဆဲ') }}</span>{% endif %}
+· {{ t('စသူ') }}: {{ c.byname or '' }}</p>
+<p class="hint">{{ t('အရေအတွက် တွေ အားလုံး အ သေး ဆုံး ယူနစ် (ဥပမာ အလိပ်) နဲ့ ရေးပါ။ ထုပ်ကြီး နဲ့ အလိပ် က မိသားစု ၁ ခု ပဲ — တစ် ကြိမ် ပဲ ရေး။') }}</p>
+{% if can_edit %}<form method="post" action="/stock-count/{{ c.id }}/save">{% endif %}
+<div class="table-scroll"><table>
+<tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th style="text-align:right">{{ t('စာရင်း အရ') }}</th><th>{{ t('လက်တွေ့ ရေတွက်') }}</th><th style="text-align:right">{{ t('ကွာ') }}</th></tr>
+{% for x in lines %}
+<tr><td>{{ x.l.sku }}</td><td>{{ x.l.name }} <small class="muted">{{ x.l.unit or '' }}</small>{% for m in x.members %}<br><small class="muted">↳ {{ m.sku }} {{ m.name }} ({{ m.unit or '' }}) — {{ t('ဒီ မိသားစု ထဲ ပါဝင်၊ တွဲ ပြီး ရေး ရမယ်') }}</small>{% endfor %}</td>
+<td class="num">{{ '%g'|format(x.book) }}</td>
+<td>{% if can_edit %}<input name="cnt_{{ x.l.id }}" type="number" step="any" min="0" value="{{ '%g'|format(x.l.counted) if x.l.counted is not none else '' }}" style="width:110px">{% else %}{{ '%g'|format(x.l.counted) if x.l.counted is not none else '—' }}{% endif %}</td>
+<td class="num">{% if x.var is not none %}{% if x.var > 0 %}<span style="color:#2e7d32">+{{ '%g'|format(x.var) }}</span>{% elif x.var < 0 %}<span style="color:#c62828">{{ '%g'|format(x.var) }}</span>{% else %}0{% endif %}{% else %}—{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% if can_edit %}
+<button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>
+</form>
+{% if can('stock_count.approve') %}
+<form method="post" action="/stock-count/{{ c.id }}/approve" class="card" onsubmit="return confirm('{{ t('အတည်ပြု ရင် ကွာ တဲ့ အရေအတွက် တွေ ကို stock စာရင်း မှာ ညှိ မယ်။ သေချာလား?') }}')">
+  <p class="hint">{{ t('အတည်ပြု ပြီးရင် ပြန် ပြင်လို့ မရ တော့ဘူး။') }}</p>
+  <button class="btn" type="submit">{{ t('အတည်ပြု + စာရင်း ညှိမယ်') }}</button>
+</form>
+{% endif %}
+{% if can('stock_count.approve') or c.created_by == me.id %}
+<form method="post" action="/stock-count/{{ c.id }}/delete" onsubmit="return confirm('{{ t('ဖျက်မှာ သေချာလား?') }}')"><button type="submit">{{ t('ဒီ ရေတွက် ကို ဖျက်မယ်') }}</button></form>
+{% endif %}
+{% endif %}
+{% endblock %}

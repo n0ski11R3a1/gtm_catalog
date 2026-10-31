@@ -1,0 +1,87 @@
+{% extends 'base.html' %}{% block title %}{{ t('အန္တရာယ် စာရင်း') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('⚠️ အန္တရာယ် စာရင်း (အရင်း တက်သွားတဲ့ ဘောက်ချာများ)') }}</h1>
+<p class="muted">{{ t('မပို့ရသေးတဲ့ ဘောက်ချာတွေထဲက ပစ္စည်းရဲ့ လက်ရှိ Actual Base က ရောင်းချိန် မှတ်ထားတဲ့ အရင်းထက် တက်သွားတဲ့ လိုင်းတွေကို စုပြထားတာပါ။') }}<br>
+{{ t('🔴 အရှုံး သေချာ') }}<b>{{ t(' = အသားတင် ရောင်းဈေးက လက်ရှိ အရင်းအောက် ရောက်နေတယ် (ဒီနေ့ ဝယ်ဈေးနဲ့ဆို ရှုံးမယ်) ·') }}</b>
+{{ t('🟡 အမြတ် ကျုံ့') }}<b>{{ t(' = အရင်းအောက်တော့ မဟုတ်ပေမယ့် အမြတ် လျော့သွားပြီ။') }}</b><br>
+{{ t('ကိုင်တွယ်နည်း: ဘောက်ချာကို ဖွင့် → ဈေးသစ် ပြင် / Line Discount ပေး (ညနေ မ print ခင် ပြင်တာ အကောင်းဆုံး)။') }}</p>
+<form method="get" class="row">
+  <label>{{ t('ရက်') }} <input type="date" name="day" value="{{ day }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+  <a class="btn alt" href="/at-risk">{{ t('ဒီနေ့') }}</a>
+  <a class="btn alt" href="/at-risk?all=1">{{ t('မပို့ရသေး အကုန်') }}</a>
+</form>
+{% if orders %}
+<div class="grid-cards">
+  <div class="card"><div class="muted">{{ t('🔴 အရှုံး သေချာ စုစုပေါင်း') }}</div><h2 style="color:#b91c1c">{{ fmt_money(tot_red) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('🟡 အမြတ် ကျုံ့ စုစုပေါင်း') }}</div><h2 style="color:#b45309">{{ fmt_money(tot_yellow) }}</h2></div>
+  <div class="card"><div class="muted">{{ t('ထိခိုက်တဲ့ ဘောက်ချာ') }}</div><h2>{{ t('{n} စောင်', n=orders|length) }}</h2></div>
+</div>
+{% for x in orders %}
+<div class="card">
+  <p><a href="/orders/{{ x.o.oid }}"><b>{{ x.o.code }}</b></a> · {{ x.o.outlet }} · {{ x.o.odate }} · {{ x.o.repname or '' }}
+  {% if x.o.printed_at %} · {{ t('🖨️ Print ထုတ်ပြီး') }}{% endif %}<br>
+  {% if x.red %}{{ t('🔴 အရှုံး:') }} <b style="color:#b91c1c">{{ fmt_money(x.red) }}</b>{% endif %}
+  {% if x.yel %} {{ t('🟡 အမြတ် ကျုံ့:') }} <b style="color:#b45309">{{ fmt_money(x.yel) }}</b>{% endif %}</p>
+  <form method="post" action="/at-risk/mark" style="margin:6px 0"><input type="hidden" name="order_id" value="{{ x.o.oid }}"><input type="hidden" name="day" value="{{ day }}">{% if show_all %}<input type="hidden" name="all" value="1">{% endif %}<button class="btn alt" type="submit">{{ t('✓ ကိုင်တွယ်ပြီး မှတ်မယ်') }}</button> <span class="hint">{{ t('ပြင်ပြီး/ညှိပြီးရင် နှိပ်ပါ — ဒီ အရင်းအဆင့်နဲ့ဆို စာရင်းက ပျောက်မယ်၊ အရင်း ထပ်တက်မှ ပြန်ပေါ်မယ်') }}</span></form>
+  <table>
+  <tr><th>{{ t('ပစ္စည်း') }}</th><th style="text-align:right">{{ t('အရေအတွက်') }}</th><th style="text-align:right">{{ t('အသားတင် ရောင်းဈေး (၁ ခု)') }}</th><th style="text-align:right">{{ t('ရောင်းချိန် အရင်း') }}</th><th style="text-align:right">{{ t('လက်ရှိ Actual') }}</th><th>{{ t('အခြေအနေ') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th></tr>
+  {% for l in x.lines %}
+  <tr><td>{{ l.pname }} <span class="muted">{{ l.sku }}</span></td>
+  <td class="num">{{ '%g'|format(l.qty) }}</td>
+  <td class="num">{{ fmt_money(l.net_unit) }}</td>
+  <td class="num">{{ fmt_money(l.snap) }}</td>
+  <td class="num"><b>{{ fmt_money(l.cur) }}</b></td>
+  <td>{% if l.tier=='red' %}{{ t('🔴 အရှုံး သေချာ') }}{% else %}{{ t('🟡 အမြတ် ကျုံ့') }}{% endif %}</td>
+  <td class="num"><b>{{ fmt_money(l.amt) }}</b></td></tr>
+  {% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% elif not handled %}
+<p class="muted">{{ t('✅ ဒီ ရွေးထားတဲ့ အပိုင်းမှာ အရင်း တက်လို့ ထိခိုက်တဲ့ ဘောက်ချာ မရှိဘူး။') }}</p>
+{% endif %}
+{% if handled %}
+<h3>{{ t('✓ ကိုင်တွယ်ပြီး မှတ်တမ်း') }}</h3>
+{% for h in handled %}
+<div class="card">
+  <p><a href="/orders/{{ h.o.oid }}"><b>{{ h.o.code }}</b></a> · {{ h.o.outlet }} · {{ h.o.odate }} · {{ t('မှတ်သူ') }}: {{ h.marker or '' }} · {{ h.marked_at[:16] if h.marked_at else '' }}</p>
+  <p class="muted">{% for it in h.lines %}{{ it.pname }} {{ t('(မှတ်ချိန် Actual: {amt})', amt=fmt_money(it.cur_act)) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  <form method="post" action="/at-risk/unmark"><input type="hidden" name="order_id" value="{{ h.o.oid }}"><input type="hidden" name="day" value="{{ day }}">{% if show_all %}<input type="hidden" name="all" value="1">{% endif %}<button class="btn alt" type="submit">{{ t('↩ မှတ်တာ ပြန်ဖျက်') }}</button></form>
+</div>
+{% endfor %}
+{% endif %}
+<h2 id="price-review" style="margin-top:30px">{{ t('ဈေး ပြန် စစ် ရန် — အရင်း ပြောင်း သွား တဲ့ ပစ္စည်း တွေ') }}</h2>
+<p class="muted">{{ t('ရောင်းဈေး နောက်ဆုံး သတ်မှတ်ပြီးနောက် အရင်း (Actual) ပြောင်းသွားတဲ့ ပစ္စည်း တွေ ပါ။ ရောင်းဈေး ပြင် / မပြင် ဆုံးဖြတ် ဖို့ ကြည့်ရန် သက်သက် ပါ — ဈေး ကို အလိုအလျောက် မပြောင်း ပါ ဘူး။') }}</p>
+{% if review %}
+<div class="card">
+<div class="table-scroll"><table>
+<tr><th>{{ t('ပစ္စည်း') }}</th><th style="text-align:right">{{ t('ရောင်းဈေး သတ်မှတ်ချိန် အရင်း') }}</th><th style="text-align:right">{{ t('လက်ရှိ Actual') }}</th><th style="text-align:right">{{ t('ပြောင်းလဲမှု') }}</th><th>{{ t('အရင်း ပြောင်းတဲ့ ရက်') }}</th><th style="text-align:right">{{ t('လက်ရှိ လက်လီ') }}</th><th style="text-align:right">{{ t('အမြတ် % (လက်လီ)') }}</th><th style="text-align:right">{{ t('လက်ရှိ လက်ကား') }}</th><th style="text-align:right">{{ t('အမြတ် % (လက်ကား)') }}</th><th></th></tr>
+{% for e in review %}
+<tr><td>{{ e.p.name }} <span class="muted">{{ e.p.sku }}</span></td>
+<td class="num">{{ fmt_money(e.old_act) }}</td>
+<td class="num"><b>{{ fmt_money(e.cur) }}</b></td>
+<td class="num">{{ '+' if e.chg > 0 else '' }}{{ fmt_money(e.chg) }}{% if e.pct is not none %} ({{ '+' if e.pct > 0 else '' }}{{ '%.1f'|format(e.pct) }}%){% endif %}</td>
+<td>{{ e.chg_date }}</td>
+<td class="num">{{ fmt_money(e.p.retail) }}</td>
+<td class="num">{% if e.rm is none %}—{% elif e.rm < 0 %}<b style="color:#b91c1c">{{ '%.1f'|format(e.rm) }}%</b>{% else %}{{ '%.1f'|format(e.rm) }}%{% endif %}</td>
+<td class="num">{{ fmt_money(e.p.wholesale) }}</td>
+<td class="num">{% if e.wm is none %}—{% elif e.wm < 0 %}<b style="color:#b91c1c">{{ '%.1f'|format(e.wm) }}%</b>{% else %}{{ '%.1f'|format(e.wm) }}%{% endif %}</td>
+<td><form method="post" action="/at-risk/review-mark"><input type="hidden" name="product_id" value="{{ e.p.id }}"><input type="hidden" name="day" value="{{ day }}">{% if show_all %}<input type="hidden" name="all" value="1">{% endif %}<button class="btn alt" type="submit">{{ t('✓ စစ် ပြီး') }}</button></form></td></tr>
+{% endfor %}
+</table></div>
+<p class="hint">{{ t('စစ်ပြီးရင် နှိပ်ပါ — အရင်း ထပ်ပြောင်းမှ ပြန်ပေါ်မယ်') }}</p>
+</div>
+{% else %}
+<p class="muted">{{ t('✅ ဈေး ပြန် စစ် ရန် ကျန် ပစ္စည်း မရှိဘူး။') }}</p>
+{% endif %}
+{% if review_handled %}
+<h3>{{ t('✓ စစ် ပြီး မှတ်တမ်း') }}</h3>
+{% for e in review_handled %}
+<div class="card">
+  <p><b>{{ e.p.name }}</b> <span class="muted">{{ e.p.sku }}</span> · {{ t('မှတ်သူ') }}: {{ e.marker or '' }} · {{ e.mark.marked_at[:16] if e.mark.marked_at else '' }} · {{ t('(မှတ်ချိန် Actual: {amt})', amt=fmt_money(e.mark.marked_act)) }}</p>
+  <form method="post" action="/at-risk/review-unmark"><input type="hidden" name="product_id" value="{{ e.p.id }}"><input type="hidden" name="day" value="{{ day }}">{% if show_all %}<input type="hidden" name="all" value="1">{% endif %}<button class="btn alt" type="submit">{{ t('↩ မှတ်တာ ပြန်ဖျက်') }}</button></form>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

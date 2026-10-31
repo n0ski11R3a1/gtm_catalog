@@ -1,0 +1,29 @@
+{% extends 'base.html' %}{% block title %}Tax — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🧾 အခွန် အစီရင်ခံ') }}</h1>
+<p class="hint">{{ t('ဒီ စာမျက်နှာ က အစီရင်ခံ အတွက် ပဲ — ဘောက်ချာ တွေ မှာ အခွန် ထပ် မတင် ဘူး၊ ဈေး လည်း မပြောင်း ဘူး။ ပို့ပြီး ဘောက်ချာ တွေ ရဲ့ ရောင်းရငွေ ကို ခု အခွန် နှုန်း နဲ့ တွက် ပြ ထား တာ။') }}</p>
+<form method="get" class="card" style="display:flex;gap:.5rem;align-items:end;flex-wrap:wrap">
+  <label>{{ t('လ ရွေးရန်') }} <input type="month" name="m" value="{{ m }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+</form>
+<div class="card">
+  <p style="margin:.2rem 0">{{ t('ဒီလ ရောင်းရငွေ (ပို့ပြီး)') }}: <b>{{ fmt_money(total) }} Ks</b><br>
+  {{ t('အခွန် နှုန်း') }}: <b>{{ '%g'|format(rate) }}%</b><br>
+  {{ t('အခွန် ပမာဏ (ခန့်မှန်း)') }}: <b>{{ fmt_money(tax_total) }} Ks</b></p>
+  {% if can('tax.rate_set') %}
+  <form method="post" action="/tax/rate" style="display:flex;gap:.5rem;align-items:end;flex-wrap:wrap;margin-top:.5rem">
+    <input type="hidden" name="m" value="{{ m }}">
+    <label>{{ t('အခွန် နှုန်း % (Owner ပဲ ပြင်နိုင်)') }} <input name="rate" value="{{ '%g'|format(rate) }}" inputmode="decimal" style="width:90px"></label>
+    <button class="btn alt" type="submit">{{ t('သိမ်းမယ်') }}</button>
+  </form>
+  {% endif %}
+</div>
+{% if rows %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('ရက်') }}</th><th style="text-align:right">{{ t('ရောင်းရငွေ') }}</th><th style="text-align:right">{{ t('အခွန်') }}</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.day }}</td><td class="num">{{ fmt_money(r.sales) }} Ks</td><td class="num">{{ fmt_money(r.tax) }} Ks</td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="card">{{ t('ဒီလ ပို့ပြီး ဘောက်ချာ မရှိသေးဘူး။') }}</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Delivery operations{% endblock %}
+{% block content %}
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Delivery operations</h2>
+        <p class="text-muted mb-0">Assign open orders to reps with mobile sign-in. Delivery confirmation posts stock issues.</p>
+    </div>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary"><i class="bi bi-speedometer2"></i> Dashboard</a>
+</div>
+
+<div class="alert alert-info">
+    Each delivery can record delivered quantities. Only those quantities are deducted from stock; remaining quantities stay assigned. Receive or count stock before recording a delivery.
+</div>
+
+<section class="dashboard-card mb-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h3 class="h5 fw-bold mb-0">Orders awaiting delivery</h3>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_deliveries', date=selected_date) }}#handovers">Review cash handovers</a>
+    </div>
+    {% if orders %}
+    <div class="table-responsive">
+        <table class="table align-middle product-table mb-0">
+            <thead><tr><th>Order</th><th>Outlet</th><th>Area</th><th>Submitted</th><th class="text-end">Retail total</th><th>Assigned rep</th><th>Assignment</th></tr></thead>
+            <tbody>
+            {% for order in orders %}
+                <tr>
+                    <td><a href="{{ url_for('admin_order_detail', order_id=order.id) }}">#{{ order.id }}</a></td>
+                    <td class="outlet-name" translate="no">{{ order.outlet_name or '—' }}</td>
+                    <td translate="no">{{ order.area or '—' }}</td>
+                    <td>{{ order.created_at|sqlitedatetime }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(order.total_retail) }} Ks</td>
+                    <td>{% if order.delivery_name %}<span class="rep-name" translate="no">{{ order.delivery_code }} ({{ order.delivery_name }})</span>{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td>
+                    <td>
+                        {% if reps %}
+                        <form method="post" action="{{ url_for('admin_delivery_assign', order_id=order.id) }}" class="d-flex gap-2">
+                            <select class="form-select form-select-sm" name="rep_id" required aria-label="Delivery rep for order {{ order.id }}">
+                                <option value="">Choose rep</option>
+                                {% for rep in reps %}
+                                <option value="{{ rep.id }}" translate="no" {% if order.delivery_rep_id == rep.id %}selected{% endif %}>{{ rep.code }} ({{ rep.name }})</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-sm btn-primary" type="submit">{% if order.delivery_rep_id %}Reassign{% else %}Assign{% endif %}</button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted small">Configure mobile sign-in for a rep first.</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-muted text-center py-4">No open orders are awaiting delivery.</div>
+    {% endif %}
+</section>
+
+<section class="dashboard-card" id="handovers">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div><h3 class="h5 fw-bold mb-1">Cash handovers</h3><p class="small text-muted mb-0">Verify the cash physically received. Differences remain visible in the record.</p></div>
+        <form method="get" class="d-flex gap-2">
+            <input type="date" name="date" class="form-control form-control-sm" value="{{ selected_date }}" aria-label="Handover date">
+            <button type="submit" class="btn btn-sm btn-outline-primary">View</button>
+        </form>
+    </div>
+    {% if handovers %}
+    <div class="table-responsive">
+        <table class="table align-middle product-table mb-0">
+            <thead><tr><th>Rep</th><th>Submitted</th><th class="text-end">Expected cash</th><th class="text-end">Rep declared</th><th class="text-end">Cash received</th><th>Status / action</th></tr></thead>
+            <tbody>
+            {% for handover in handovers %}
+                <tr>
+                    <td>{{ handover.code }} ({{ handover.rep_name }})</td>
+                    <td>{{ handover.created_at|sqlitedatetime }}{% if handover.note %}<small class="d-block text-muted">{{ handover.note }}</small>{% endif %}</td>
+                    <td class="text-end">{{ "{:,.2f}".format(handover.expected_cash) }} Ks</td>
+                    <td class="text-end">{{ "{:,.2f}".format(handover.declared_cash) }} Ks</td>
+                    <td class="text-end">{% if handover.received_cash is not none %}{{ "{:,.2f}".format(handover.received_cash) }} Ks{% else %}—{% endif %}</td>
+                    <td>
+                        {% if handover.status == 'pending' %}
+                        <form method="post" action="{{ url_for('admin_delivery_handover_verify', handover_id=handover.id) }}" class="d-flex gap-2">
+                            <input type="hidden" name="date" value="{{ selected_date }}">
+                            <input class="form-control form-control-sm" type="number" name="received_cash" min="0" step="0.01" value="{{ '%.2f'|format(handover.declared_cash) }}" required aria-label="Cash physically received">
+                            <button class="btn btn-sm btn-success" type="submit">Verify</button>
+                        </form>
+                        {% else %}
+                        <span class="badge bg-success">Verified</span>
+                        {% if handover.verified_by %}<small class="d-block text-muted">by {{ handover.verified_by }}</small>{% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-muted text-center py-4">No cash handovers for {{ selected_date }}.</div>
+    {% endif %}
+</section>
+{% endblock %}

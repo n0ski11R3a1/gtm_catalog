@@ -1,0 +1,14 @@
+{% extends 'base.html' %}{% from '_denom.html' import denom_counter %}{% block title %}{{ t('ရွက်ရေ ဖြည့်') }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('ရွက်ရေ ဖြည့်') }}{% if old_fmt %} / {{ t('ရွက်ရေ ပြင်') }}{% endif %}</h1>
+<div class="card">
+<p style="margin:.2rem 0">{{ label }}<br>
+{{ t('ပမာဏ (Ks)') }}: <b>{{ fmt_money(amount) }} Ks</b><br>
+{% if old_fmt %}{{ t('လက်ရှိ ရွက်ရေ') }}: {{ old_fmt }}{% else %}<span class="hint">{{ t('ရွက်ရေ မမှတ်') }}</span>{% endif %}</p>
+<p class="hint">{{ t('အမျိုးအစား ပေါင်းလဒ် ပမာဏ နဲ့ ကိုက်မှ သိမ်း လို့ ရမယ် — မကိုက် ရင် မသိမ်း ဘူး။ ငွေ ဂဏန်း ကို ဒါ က မပြောင်း ဘူး။') }}</p>
+<form method="post" action="/cashbox/denom/{{ src }}/{{ sid }}">
+  {{ denom_counter('df_', values=old_counts) }}
+  <button class="btn" type="submit">{{ t('မှတ်မယ်') }}</button>
+</form>
+</div>
+{% endblock %}

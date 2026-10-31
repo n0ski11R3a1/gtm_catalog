@@ -110,8 +110,8 @@
                 {% for o in orders %}
                 <tr>
                     <td class="text-muted">#{{ o['id'] }}</td>
-                    <td class="fw-semibold">{{ o['rep_name'] }}</td>
-                    <td>{{ o['outlet_name'] }}</td>
+                    <td class="fw-semibold rep-name" translate="no">{{ o['rep_name'] }}</td>
+                    <td class="outlet-name" translate="no">{% if o.get('outlet_id') %}<a href="{{ url_for('admin_outlet_detail', outlet_id=o['outlet_id']) }}">{{ o['outlet_name'] }}</a>{% else %}{{ o['outlet_name'] }}{% endif %}</td>
                     <td class="text-muted">{{ o['created_at']|sqlitedatetime }}</td>
                     <td class="text-end">{{ o['item_count'] }}</td>
                     <td class="text-end">{{ "{:,.0f}".format(o['total_retail']) }} Ks</td>

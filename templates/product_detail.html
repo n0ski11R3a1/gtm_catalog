@@ -24,7 +24,7 @@
 
         <div class="detail-image-wrap">
             {% if image_path %}
-            <img src="{{ url_for('static', filename=image_path) }}" alt="{{ p['Product Name'] }}" class="detail-image">
+            <img src="{{ url_for('static', filename=image_path) }}" alt="{{ p['Product Name'] }}" class="detail-image" translate="no">
             {% else %}
             <div class="detail-image-placeholder">
                 <i class="bi bi-image"></i>
@@ -36,7 +36,7 @@
         <div class="tag-body">
 
             <div class="card-top">
-                <span class="sku">
+                <span class="sku" translate="no">
                     {{ p['Product ID'] }}
                 </span>
                 <span class="badge {% if p['Status']|lower == 'out of stock' %}badge-oos{% else %}badge-instock{% endif %}">
@@ -44,10 +44,10 @@
                 </span>
             </div>
 
-            <div class="detail-cat-chip">{{ p['Category'] }}</div>
+            <div class="detail-cat-chip" translate="no">{{ p['Category'] }}</div>
 
-             <div class="item-title detail-title">{{ p['Product Name'] }}</div>
-             <div class="cat-tag">{{ p['Unit'] }} {% if p['UPC'] > 0 %}(Pack: {{ p['UPC'] }}){% endif %}</div>
+             <div class="item-title detail-title" translate="no">{{ p['Product Name'] }}</div>
+             <div class="cat-tag" translate="no">{{ p['Unit'] }} {% if p['UPC'] > 0 %}(Pack: {{ p['UPC'] }}){% endif %}</div>
 
                          {% if p['last_price_change'] %}
                          <span class="price-change-badge"
@@ -62,7 +62,7 @@
 
             <div class="detail-description">
                 {% if p['Description'] %}
-                    {{ p['Description'] }}
+                    <span translate="no">{{ p['Description'] }}</span>
                 {% else %}
                     <span class="detail-description-empty">ဤကုန်ပစ္စည်းအတွက် အသေးစိတ်ဖော်ပြချက် မရှိသေးပါ။</span>
                 {% endif %}

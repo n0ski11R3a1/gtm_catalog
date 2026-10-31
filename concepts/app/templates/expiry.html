@@ -1,0 +1,20 @@
+{% extends 'base.html' %}{% from '_tabs.html' import inv_tabs %}{% block title %}Expiry — GTM ERP{% endblock %}
+{% block body %}
+{{ inv_tabs('exp', perms) }}
+<h1>{{ t('⏳ သက်တမ်း နီးနေတာ') }}</h1>
+<p class="hint">{{ t('သက်တမ်း ကုန်ဖို့ ရက် {n} အတွင်း ကျန် တာ နဲ့ ကုန် သွား ပြီ သား တွေ ကို ပြ ထား တာ။ အသုတ် (batch) တွေ ကို အဝယ် မှတ်တမ်း အတိုင်း လိုက် ထား တာ — ပစ္စည်း ၁ မျိုး ရဲ့ စုစုပေါင်း stock ကို ဘေး မှာ တွဲ ပြထား တယ်။', n=window) }}</p>
+{% if rows %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('အနီးဆုံး သက်တမ်း ကုန်ရက်') }}</th><th>{{ t('ကျန် ရက်') }}</th><th>{{ t('အသုတ် များ') }}</th><th style="text-align:right">{{ t('Stock စုစုပေါင်း') }}</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.sku }} {{ r.name }} <small class="muted">{{ r.unit or '' }}</small></td>
+<td><b>{{ r.batches[0].exp }}</b></td>
+<td>{% if r.batches[0].days < 0 %}<span class="pill" style="background:#fdecea;color:#c62828">{{ t('ကုန် သွား ပြီ — {n} ရက် ကျော်', n=-r.batches[0].days) }}</span>{% else %}<span class="pill amber">{{ t('{n} ရက် ကျန်', n=r.batches[0].days) }}</span>{% endif %}</td>
+<td>{% for b in r.batches %}<div>{{ b.exp }} · {{ '%g'|format(b.qty) }} ({{ b.pcode }} · {{ b.pdate }})</div>{% endfor %}</td>
+<td class="num">{{ '%g'|format(r.pool) }}</td></tr>
+{% endfor %}
+</table></div>
+{% else %}
+<p class="card">{{ t('သက်တမ်း နီး နေ တဲ့ ပစ္စည်း မရှိဘူး ✅') }}</p>
+{% endif %}
+{% endblock %}

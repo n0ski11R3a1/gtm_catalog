@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Stock count #{{ count.id }}{% endblock %}
+{% block content %}
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Stock count #{{ count.id }}</h2>
+        <p class="text-muted mb-0">{{ count.count_date }} · Started by {{ count.created_by or '—' }} · <span class="text-capitalize">{{ count.status }}</span></p>
+    </div>
+    <a href="{{ url_for('admin_stock_counts') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Count history</a>
+</div>
+
+{% if count.status == 'draft' %}
+<div class="alert alert-info">Enter the actual quantity for every product. Approval records only the difference between the latest book balance and the physical count in the immutable stock ledger.</div>
+{% else %}
+<div class="alert alert-success">Approved by {{ count.approved_by or '—' }}{% if count.approved_at %} on {{ count.approved_at|sqlitedatetime }}{% endif %}. This count is read-only.</div>
+{% endif %}
+
+<section class="dashboard-card">
+    {% if count.status == 'draft' %}<form method="post" action="{{ url_for('admin_stock_count_save', count_id=count.id) }}">{% endif %}
+    <div class="table-responsive">
+        <table class="table align-middle product-table mb-0">
+            <thead><tr><th>Product</th><th class="text-end">Book at start</th><th class="text-end">Current book</th><th>Physical count</th><th class="text-end">Difference</th></tr></thead>
+            <tbody>
+            {% for line in lines %}
+                <tr>
+                    <td><span class="fw-semibold">{{ line.product_name }}</span><small class="d-block text-muted">{{ line.product_id }} · {{ line.unit }}</small></td>
+                    <td class="text-end">{{ '%g'|format(line.book_quantity) }}</td>
+                    <td class="text-end">{{ '%g'|format(line.current_quantity) }}</td>
+                    <td>{% if count.status == 'draft' %}<input class="form-control form-control-sm" style="max-width:180px" type="number" min="0" step="any" name="count_{{ line.id }}" value="{{ '%g'|format(line.counted_quantity) if line.counted_quantity is not none else '' }}" aria-label="Physical count for {{ line.product_name }}">{% else %}{{ '%g'|format(line.counted_quantity) if line.counted_quantity is not none else '—' }}{% endif %}</td>
+                    <td class="text-end">{% if line.counted_quantity is not none %}<span class="{% if line.counted_quantity > line.current_quantity %}text-success{% elif line.counted_quantity < line.current_quantity %}text-danger{% endif %}">{{ '%+g'|format(line.counted_quantity - line.current_quantity) }}</span>{% else %}—{% endif %}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="5" class="text-center text-muted py-4">There are no products in this count.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if count.status == 'draft' %}
+    <div class="d-flex justify-content-between flex-wrap gap-2 mt-3">
+        <button class="btn btn-outline-primary" type="submit"><i class="bi bi-save"></i> Save physical counts</button>
+    </form>
+    <div class="d-flex gap-2">
+        <form method="post" action="{{ url_for('admin_stock_count_approve', count_id=count.id) }}" onsubmit="return confirm('Approval will write stock adjustments to the ledger. Continue?')">
+            <button class="btn btn-success" type="submit"><i class="bi bi-check2-circle"></i> Approve and reconcile</button>
+        </form>
+        <form method="post" action="{{ url_for('admin_stock_count_delete', count_id=count.id) }}" onsubmit="return confirm('Delete this draft count?')">
+            <button class="btn btn-outline-danger" type="submit">Delete draft</button>
+        </form>
+    </div>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

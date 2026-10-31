@@ -1,0 +1,74 @@
+{% extends 'base.html' %}{% block title %}{{ olabel }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>🏪 {{ olabel }}{% if o.lat %} <a class="btn alt" href="https://www.google.com/maps?q={{ o.lat }},{{ o.lng }}" target="_blank">{{ t('📍 Map ဖွင့်ရန်') }}</a>{% endif %}</h1>
+<div class="card">
+  <p>{{ t('ရပ်ကွက်') }}: <b>{{ o.area or '—' }}</b>{% if o.note %} · {{ t('ခွဲခြား မှတ်ချက်') }}: <b>{{ o.note }}</b>{% endif %} · {{ t('ဆိုင် အမျိုးအစား') }}: <b>{{ st_labels.get(o.shop_type) or t('မသတ်မှတ်ရသေး') }}</b> · {{ t('စတွေ့') }}: <b>{{ o.first_seen or '—' }}</b>{% if creator %} ({{ creator }}){% endif %} ·
+  GPS: {% if o.lat %}{{ '%.5f'|format(o.lat) }}, {{ '%.5f'|format(o.lng) }} {{ t('(မှတ်တမ်း {n} ခု ပျမ်းမျှ)', n=o.gps_n) }}{% else %}<span class="muted">{{ t('မမှတ်ရသေး — order နဲ့ အတူ GPS ဝင်လာရင် အလိုလို မှတ်မယ်') }}</span>{% endif %}</p>
+  <p>{{ t('ဝယ်ဖူး စုစုပေါင်း') }}: <b>{{ fmt_money(total_all) }}</b> · {{ t('ပေးပြီး') }}: <b>{{ fmt_money(recv_all) }}</b> ·
+  {{ t('ကျန်ငွေ (Credit)') }}: {% if bal_all > 0.5 %}<b style="color:#b45309">{{ fmt_money(bal_all) }}</b>{% if oldest %} {{ t('— အကြာဆုံး: {d} ကတည်းက ({n} ရက်)', d=oldest, n=days) }}{% endif %}{% else %}<b>{{ t('မရှိ') }}</b>{% endif %}</p>
+  {% if exchanges %}<p>🔁 <span class="pill green">{{ t('ကုန် လဲ ပြီး သား') }}</span> {% for x in exchanges %}{{ x.edate }} · {{ x.sku }} {{ x.pname }} × {{ '%g'|format(x.qty) }}{% if not loop.last %} / {% endif %}{% endfor %}</p>{% endif %}
+  <form method="post" action="/outlets/{{ o.id }}/edit" class="row">
+    <label>{{ t('နာမည်') }} <input name="name" value="{{ o.name }}" required></label>
+    <label>{{ t('ရပ်ကွက်') }} <input name="area" value="{{ o.area or '' }}"></label>
+    <label>{{ t('ခွဲခြား မှတ်ချက်') }} <input name="note" value="{{ o.note or '' }}" placeholder="{{ t('ဥပမာ — ဈေး နား') }}"></label>
+    <label>{{ t('ဆိုင် အမျိုးအစား') }} <select name="shop_type">
+      <option value="" {% if not o.shop_type %}selected{% endif %}>{{ t('မသတ်မှတ်ရသေး') }}</option>
+      {% for k, lbl in shop_types %}<option value="{{ k }}" {% if o.shop_type == k %}selected{% endif %}>{{ t(lbl) }}</option>{% endfor %}
+    </select></label>
+    <label>{{ t('အကြွေး ကန့်သတ် (Ks)') }} <input name="credit_limit" type="number" step="any" min="0" value="{{ o.credit_limit if o.credit_limit is not none else '' }}" placeholder="{{ t('မထားရင် ဗလာ') }}"></label>
+    <button class="btn" type="submit">{{ t('ပြင်မယ်') }}</button>
+  </form>
+  <p class="hint">{{ t('အကြွေး ကန့်သတ်: ဆိုင်ရဲ့ ကျန်ငွေ ဒီ ပမာဏ ရောက်ရင် သတိ ပေးမယ်။ ဗလာ ထားရင် ကန့်သတ် မရှိဘူး။') }}</p>
+  <p class="hint">{{ t('နာမည် ပြင်ရင် ဒီ ဆိုင်ရဲ့ ဘောက်ချာ အားလုံးပါ လိုက် ပြောင်းတယ်။') }}</p>
+  <p class="hint">{{ t('ခွဲခြား မှတ်ချက်: နာမည် တူ ဆိုင် နှစ်ဆိုင် ရှိရင် ခွဲခြား သိရအောင် ရေးပါ (ဥပမာ — ဈေး နား)') }}</p>
+  <p style="margin-bottom:4px">{{ t('အခြား အရေး') }}: {% for a in aliases %}<span class="pill blue">{{ a.alias }}</span> <form method="post" action="/outlets/{{ o.id }}/alias-del" style="display:inline"><input type="hidden" name="alias_id" value="{{ a.id }}"><button class="btn alt" type="submit" style="padding:0 6px">×</button></form> {% endfor %}{% if not aliases %}<span class="muted">—</span>{% endif %}</p>
+  <form method="post" action="/outlets/{{ o.id }}/alias-add" class="row">
+    <label>{{ t('အခြား အရေး ထည့်') }} <input name="alias" placeholder="{{ t('ဥပမာ — Sut') }}"></label>
+    <button class="btn alt" type="submit">{{ t('ထည့်မယ်') }}</button>
+  </form>
+  <p class="hint">{{ t('ဆိုင် နာမည် ကို အခြား အရေး/ဘာသာ နဲ့ ရေးတာ ရှိရင် ဒီမှာ ထည့်ထားပါ — အဲ့ဒီ အရေး နဲ့ ရှာရင်လည်း ဒီ ဆိုင် ကိုပဲ တွေ့မယ်') }}</p>
+  <form method="post" action="/outlets/{{ o.id }}/pin-reset" class="row" onsubmit="return confirm('{{ t('ဆိုင် ပြောင်းသွားလို့ နေရာ အမှတ် အသစ် ပြန် မှတ်မလား? အမှတ် ဟောင်း ပျောက်သွားပြီး နောက် order ရောက်မှ အမှတ် အသစ် ပြန် မှတ်မယ်။') }}')">
+    <button class="btn alt" type="submit">{{ t('ဆိုင် ပြောင်း — နေရာ အမှတ် ပြန် စ') }}</button>
+  </form>
+  {% if others %}
+  <form method="post" action="/outlets/{{ o.id }}/merge" class="row" onsubmit="return confirm('{{ t('ဒီ ဆိုင် ကို ရွေးတဲ့ ဆိုင် ထဲ ပေါင်းမှာ သေချာလား? ဘောက်ချာ/မှတ်တမ်း အကုန် ရွှေ့မယ်') }}')">
+    <label>{{ t('ဒီ ဆိုင်ကို ပေါင်းရန်') }} <select name="target">{% for x in others %}<option value="{{ x.id }}">{{ x.label }}</option>{% endfor %}</select></label>
+    <button class="btn alt" type="submit">{{ t('ပေါင်းမယ် (Merge)') }}</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">🚶 {{ t('ရောက် မှတ်တမ်း') }} — {{ per_label }}</h3>
+  <form method="get" class="row">
+    <select name="p" onchange="this.form.submit()">
+      <option value="month" {% if per=='month' %}selected{% endif %}>{{ t('ဒီလ') }}</option>
+      <option value="3m" {% if per=='3m' %}selected{% endif %}>{{ t('၃ လ အတွင်း') }}</option>
+      <option value="6m" {% if per=='6m' %}selected{% endif %}>{{ t('၆ လ အတွင်း') }}</option>
+      <option value="9m" {% if per=='9m' %}selected{% endif %}>{{ t('၉ လ အတွင်း') }}</option>
+      <option value="12m" {% if per=='12m' %}selected{% endif %}>{{ t('၁ နှစ် အတွင်း') }}</option>
+      <option value="year" {% if per=='year' %}selected{% endif %}>{{ t('နှစ် အလိုက်') }}</option>
+    </select>
+    {% if per=='year' %}<select name="y" onchange="this.form.submit()">{% for y in years %}<option {% if y==yr %}selected{% endif %}>{{ y }}</option>{% endfor %}</select>{% endif %}
+  </form>
+  <p>{{ t('ရောက် အကြိမ် စုစုပေါင်း') }}: <b>{{ vst.tot }}</b> ({{ t('✅ သေချာ/order') }}: <b>{{ vst.eff }}</b> · {{ t('🔵 ဖြစ်နိုင်ခြေ') }}: <b>{{ vst.prob }}</b>){% if vst.tot %} · Effective: <b>{{ '%.0f'|format(vst.eff / vst.tot * 100) }}%</b>{% endif %}<br>
+  {{ t('ဒီ ကာလ အတွင်း Sales') }}: <b>{{ fmt_money(samt.v) }}</b> {{ t('(ဘောက်ချာ {c} စောင်, ပယ်ဖျက် မပါ)', c=samt.c) }}</p>
+  {% if perrep %}
+  <table>
+  <tr><th>{{ t('ရောင်းသူ') }}</th><th style="text-align:right">{{ t('ရောက်') }}</th><th style="text-align:right">{{ t('Effective') }}</th><th style="text-align:right">{{ t('Sales ပမာဏ') }}</th></tr>
+  {% for r in perrep %}<tr><td>{{ r.name }}</td><td class="num">{{ r.tot }}</td><td class="num">{{ r.eff }}</td><td class="num">{{ fmt_money(r.amt) }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<h3>{{ t('🧾 ဘောက်ချာများ (နောက်ဆုံး ၁၀၀)') }}</h3>
+<table>
+<tr><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('ရက်') }}</th><th>{{ t('ရောင်းသူ') }}</th><th>{{ t('အခြေအနေ') }}</th><th style="text-align:right">{{ t('စုစုပေါင်း') }}</th><th style="text-align:right">{{ t('ရပြီး') }}</th><th style="text-align:right">{{ t('ကျန်') }}</th></tr>
+{% for x in invs %}
+<tr><td><a href="/orders/{{ x.o.id }}">{{ x.o.code }}</a></td><td>{{ x.o.odate }}</td><td>{{ x.o.repname or '' }}</td>
+<td>{{ t('အသစ်') if x.o.status=='new' else (t('ပို့ပြီး') if x.o.status=='delivered' else t('ပယ်ဖျက်')) }}</td>
+<td class="num">{{ fmt_money(x.total) }}</td><td class="num">{{ fmt_money(x.recv) }}</td>
+<td class="num">{% if x.bal > 0.5 %}<b style="color:#b45309">{{ fmt_money(x.bal) }}</b>{% else %}—{% endif %}</td></tr>
+{% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}{{ t('အမှာ ရွေးရန်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs(strip_active, perms, flowcounts|default(none), buy_group|default('demand')) }}
+<h1>{{ t('{supplier} အတွက် ပွင့်နေတဲ့ အမှာ ရှိတယ်', supplier=supplier) }}</h1>
+<p class="hint">{{ t('ခု တင်မယ့် ပစ္စည်းတွေကို ရှိပြီးသား အမှာထဲ ပေါင်းထည့်လို့လည်း ရတယ်, အသစ် သီးခြား ဖွင့်လို့လည်း ရတယ် — ရွေးပါ') }}</p>
+
+<div class="card">
+<h3 style="margin-top:0">{{ t('ခု တင်မယ့် ပစ္စည်းတွေ') }}</h3>
+<table>
+<tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th>{{ t('အရေအတွက်') }}</th></tr>
+{% for l in lines %}
+<tr><td>{{ l.sku }}</td><td>{{ l.name }} <small class="muted">{{ l.unit or '' }}</small></td><td>{{ l.qty|int if l.qty == l.qty|int else l.qty }}</td></tr>
+{% endfor %}
+</table>
+</div>
+
+<form method="post" action="/requests/merge-choice" class="card">
+  <input type="hidden" name="source" value="{{ source }}">
+  <input type="hidden" name="supplier" value="{{ supplier }}">
+  <input type="hidden" name="kind" value="{{ kind }}">
+  <input type="hidden" name="note" value="{{ note }}">
+  <input type="hidden" name="day" value="{{ day }}">
+  <input type="hidden" name="ftok" value="{{ ftok }}">
+  {% for l in lines %}<input type="hidden" name="pid" value="{{ l.pid }}"><input type="hidden" name="qty" value="{{ l.qty|int if l.qty == l.qty|int else l.qty }}">{% endfor %}
+  {% for c in cands %}
+  <div class="row" style="align-items:center; justify-content:space-between">
+    <span><span class="doccode">{{ c.code }}</span> {% if c.kind == 'direct' %}<span class="pill amber">{{ t('ကြို · Direct') }}</span>{% else %}<span class="pill blue">{{ t('Demand') }}</span>{% endif %} {{ t(OR_STATUS[c.status]) }} · {{ t('တင်သူ') }}: {{ c.byname or '' }} · {{ t('ရက်') }}: {{ (c.created_at or '')[:10] }} · {{ t('ပစ္စည်း {n} မျိုး', n=c.nlines) }} · {{ t('ရောက်ရန် ကျန် {q}', q='%g' % c.rem) }}</span>
+    <button class="btn" type="submit" name="choice" value="merge:{{ c.id }}">{{ t('ဒီ အမှာထဲ ပေါင်းထည့်') }}</button>
+  </div>
+  {% endfor %}
+  <hr>
+  <div class="row" style="align-items:center; justify-content:space-between">
+    <span class="muted">{{ t('သီးခြား အသစ် ဖွင့်ချင်ရင်') }}</span>
+    <button class="btn alt" type="submit" name="choice" value="new">{{ t('အသစ် ဖွင့်') }}</button>
+  </div>
+</form>
+<p><a class="btn alt" href="{{ '/buy-list' if source == 'buylist' else '/requests/new' }}">{{ t('နောက်ပြန်') }}</a></p>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends 'base.html' %}{% from '_denom.html' import denom_counter %}{% block title %}Money — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('💰 ငွေ စာရင်း') }}</h1>
+<div class="card">
+  <h3 style="margin-top:0">💼 {{ t('လုပ်ငန်း အခြေအနေ (ခု လက်ရှိ)') }}</h3>
+  <p style="margin:.2rem 0">{{ t('ငွေသား') }}: <b>{{ fmt_money(position.balances.cash) }} Ks</b> · {{ t('Digital Pay') }}: <b>{{ fmt_money(position.balances.digital) }} Ks</b> · {{ t('ဘဏ်') }}: <b>{{ fmt_money(position.balances.bank) }} Ks</b><br>
+  {{ t('Stock တန်ဖိုး (အရင်း နဲ့)') }}: <b>{{ fmt_money(position.stock_value) }} Ks</b> · {{ t('ဆိုင်တွေ က ရရန်') }}: <b>{{ fmt_money(position.receivables) }} Ks</b> · {{ t('Supplier တွေ ကို ပေးရန်') }}: <b>{{ fmt_money(position.payables) }} Ks</b><br>
+  <b>{{ t('စုစုပေါင်း အခြေအနေ') }}: {{ fmt_money(position.total) }} Ks</b></p>
+  <p class="hint">{{ t('Stock တန်ဖိုး ကို အရင်း အမှန် နဲ့ တွက်ထားတယ်။ ရရန်/ပေးရန် တွေ က စာရင်း ပေါ်က အရာ — ငွေ အဖြစ် မရ သေးဘူး။') }}</p>
+</div>
+<form method="get" class="card" style="display:flex;gap:.5rem;align-items:end;flex-wrap:wrap">
+  <label>{{ t('ရက် ရွေးရန်') }} <input type="date" name="d" value="{{ day }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+  <a class="btn alt" href="/money">{{ t('ဒီနေ့') }}</a>
+</form>
+<div class="table-scroll"><table>
+<tr><th>{{ t('အုပ်စု') }}</th><th style="text-align:right">{{ t('ဒီနေ့ အဝင်') }}</th><th style="text-align:right">{{ t('ဒီနေ့ အထွက်') }}</th><th style="text-align:right">{{ t('လက်ကျန် ငွေ') }}</th></tr>
+{% for g in groups %}
+<tr><td>{{ t(g.label) }}</td><td class="num">{{ fmt_money(g.day_in) }} Ks</td><td class="num">{{ fmt_money(g.day_out) }} Ks</td><td class="num"><b>{{ fmt_money(g.balance) }} Ks</b></td></tr>
+{% endfor %}
+</table></div>
+<div class="card">
+<h3 style="margin-top:0">{{ t('နေ့ အလိုက် မှတ်တမ်း') }} — {{ day }}</h3>
+{% if lines %}
+<div class="table-scroll"><table>
+<tr><th>{{ t('အုပ်စု') }}</th><th>{{ t('အကြောင်းအရာ') }}</th><th>{{ t('မှတ်သူ') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th></th></tr>
+{% for l in lines %}
+<tr><td>{{ t(dict(PAY_METHODS)[l.grp]) }}</td>
+<td>{% if l.dir == 'in' %}<span class="pill green">{{ t('အဝင်') }}</span>{% else %}<span class="pill amber">{{ t('အထွက်') }}</span>{% endif %} {{ l.label }}</td>
+<td>{{ l.by }}</td><td class="num">{{ fmt_money(l.amount) }} Ks</td>
+<td>{% if l.kind == 'manual' %}<form method="post" action="/money/entry/{{ l.id }}/delete" onsubmit="return confirm('{{ t('ဖျက်မှာ သေချာလား?') }}')"><button type="submit">{{ t('ဖျက်') }}</button></form>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% else %}<p class="hint">{{ t('ဒီနေ့ မှတ်တမ်း မရှိသေးဘူး။') }}</p>{% endif %}
+</div>
+<form method="post" action="/money/add" class="card">
+  <h3 style="margin-top:0">{{ t('လက်ရေးထည့် မှတ်တမ်း (ဥပမာ — ရင်းနှီးငွေ ထည့်, Owner ထုတ်, အုပ်စု အချင်းချင်း လွှဲ)') }}</h3>
+  <div class="row">
+    <label>{{ t('ရက်') }} <input type="date" name="edate" value="{{ day }}"></label>
+    <label>{{ t('အုပ်စု') }} <select name="grp">{% for k, lbl in PAY_METHODS %}<option value="{{ k }}">{{ t(lbl) }}</option>{% endfor %}</select></label>
+    <label>{{ t('အဝင် / အထွက်') }} <select name="direction"><option value="in">{{ t('အဝင်') }}</option><option value="out">{{ t('အထွက်') }}</option></select></label>
+    <label>{{ t('ပမာဏ (Ks)') }} <input name="amount" inputmode="decimal" required></label>
+  </div>
+  <label>{{ t('မှတ်ချက်') }} <input name="note" placeholder="{{ t('ဥပမာ — ငွေသား ကနေ ဘဏ် ကို လွှဲ') }}"></label>
+  <p class="hint">{{ t('အုပ်စု တစ်ခု ကနေ နောက် တစ်ခု ကို လွှဲ ရင်: ဒီ မှာ အထွက် ၁ ကြောင်း + လွှဲ သွား တဲ့ အုပ်စု မှာ အဝင် ၁ ကြောင်း — ၂ ကြောင်း မှတ်ပါ။') }}</p>
+  <button class="btn" type="submit">{{ t('မှတ်မယ်') }}</button>
+</form>
+{% if transfers %}
+<div class="card">
+<h3 style="margin-top:0">{{ t('လွှဲပြောင်း ဝင်') }} — {{ day }}</h3>
+<p class="hint">{{ t('လုပ်ငန်း ဝင်ငွေ မဟုတ်ဘူး — အိတ် ချင်း ရွှေ့ တာ ပဲ') }}</p>
+<div class="table-scroll"><table>
+<tr><th>{{ t('အုပ်စု') }}</th><th>{{ t('အကြောင်းအရာ') }}</th><th>{{ t('မှတ်သူ') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th></tr>
+{% for l in transfers %}
+<tr><td>{{ t(dict(PAY_METHODS)[l.grp]) }}</td>
+<td><span class="pill green">{{ t('အဝင်') }}</span> {{ l.label }}</td>
+<td>{{ l.by }}</td><td class="num">{{ fmt_money(l.amount) }} Ks</td></tr>
+{% endfor %}
+</table></div>
+</div>
+{% endif %}
+<div class="card">
+  <h3 style="margin-top:0">{{ t('🧰 Cashbox') }}</h3>
+  <p>{{ t('ငွေသား ပိတ် ကို Cashbox မှာ လုပ် ပါ') }}</p>
+  <a class="btn" href="/cashbox/{{ day }}">{{ t('ဒီနေ့ Cashbox ပိတ်') }}</a>
+  {% if counted %}
+  <p style="margin-top:.5rem">{{ t('အရင် ရေတွက် မှတ်တမ်း (ဖတ် လို့ ပဲ ရ)') }}: {{ t('ရေတွက် ငွေ (ဒီနေ့)') }}: <b>{{ fmt_money(counted.amount) }} Ks</b>{% if counted.denom %}<br><span class="denom-line">🧮 {{ counted.denom | denom }}</span>{% endif %} · {{ t('စာရင်း အရ') }}: <b>{{ fmt_money(cash_bal) }} Ks</b>
+  {% if cash_diff and cash_diff|abs > 0.5 %}<br><b style="color:#c62828">{{ t('ကွာ — {v} Ks', v=fmt_money(cash_diff)) }}</b>{% else %}<br><span class="pill green">{{ t('ကိုက်တယ် ✅') }}</span>{% endif %}</p>
+  {% endif %}
+</div>
+{% if can('money.opening_set') %}
+<form method="post" action="/money/opening" class="card">
+  <h3 style="margin-top:0">{{ t('အစ လက်ကျန် ငွေ (Owner ပဲ ပြင်နိုင်)') }}</h3>
+  <div class="row">
+    {% for g in groups %}<label>{{ t(g.label) }} <input name="open_{{ g.key }}" value="{{ '%g'|format(g.opening) }}" inputmode="decimal"></label>{% endfor %}
+  </div>
+  <p class="hint">{{ t('ဒီ စာရင်း စ သုံးချိန် က လက်ထဲ ရှိ နေ တဲ့ ငွေ ကို ထည့်ပါ — လက်ကျန် တွေ အဲ့ ကနေ စ ရေး မယ်။') }}</p>
+  <button class="btn" type="submit">{{ t('သိမ်းမယ်') }}</button>
+</form>
+{% endif %}
+{% endblock %}

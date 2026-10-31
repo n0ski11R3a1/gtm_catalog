@@ -1,0 +1,595 @@
+{% extends 'base.html' %}{% block title %}Catalog — GTM ERP{% endblock %}
+{% block body %}
+<h1>Product Catalog</h1>
+<div id="net" class="hint"></div>
+<input id="search" placeholder="{{ t('ရှာရန် (နာမည်/SKU)') }}" oninput="render()">
+<select id="catf" onchange="render()"><option value="">{{ t('Category အကုန်') }}</option></select>
+<p style="margin:6px 0"><a href="#myordersbox">📋 {{ t('မိမိ ဘောက်ချာများ') }}</a></p>
+<div id="grid" class="grid-cards"></div>
+<div class="card cartbox closed" id="cartbox">
+  <div class="cart-head" onclick="toggleCart()">
+    <span>🛒 {{ t('ဘောက်ချာ စာရင်း') }} <span id="syncstat"></span></span>
+    <span id="cartsummary">0 Ks</span>
+    <span id="cartchev">{{ t('▲ ဖွင့်ရန်') }}</span>
+  </div>
+  <div class="cart-body">
+  <div id="cartlist"></div>
+  <div class="row">
+    <label>{{ t('Outlet (ဆိုင်နာမည်) *') }} <input id="outlet" list="outletlist" autocomplete="off"></label><datalist id="outletlist"></datalist>
+    <label>{{ t('နေရာ') }} <input id="area"></label>
+    <label id="stypelabel" style="display:none">{{ t('ဆိုင် အမျိုးအစား (သိရင်)') }} <select id="shoptype"><option value="">{{ t('မရွေး') }}</option>{% for k, lbl in shop_types %}<option value="{{ k }}">{{ t(lbl) }}</option>{% endfor %}</select></label>
+    <label>{{ t('လျှော့ဈေး စုစုပေါင်း') }} <b id="discsum">0</b> Ks <span class="muted">{{ t('(ပစ္စည်း အတန်း ချင်းမှာ ထည့်ရန်)') }}</span></label>
+  </div>
+  <div id="outletchooser" style="display:none"></div>
+  <div id="gpsprompt" style="display:none"></div>
+  <p>{{ t('စုစုပေါင်း') }}: <b id="grand">0</b> Ks</p>
+  <button class="btn" onclick="submitOrder()">{{ t('Order တင်မယ်') }}</button>
+  <button class="btn alt" onclick="syncQueue()">{{ t('🔄 ပြန် တင်မယ်') }}</button>
+  </div>
+</div>
+<div class="card" id="myordersbox">
+  <h3 style="margin-top:0">{{ t('📋 မိမိ ဘောက်ချာများ (Offline ကြည့်/ပြင် ရတယ်)') }}</h3>
+  <div id="editnotices"></div>
+  <div id="syncedits"></div>
+  <h4>{{ t('⏳ မပို့ရသေး (ဖုန်းထဲ စောင့်နေတာ)') }}</h4>
+  <div id="queuearea"></div>
+  <h4>{{ t('✅ ပို့ပြီးသား (ဒီနေ့ + မနေ့က)') }}</h4>
+  <div id="myorders"><p class="muted">{{ t('ခဏ စောင့်ပါ…') }}</p></div>
+  <div id="ordereditor" style="display:none"></div>
+</div>
+<script>
+let PRODS=[], CART={}, OUTLETS=[];
+const LS_P='gtm_products', LS_Q='gtm_queue', LS_O='gtm_outlets', LS_PR='gtm_probes';
+function saveProds(){ localStorage.setItem(LS_P, JSON.stringify(PRODS)); }
+function loadProds(){ try{ PRODS=JSON.parse(localStorage.getItem(LS_P)||'[]'); }catch(e){ PRODS=[]; } }
+async function refresh(){
+  try{ const r=await fetch('/api/products'); if(r.ok){ PRODS=await r.json(); saveProds(); } }catch(e){}
+  try{ const r=await fetch('/api/outlets'); if(r.ok){ OUTLETS=await r.json(); localStorage.setItem(LS_O, JSON.stringify(OUTLETS)); drawOutlets(); } }catch(e){}
+  await fetchMyOrders();
+  render(); netStat();
+}
+/* v67: a shop's picker label is always name + area (+ note) so
+   same-name shops can be told apart (outletLabel itself sits with the
+   sync block below); NAMECOUNT tells outletSync when a name is shared. */
+function drawOutlets(){
+  NAMECOUNT={}; OUTLETS.forEach(o=>{ NAMECOUNT[o.name]=(NAMECOUNT[o.name]||0)+1; });
+  const dl=document.getElementById('outletlist'); if(!dl) return;
+  let html = OUTLETS.map(o=>`<option value="${(o.name||'').replace(/"/g,'&quot;')}" label="${outletLabel(o).replace(/"/g,'&quot;')}">`).join('');
+  /* v68: alias spellings are listed too, labelled with the shop they
+     belong to — picking one lands on that shop, and the shop's
+     official name is what gets submitted. */
+  OUTLETS.forEach(o=>{ (o.aliases||[]).forEach(a=>{ html += `<option value="${(a||'').replace(/"/g,'&quot;')}" label="${outletLabel(o).replace(/"/g,'&quot;')}">`; }); });
+  dl.innerHTML = html;
+}
+function loadOutlets(){ try{ OUTLETS=JSON.parse(localStorage.getItem(LS_O)||'[]'); }catch(e){ OUTLETS=[]; } drawOutlets(); }
+/* v66: ONE shared sync for the shop-name field. The area auto-fill and
+   the v65 shop-type choice both read this single match result, so they
+   can never disagree about whether the typed name is a known outlet.
+   The area follows the matched shop on EVERY name change (it used to
+   fill only while the area was empty, so a previous shop's area went
+   stale and could be submitted with the wrong shop). The system tracks
+   the value it filled itself (autoArea) and only ever replaces or
+   clears THAT value — an area the rep typed or edited by hand is
+   never touched.
+   v65 rule kept: the type choice appears only for a name that is NOT
+   already a known outlet — the server fills the type only where unset.
+   v67: a name shared by 2+ cached shops is a real match but NOT a
+   guessable one — the area is not filled from any single shop, and
+   the entry-time chooser (renderChooser below) asks the person
+   standing there, right on the phone, fully offline. Their pick is
+   remembered here (outletPick) and rides the submit as outlet_id.
+   v68: the match also consults each shop's alias spellings (one shop
+   written two ways — 'Sut' vs 'ဆွတ်'), normalised the same way the
+   server normalises. A text matching 2+ DISTINCT shops — by name,
+   by alias, or one of each — is a collision: no area is guessed and
+   the chooser asks. Once a pick is made, the area follows the pick. */
+let autoArea=null;
+let NAMECOUNT={};
+let outletPick=null, outletPickName='';
+function outletLabel(o){ let s=o.name||''; if(o.area) s+=' · '+o.area; if(o.note) s+=' · ('+o.note+')'; return s; }
+/* v68: matching a typed shop text. The text is compared against each
+   shop's official name AND its alias spellings, case-insensitively
+   with whitespace collapsed — the same rule the server applies, so
+   the phone and the server never disagree about what a text means.
+   An alias hit behaves exactly like a name hit. */
+function normShopText(s){ return (s||'').trim().replace(/\s+/g,' ').toLowerCase(); }
+function matchOutlets(v){
+  const n=normShopText(v); if(!n) return [];
+  return OUTLETS.filter(x=> normShopText(x.name)===n || (x.aliases||[]).some(a=>normShopText(a)===n));
+}
+function outletSync(){
+  const v=document.getElementById('outlet').value.trim();
+  const nv=normShopText(v);
+  const o0=OUTLETS.find(x=>normShopText(x.name)===nv || (x.aliases||[]).some(a=>normShopText(a)===nv));
+  let o=o0, nmatch=o0?1:0;
+  for(const x of OUTLETS){ if(x!==o0 && (normShopText(x.name)===nv || (x.aliases||[]).some(a=>normShopText(a)===nv))) nmatch++; }
+  const known=!!o0;
+  if(outletPickName!==v) outletPick=null;
+  if(outletPick){ for(const x of OUTLETS){ if(x.id===outletPick){ o=x; break; } } }
+  const dup=known && nmatch>1 && !outletPick;
+  document.getElementById('stypelabel').style.display=(v && !known)?'':'none';
+  const ae=document.getElementById('area');
+  if(known && !dup && o && o.area){
+    if(!ae.value || ae.value===autoArea){ ae.value=o.area; autoArea=o.area; }
+  } else if(ae.value && ae.value===autoArea){
+    ae.value=''; autoArea=null;
+  }
+  if(typeof renderChooser==='function') renderChooser();
+  if(typeof renderGpsPrompt==='function') renderGpsPrompt();
+}
+document.getElementById('outlet').addEventListener('input', outletSync);
+document.getElementById('outlet').addEventListener('change', outletSync);
+/* v67 entry-time chooser: shown while the typed name matches 2+ shops
+   in the phone's CACHED list. Candidates are 'Name · Area · (note)';
+   once the phone has a GPS fix they are ranked nearest first (a hint
+   only — the rep's tap decides). Works fully offline.
+   v68: the match is by name OR alias (matchOutlets), so a text that
+   is one shop's name and another's alias asks the same way. When the
+   text matches NOTHING exactly, sound-alike shops are offered as
+   suggestions instead (renderPhonSuggestions, below the chooser). */
+let chooserFix=null, chooserName='';
+function renderChooser(){
+  const box=document.getElementById('outletchooser'); if(!box) return;
+  const v=document.getElementById('outlet').value.trim();
+  const ms=matchOutlets(v);
+  if(!v || ms.length===1){ box.style.display='none'; box.innerHTML=''; chooserName=''; return; }
+  if(ms.length===0){
+    box.style.display='none'; box.innerHTML=''; chooserName='';
+    if(typeof renderPhonSuggestions==='function') renderPhonSuggestions(box, v);
+    return;
+  }
+  chooserName=v;
+  const draw=()=>{
+    if(chooserName!==v) return;
+    const list=ms.map(o=>({o:o, dm:(chooserFix && o.lat!=null && o.lng!=null)? distM(chooserFix,o):null}));
+    if(chooserFix) list.sort((a,b)=>(a.dm==null?1e18:a.dm)-(b.dm==null?1e18:b.dm));
+    box.innerHTML='<div style="border:2px solid #b45309;border-radius:8px;padding:8px;margin:6px 0"><b>❓ '+tf('ဘယ် ဆိုင် လဲ?')+'</b>'+
+      list.map(x=>{ const dt=(x.dm!=null)? ' · ~'+(x.dm<1000? Math.round(x.dm)+' m' : (x.dm/1000).toFixed(1)+' km') : '';
+        return `<div style="margin:4px 0"><button type="button" class="btn ${outletPick===x.o.id?'':'alt'}" onclick="pickOutlet(${x.o.id})">${esc(outletLabel(x.o))}${dt}</button></div>`; }).join('')+'</div>';
+    box.style.display='';
+  };
+  draw();
+  if(!chooserFix){ grabGPS(5000).then(f=>{ if(f){ chooserFix=f; draw(); } }); }
+}
+function pickOutlet(id){
+  const o=OUTLETS.find(x=>x.id===id); if(!o) return;
+  /* v68: the pick is remembered against the text AS TYPED — a pick
+     made from an alias spelling must survive the next sync even
+     though the field does not show the official name. */
+  outletPick=id; outletPickName=document.getElementById('outlet').value.trim();
+  const ae=document.getElementById('area');
+  ae.value=o.area||''; autoArea=o.area||null;
+  renderChooser();
+}
+/* v67 chooser end */
+/* v68 sound-alike suggestions. Romanisation has no standard, so a
+   phonetic key can never be trusted to ATTACH anything — it only
+   ADDS candidates to a suggestion list and the person picks. The
+   key is deliberately conservative: the Latin side lowercases,
+   strips spaces/punctuation and collapses repeated letters (with a
+   few 'ay' spelling variants); the Myanmar side splits syllables and
+   maps each to a rough Latin sound — onset family, vowel class,
+   coda. A match means the two texts MIGHT sound alike, nothing more. */
+const ONSET_FAM = {4096:'k',4097:'k',4098:'g',4099:'g',4100:'ng',4101:'s',4102:'s',4103:'z',4104:'z',4105:'ny',4106:'ny',4107:'t',4108:'t',4109:'t',4110:'t',4111:'n',4112:'t',4113:'t',4114:'d',4115:'d',4116:'n',4117:'p',4118:'p',4119:'p',4120:'b',4121:'m',4122:'y',4123:'r',4124:'l',4125:'w',4126:'s',4127:'h',4128:'l',4129:''};
+function phonMyanmarKey(s){
+  const cps=[...(s||'')].map(ch=>ch.codePointAt(0));
+  let out='', cur=null;
+  const resolveV=()=>{
+    if(cur.v1 && cur.vAa) return 'o';
+    if(cur.v1) return 'e';
+    if(cur.vI && cur.vU) return 'o';
+    if(cur.vI) return 'i';
+    if(cur.vU) return 'u';
+    if(cur.vAe) return 'e';
+    if(cur.vAa) return 'a';
+    if(cur.wa && cur.coda) return cur.coda==='k'? 'e' : 'u';
+    return 'a';
+  };
+  const flush=()=>{ if(!cur) return; let coda=cur.coda; if(!coda && cur.nasal) coda='ng'; out+=(cur.glide||'')+cur.onset+resolveV()+coda; cur=null; };
+  const start=(fam, glide)=>{ flush(); cur={onset:fam, glide:glide||'', v1:false, vAa:false, vI:false, vU:false, vAe:false, wa:false, nasal:false, coda:''}; };
+  for(let i=0;i<cps.length;i++){
+    const c=cps[i];
+    if(c>=4096 && c<=4129){
+      const nxt=cps[i+1];
+      if(cur && (nxt===4154 || nxt===4153)){ cur.coda=ONSET_FAM[c]||''; i++; continue; }
+      if(c===4129) start('', 'a'); else start(ONSET_FAM[c]||'');
+      continue;
+    }
+    if(!cur) start('');
+    if(c===4157) cur.wa=true;
+    else if(c===4145) cur.v1=true;
+    else if(c===4139 || c===4140) cur.vAa=true;
+    else if(c===4141 || c===4142) cur.vI=true;
+    else if(c===4143 || c===4144) cur.vU=true;
+    else if(c===4146) cur.vAe=true;
+    else if(c===4150) cur.nasal=true;
+    /* the other medials (4155/4156/4158) and tone marks (4151/4152) carry no key sound */
+  }
+  flush();
+  return out;
+}
+function _collapse(k){ return k.replace(/(.)\1+/g,'$1'); }
+function phonLatinKeys(s){
+  const base=_collapse((s||'').toLowerCase().replace(/[^a-z0-9]+/g,''));
+  if(!base) return [];
+  const out=new Set([base]);
+  out.add(_collapse(base.replace(/ay/g,'a')));
+  out.add(_collapse(base.replace(/ay/g,'e')));
+  out.add(_collapse(base.replace(/au/g,'o')));
+  out.add(base.replace(/e$/,''));
+  out.delete('');
+  return [...out];
+}
+function phonKeysOf(s){
+  s=(s||'').trim(); if(!s) return [];
+  const isMy=ch=>{ const c=ch.codePointAt(0); return c>=0x1000 && c<=0x109F; };
+  if(![...s].some(isMy)) return phonLatinKeys(s);
+  const myOnly=[...s].filter(isMy).join('');
+  const base=phonMyanmarKey(myOnly);
+  if(!base) return [];
+  const out=new Set([base]);
+  if(base.length>1 && base[0]==='a' && 'eiou'.indexOf(base[1])>=0) out.add(base.slice(1));
+  return [...out];
+}
+function phonHits(v){
+  const qk=phonKeysOf(v); if(!qk.length) return [];
+  return OUTLETS.filter(o=>{
+    let ks=phonKeysOf(o.name);
+    (o.aliases||[]).forEach(a=>{ ks=ks.concat(phonKeysOf(a)); });
+    return qk.some(k=>ks.indexOf(k)>=0);
+  });
+}
+function renderPhonSuggestions(box, v){
+  const hits=phonHits(v); if(!hits.length) return;
+  box.innerHTML='<div style="border:2px solid #64748b;border-radius:8px;padding:8px;margin:6px 0"><b>🔊 '+tf('အသံ နီး တဲ့ ဆိုင်')+'</b>'+
+    hits.map(o=>`<div style="margin:4px 0"><button type="button" class="btn alt" onclick="pickSuggestion(${o.id})">${esc(outletLabel(o))}</button></div>`).join('')+'</div>';
+  box.style.display='';
+}
+function pickSuggestion(id){
+  const o=OUTLETS.find(x=>x.id===id); if(!o) return;
+  document.getElementById('outlet').value=o.name;
+  outletPick=id; outletPickName=o.name;
+  outletSync();
+}
+/* v68 GPS-near question (Ko's rule: "GPS မတူရင်တော့ ထည့်လို့ရနိုင်တယ်"
+   — a DIFFERENT place means the new shop is added freely, no
+   question). Shown only while the typed text matches NOTHING (name
+   or alias), the phone has a GPS fix, and a cached shop WITH a pin
+   lies within 40 m — accuracy-aware: the phone's own accuracy radius
+   is subtracted, so a sloppy fix widens nothing unfairly. No fix or
+   no near pin -> NO prompt, the entry proceeds silently. It asks;
+   it never blocks. Fully offline, from the cache. */
+let gpsDismissedFor=null;
+function renderGpsPrompt(){
+  const box=document.getElementById('gpsprompt'); if(!box) return;
+  const v=document.getElementById('outlet').value.trim();
+  if(!v || matchOutlets(v).length>0 || gpsDismissedFor===v){ box.style.display='none'; box.innerHTML=''; return; }
+  const draw=()=>{
+    if(document.getElementById('outlet').value.trim()!==v) return;
+    if(matchOutlets(v).length>0 || gpsDismissedFor===v){ box.style.display='none'; box.innerHTML=''; return; }
+    let best=null, bd=1e18;
+    if(chooserFix){
+      for(const o of OUTLETS){
+        if(o.lat==null || o.lng==null) continue;
+        const dm=distM(chooserFix, o)-((chooserFix.acc)||0);
+        if(dm<bd){ bd=dm; best=o; }
+      }
+    }
+    if(best && bd<=40){
+      box.innerHTML='<div style="border:2px solid #2563eb;border-radius:8px;padding:8px;margin:6px 0"><b>📍 '+tf('အနီး မှာ "{name}" ရှိ တယ် — ဒီ ဆိုင် ပဲ လား?', {name: outletLabel(best)})+'</b>'+
+        `<div style="margin:4px 0"><button type="button" class="btn" onclick="pickSuggestion(${best.id})">${tf('ဒီ ဆိုင် ပဲ')}</button> <button type="button" class="btn alt" onclick="dismissGpsPrompt()">${tf('ဆိုင် အသစ် ပဲ')}</button></div></div>`;
+      box.style.display='';
+    } else { box.style.display='none'; box.innerHTML=''; }
+  };
+  draw();
+  if(!chooserFix){ grabGPS(5000).then(f=>{ if(f){ chooserFix=f; draw(); } }); }
+}
+function dismissGpsPrompt(){
+  gpsDismissedFor=document.getElementById('outlet').value.trim();
+  const box=document.getElementById('gpsprompt'); if(box){ box.style.display='none'; box.innerHTML=''; }
+}
+/* v68 phonetic+gps end */
+function distM(a,b){ const R=6371000, dLa=(b.lat-a.lat)*Math.PI/180, dLo=(b.lng-a.lng)*Math.PI/180;
+  const h=Math.sin(dLa/2)**2 + Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h)); }
+function grabGPS(ms){ return new Promise(res=>{ if(!navigator.geolocation) return res(null);
+  let done=false; const to=setTimeout(()=>{ if(!done){ done=true; res(null); } }, ms||7000);
+  navigator.geolocation.getCurrentPosition(p=>{ if(done) return; done=true; clearTimeout(to);
+      res({lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy}); },
+    ()=>{ if(done) return; done=true; clearTimeout(to); res(null); },
+    {enableHighAccuracy:true, timeout: ms||7000, maximumAge: 30000}); }); }
+let lastProbe=null, lastProbeAt=0;
+function localDate(){ const n=new Date(); return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0'); }
+async function probe(){
+  const gps=await grabGPS(6000); if(!gps || gps.acc>100) return;
+  const nowT=Date.now();
+  if(lastProbe && (nowT-lastProbeAt)<180000 && distM(lastProbe, gps)<40) return;
+  lastProbe=gps; lastProbeAt=nowT;
+  const ev={client_uuid:(crypto.randomUUID? crypto.randomUUID(): 'p'+Date.now()+Math.random()), lat:gps.lat, lng:gps.lng, acc:gps.acc, pdate:localDate()};
+  if(navigator.onLine){
+    try{ const r=await fetch('/api/visit-probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ev)}); if(r.ok) return; }catch(e){}
+  }
+  try{ const q=JSON.parse(localStorage.getItem(LS_PR)||'[]'); q.push(ev); localStorage.setItem(LS_PR, JSON.stringify(q.slice(-50))); }catch(e){}
+}
+async function flushProbes(){
+  if(!navigator.onLine) return;
+  let q=[]; try{ q=JSON.parse(localStorage.getItem(LS_PR)||'[]'); }catch(e){}
+  if(!q.length) return;
+  const left=[];
+  for(const ev of q){
+    try{ const r=await fetch('/api/visit-probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(ev)}); if(!r.ok) left.push(ev); }catch(e){ left.push(ev); }
+  }
+  try{ localStorage.setItem(LS_PR, JSON.stringify(left)); }catch(e){}
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible'){ probe(); } });
+function priceBadge(p){
+  if(!p.pc_at || !p.pc_field) return '';
+  const days = Math.floor((Date.now() - new Date(p.pc_at.replace(' ','T')).getTime())/864e5);
+  if(isNaN(days) || days > 30) return '';
+  const down = +p.pc_new < +p.pc_old;
+  const tier = p.pc_field==='retail' ? tf('လက်လီ') : tf('လက်ကား');
+  const when = days<=0 ? tf('ဒီနေ့') : tf('လွန်ခဲ့တဲ့ {d} ရက်', {d: days});
+  return `<div class="pbadge ${down?'down':'up'}">${tf('{tier} ဈေး {dir} · {when}', {tier: tier, dir: (down? tf('ကျသွား')+' \u2198' : tf('တက်သွား')+' \u2197'), when: when})}</div>`;
+}
+function netStat(){ document.getElementById('net').textContent = navigator.onLine ? tf('🟢 Online — နောက်ဆုံး ဈေးတွေ ရထားတယ်') : tf('🔴 Offline — သိမ်းထားတဲ့ ဈေးတွေနဲ့ အလုပ်ဖြစ်တယ်'); syncStat(); }
+function render(){
+  const q=(document.getElementById('search').value||'').toLowerCase();
+  const cf=document.getElementById('catf');
+  if(cf.options.length<=1){ [...new Set(PRODS.map(p=>p.category))].forEach(c=>{ const o=document.createElement('option'); o.textContent=c; cf.appendChild(o); }); }
+  const el=document.getElementById('grid'); el.innerHTML='';
+  const hp=v=>v!=null&&v!==0; // v92: 0 counts as no price (new products default to 0, not NULL)
+  PRODS.filter(p=>(hp(p.retail)||hp(p.wholesale)) && (!cf.value||p.category===cf.value) && (!q||p.name.toLowerCase().includes(q)||p.sku.toLowerCase().includes(q))).forEach(p=>{
+    const d=document.createElement('div'); d.className='pcard';
+    d.innerHTML=(p.image?`<img src="/static/product-images/${p.image}" loading="lazy">`:'<img src="/static/logo.png" class="noimg-logo" loading="lazy">')+
+      `<div class="stock-pill">IN STOCK</div><div class="pbody"><div class="pname">${p.name}</div>
+      <div class="pmeta">${p.sku} · ${p.unit||''}${p.upc? ' (Pack: '+(+p.upc)+')':''}</div>
+      ${priceBadge(p)}
+      <div class="prices"><div>${tf('လက်လီ')} <b>${hp(p.retail)?p.retail.toLocaleString():'-'}</b></div><div>${tf('လက်ကား')} <b>${hp(p.wholesale)?p.wholesale.toLocaleString():'-'}</b></div></div>
+      <div class="pbtns"><button onclick="add(${p.id},'retail')" ${hp(p.retail)?'':'disabled'}>+ ${tf('လက်လီ')}</button><button onclick="add(${p.id},'wholesale')" ${hp(p.wholesale)?'':'disabled'}>+ ${tf('လက်ကား')}</button></div></div>`;
+    el.appendChild(d);
+  });
+}
+function toggleCart(force){
+  const box=document.getElementById('cartbox');
+  const open = force!==undefined? force : box.classList.contains('closed');
+  box.classList.toggle('closed', !open);
+  document.getElementById('cartchev').textContent = open? tf('▼ ပိတ်ရန်') : tf('▲ ဖွင့်ရန်');
+}
+function add(id,tier){
+  const wasEmpty = Object.values(CART).every(c=>c.qty<=0);
+  const p=PRODS.find(x=>x.id===id), k=id+'_'+tier;
+  if(!p) return;
+  const pr=tier==='retail'?p.retail:p.wholesale;
+  if(pr==null||pr===0) return; // v92: 0 is no price, cannot be ordered
+  if(!CART[k]) CART[k]={pid:id,sku:p.sku,name:p.name,tier:tier,price:pr,qty:0,disc:0};
+  CART[k].qty++; drawCart();
+  if(wasEmpty) toggleCart(true);
+}
+function drawCart(){
+  const el=document.getElementById('cartlist'); el.innerHTML=''; let t=0, dsum=0;
+  Object.entries(CART).forEach(([k,c])=>{ if(c.qty<=0) return; const g=c.qty*c.price, dc=Math.min(Math.max(+c.disc||0,0), g); t+=g-dc; dsum+=dc;
+    el.innerHTML+=`<div>${c.sku} ${c.name} (${c.tier==='retail'?tf('လက်လီ'):tf('လက်ကား')}) × <input type="number" value="${c.qty}" min="0" style="width:60px" onchange="CART['${k}'].qty=+this.value; drawCart()"> = ${g.toLocaleString()}<br>${tf('လျှော့')} <input type="number" value="${dc}" min="0" style="width:90px" onchange="CART['${k}'].disc=+this.value; drawCart()"> Ks → <b>${(g-dc).toLocaleString()}</b></div>`; });
+  document.getElementById('discsum').textContent=dsum.toLocaleString();
+  document.getElementById('grand').textContent=t.toLocaleString();
+  const n=Object.values(CART).filter(c=>c.qty>0).length;
+  document.getElementById('cartsummary').textContent = n? tf('{n} မျိုး · {t} Ks', {n: n, t: t.toLocaleString()}) : '0 Ks';
+}
+function queue(){ try{ return JSON.parse(localStorage.getItem(LS_Q)||'[]'); }catch(e){ return []; } }
+function setQueue(q){ localStorage.setItem(LS_Q, JSON.stringify(q)); syncStat(); }
+function syncStat(){ const q=queue(); document.getElementById('syncstat').textContent = q.length? tf('({n} ခု တင်ရန် ကျန်တယ်)', {n: q.length}) : ''; }
+/* v67: one online submit attempt. Returns true when the submit is
+   settled — the order landed, or the server asked which shop (the
+   entry-time chooser normally settles this on the phone; this is the
+   fallback for a stale/absent cache). */
+async function postOrder(payload){
+  try{ const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const j=await r.json();
+    if(j.ok){ alert(tf('ဘောက်ချာ တင်ပြီးပြီ: {code}', {code: j.code})); CART={}; drawCart(); return true; }
+    if(j.error==='ambiguous_outlet'){ showServerChooser(j.candidates||[], payload); return true; }
+  }catch(e){}
+  return false;
+}
+function showServerChooser(cands, payload){
+  const box=document.getElementById('outletchooser'); if(!box) return;
+  window._ambPayload=payload;
+  box.innerHTML='<div style="border:2px solid #b45309;border-radius:8px;padding:8px;margin:6px 0"><b>❓ '+tf('ဘယ် ဆိုင် လဲ?')+'</b>'+
+    cands.map(c=>`<div style="margin:4px 0"><button type="button" class="btn alt" onclick="pickServerOutlet(${c.id})">${esc(c.label)}${c.dist? ' · ~'+esc(c.dist):''}</button></div>`).join('')+
+    `<div style="margin:4px 0"><button type="button" class="btn alt" onclick="hideChooser()">${tf('မရွေးတော့')}</button></div></div>`;
+  box.style.display='';
+  box.scrollIntoView({behavior:'smooth', block:'center'});
+}
+async function pickServerOutlet(id){
+  const p=window._ambPayload; if(!p) return;
+  p.outlet_id=id; hideChooser();
+  if(await postOrder(p)) return;
+  const q=queue(); q.push(p); setQueue(q);
+  alert(tf('လိုင်း မရှိလို့ ဖုန်းထဲ သိမ်းထားတယ် — လိုင်း ရရင် ပြန် တင်ပါ')); CART={}; drawCart();
+}
+function hideChooser(){ const box=document.getElementById('outletchooser'); if(box){ box.style.display='none'; box.innerHTML=''; } window._ambPayload=null; }
+async function submitOrder(){
+  const outlet=document.getElementById('outlet').value.trim();
+  const items=Object.values(CART).filter(c=>c.qty>0).map(c=>({product_id:c.pid, qty:c.qty, price:c.price, tier:c.tier, discount:Math.min(Math.max(+c.disc||0,0), c.qty*c.price)}));
+  if(!outlet||!items.length){ alert(tf('ဆိုင် နဲ့ ပစ္စည်း လိုပါတယ်')); return; }
+  const _now=new Date(); const _od=_now.getFullYear()+'-'+String(_now.getMonth()+1).padStart(2,'0')+'-'+String(_now.getDate()).padStart(2,'0');
+  const payload={client_uuid: (crypto.randomUUID? crypto.randomUUID(): 'u'+Date.now()+Math.random()), outlet:outlet, odate:_od,
+    area:document.getElementById('area').value, discount:0, items:items, offline: !navigator.onLine};
+  /* v67: the pick carries the shop's id — the entry-time chooser's
+     pick first, else the single cached match. The server verifies the
+     id against the name before trusting it.
+     v68: the match consults alias spellings too, and the payload
+     carries the shop's OFFICIAL name — an order placed by typing a
+     shop's other spelling is the same order as typing its name. */
+  const _ms=matchOutlets(outlet);
+  if(outletPick && outletPickName===outlet){ const _po=OUTLETS.find(x=>x.id===outletPick); if(_po){ payload.outlet=_po.name; payload.outlet_id=_po.id; } }
+  else if(_ms.length===1){ payload.outlet=_ms[0].name; payload.outlet_id=_ms[0].id; }
+  const _stl=document.getElementById('stypelabel'), _stv=document.getElementById('shoptype');
+  if(_stl && _stv && _stl.style.display!=='none' && _stv.value) payload.shop_type=_stv.value;
+  const _gps=await grabGPS(7000); if(_gps){ payload.lat=_gps.lat; payload.lng=_gps.lng; payload.acc=_gps.acc; }
+  if(navigator.onLine){
+    if(await postOrder(payload)) return;
+  }
+  const q=queue(); q.push(payload); setQueue(q);
+  alert(tf('လိုင်း မရှိလို့ ဖုန်းထဲ သိမ်းထားတယ် — လိုင်း ရရင် ပြန် တင်ပါ')); CART={}; drawCart();
+}
+async function syncQueue(){
+  if(!navigator.onLine){ alert(tf('လိုင်း မရှိသေးဘူး')); return; }
+  let q=queue(); const left=[];
+  for(const p of q){
+    try{ const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+      const j=await r.json(); if(!j.ok) left.push(p); }catch(e){ left.push(p); }
+  }
+  setQueue(left);
+  await flushProbes();
+  const es = await syncEdits();
+  alert(left.length? tf('တစ်ချို့ မရသေးဘူး — နောက်မှ ပြန်စမ်းပါ') : tf('တင်ပြီးပြီ ✅'));
+  if(es) alert(tf('ပြင်ချက် {ok} ခု တင်ပြီးပြီ ✓', {ok: es.ok}) + (es.rej? tf(' · {rej} ခု မဝင်လိုက် ⚠️ (အောက်မှာ အကြောင်းပြ ထားတယ်)', {rej: es.rej}) : ''));
+  refresh();
+}
+/* ---------- v41: offline ဘောက်ချာ ကြည့်/ပြင် ---------- */
+const LS_MO='gtm_myorders', LS_E='gtm_edits', LS_RJ='gtm_edit_rejects';
+let MYORDERS=[];
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+function editsQ(){ try{ return JSON.parse(localStorage.getItem(LS_E)||'[]'); }catch(e){ return []; } }
+function setEditsQ(q){ localStorage.setItem(LS_E, JSON.stringify(q)); }
+function rejects(){ try{ return JSON.parse(localStorage.getItem(LS_RJ)||'[]'); }catch(e){ return []; } }
+function setRejects(q){ localStorage.setItem(LS_RJ, JSON.stringify(q)); }
+function loadMyOrders(){ try{ MYORDERS=JSON.parse(localStorage.getItem(LS_MO)||'[]'); }catch(e){ MYORDERS=[]; } }
+async function fetchMyOrders(){
+  try{ const r=await fetch('/api/my-orders'); if(r.ok){ const j=await r.json(); MYORDERS=j.orders||[]; localStorage.setItem(LS_MO, JSON.stringify(MYORDERS)); } }catch(e){}
+  renderMyOrders();
+}
+function ordTotalOf(items){ return items.reduce((s,i)=> s + i.qty*i.price - Math.min(Math.max(+i.discount||0,0), i.qty*i.price), 0); }
+function pendingEditFor(oid){ return editsQ().find(e=>e.order_id===oid); }
+function renderNotices(){
+  const el=document.getElementById('editnotices'); if(!el) return;
+  const n=rejects();
+  el.innerHTML = n.map((x,i)=>`<div style="border:1px solid #dc2626;background:#fef2f2;border-radius:8px;padding:8px;margin:6px 0">⚠️ <b>${tf('ပြင်ချက် မဝင်လိုက်ဘူး')}</b> — ${esc(x.code||'')} : ${esc(x.reason||'')} <button class="btn alt" onclick="dismissNotice(${i})">${tf('သိပြီ')}</button></div>`).join('');
+}
+function dismissNotice(i){ const n=rejects(); n.splice(i,1); setRejects(n); renderNotices(); }
+function renderMyOrders(){
+  renderNotices();
+  const se=document.getElementById('syncedits');
+  if(se){ const q=editsQ(); se.innerHTML = q.length? `<p class="hint">${tf('✏️ ပြင်ချက် {n} ခု တင်ရန် ကျန်တယ် — လိုင်း ရရင် ပြန် တင်ပါ', {n: q.length})}</p>` : ''; }
+  const qa=document.getElementById('queuearea');
+  if(qa){
+    const q=queue();
+    qa.innerHTML = q.length? '' : '<p class="muted">'+tf('မပို့ရသေး တာ မရှိဘူး')+'</p>';
+    q.forEach((p,idx)=>{
+      const t=ordTotalOf(p.items||[]);
+      const d=document.createElement('div'); d.style.cssText='border:1px solid #d97706;border-radius:8px;padding:8px;margin:6px 0';
+      d.innerHTML=`<b>⏳ ${esc(p.outlet||'')}</b> · ${esc(p.odate||'')} · <b>${t.toLocaleString()} Ks</b> · ${tf('ပစ္စည်း {n} မျိုး', {n: (p.items||[]).length})}<br>`+
+        (p.items||[]).map(i=>{ const pr=PRODS.find(x=>x.id===i.product_id); return esc(pr? pr.sku+' '+pr.name : '#'+i.product_id)+' × '+i.qty; }).join('<br>')+
+        `<br><button class="btn" onclick="openQueueEditor(${idx})">${tf('✏️ ပြင်မယ်')}</button> <button class="btn alt" onclick="deleteQueued(${idx})">${tf('🗑 ဖျက်မယ်')}</button>`;
+      qa.appendChild(d);
+    });
+  }
+  const el=document.getElementById('myorders');
+  if(el){
+    el.innerHTML = MYORDERS.length? '' : '<p class="muted">'+tf('ဒီနေ့/မနေ့က မိမိ ဘောက်ချာ မရှိဘူး (လိုင်း ရမှ နောက်ဆုံး အခြေအနေ ဆွဲယူမယ်)')+'</p>';
+    MYORDERS.forEach(o=>{
+      const pend = pendingEditFor(o.id);
+      const d=document.createElement('div'); d.style.cssText='border:1px solid #cbd5e1;border-radius:8px;padding:8px;margin:6px 0';
+      d.innerHTML=`<b>${esc(o.code)}</b> · ${esc(o.outlet)} · ${esc(o.odate)} · <b>${(+o.total).toLocaleString()} Ks</b>`+
+        ` <span class="muted">${o.status==='new'?tf('အသစ်'):(o.status==='delivered'?tf('ပို့ပြီး'):(o.status==='cancelled'?tf('ပယ်ဖျက်'):esc(o.status)))}${o.paid?tf(' · ငွေရပြီး'):''}${o.printed?tf(' · 🖨 ပုံနှိပ်ပြီး'):''}${tf(' · ပြင်ခွင့် သုံးပြီး {n}/2', {n: o.sales_edits_used})}</span>`+
+        (pend? '<br><span style="color:#d97706">'+tf('✏️ ပြင်ချက် တင်ရန် ကျန်တယ်')+'</span>':'')+
+        (o.needs_outlet? '<br><span style="color:#b45309">⚠️ '+tf('ဆိုင် မသဲကွဲ')+'</span> <a class="btn alt" href="/orders/'+o.id+'">'+tf('ဆိုင် ရွေး တွဲ')+'</a>':'')+
+        `<div id="odet-${o.id}" style="display:none;margin-top:6px">${o.items.map(i=>`${esc(i.sku)} ${esc(i.name)} (${i.tier==='retail'?tf('လက်လီ'):tf('လက်ကား')}) × ${i.qty} = ${(+i.line_total).toLocaleString()}`).join('<br>')}</div>`+
+        `<br><button class="btn alt" onclick="toggleDetail(${o.id})">${tf('👁 ကြည့်မယ်')}</button>`+
+        (o.editable? ` <button class="btn" onclick="openSyncedEditor(${o.id})">${tf('✏️ ပြင်မယ်')}</button>` : ' <span class="muted">'+tf('(ပြင်လို့ မရတော့)')+'</span>');
+      el.appendChild(d);
+    });
+  }
+}
+function toggleDetail(oid){ const d=document.getElementById('odet-'+oid); if(d) d.style.display = d.style.display==='none' ? 'block' : 'none'; }
+function deleteQueued(idx){ if(!confirm(tf('ဒီ မပို့ရသေး ဘောက်ချာကို ဖျက်မှာလား?'))) return; const q=queue(); q.splice(idx,1); setQueue(q); renderMyOrders(); }
+/* ---- shared line editor (queued orders + synced-order edits) ---- */
+let ED=null; // {mode:'queue'|'synced', qidx, order, lines:[{product_id,sku,name,tier,price,qty,discount}]}
+function openQueueEditor(idx){
+  const p=queue()[idx]; if(!p) return;
+  ED={mode:'queue', qidx:idx, title:'⏳ '+ (p.outlet||''), lines:(p.items||[]).map(i=>{ const pr=PRODS.find(x=>x.id===i.product_id);
+    return {product_id:i.product_id, sku:pr?pr.sku:'', name:pr?pr.name:('#'+i.product_id), tier:i.tier||'retail', price:i.price, qty:i.qty, discount:+i.discount||0}; })};
+  drawEditor();
+}
+function openSyncedEditor(oid){
+  const o=MYORDERS.find(x=>x.id===oid); if(!o) return;
+  const pend=pendingEditFor(oid);
+  const src = pend? pend.items : o.items;
+  ED={mode:'synced', order:o, title:'✏️ '+o.code+' — '+o.outlet, lines:src.map(i=>({product_id:i.product_id, sku:i.sku||'', name:i.name||'', tier:i.tier||'retail', price:i.price, qty:i.qty, discount:+i.discount||0}))};
+  drawEditor();
+}
+function drawEditor(){
+  const box=document.getElementById('ordereditor'); if(!box||!ED) return;
+  box.style.display='block';
+  const tot=ordTotalOf(ED.lines);
+  box.innerHTML=`<div style="border:2px solid #193059;border-radius:8px;padding:10px;margin-top:10px"><b>${esc(ED.title)}</b> — ${tf('စုစုပေါင်း')} <b>${tot.toLocaleString()} Ks</b>`+
+    ED.lines.map((l,i)=>`<div style="margin:6px 0">${esc(l.sku)} ${esc(l.name)} (${l.tier==='retail'?tf('လက်လီ'):tf('လက်ကား')} ${(+l.price).toLocaleString()}) × <input type="number" min="0" step="any" value="${l.qty}" style="width:60px" onchange="ED.lines[${i}].qty=+this.value; drawEditor()"> ${tf('လျှော့')} <input type="number" min="0" step="any" value="${l.discount}" style="width:80px" onchange="ED.lines[${i}].discount=+this.value; drawEditor()"> <button class="btn alt" onclick="ED.lines.splice(${i},1); drawEditor()">${tf('ဖြုတ်')}</button></div>`).join('')+
+    `<div class="row"><label>${tf('ပစ္စည်း ထပ်ထည့်')} <input id="edaddq" type="text" autocomplete="off" placeholder="${tf('ပစ္စည်း ရှာရန် (နာမည် / SKU)')}" oninput="edaddSearch()"><div id="edaddlist"></div></label>
+     <label>${tf('ဈေး အမျိုးအစား')} <select id="edaddtier"><option value="retail">${tf('လက်လီ')}</option><option value="wholesale">${tf('လက်ကား')}</option></select></label>
+     <button class="btn alt" onclick="editorAddLine()">${tf('+ ထည့်မယ်')}</button></div>
+     <p><button class="btn" onclick="saveEditor()">${tf('💾 သိမ်းမယ်')}</button> <button class="btn alt" onclick="closeEditor()">${tf('မပြင်တော့')}</button></p></div>`;
+  box.scrollIntoView({behavior:'smooth', block:'start'});
+}
+let EDADD_ID=null;
+function edaddSearch(){
+  const q=(document.getElementById('edaddq').value||'').trim().toLowerCase();
+  const box=document.getElementById('edaddlist'); EDADD_ID=null;
+  if(!q){ box.innerHTML=''; return; }
+  const hits=PRODS.filter(p=>(p.sku+' '+p.name).toLowerCase().indexOf(q)>=0).slice(0,10);
+  box.innerHTML=hits.map(p=>`<button type="button" class="btn alt" style="display:block;margin:3px 0" onclick="edaddPick(${p.id}, this)">${esc(p.sku)} — ${esc(p.name)}${p.unit? ' ('+esc(p.unit)+')':''}</button>`).join('');
+}
+function edaddPick(id, btn){
+  EDADD_ID=id;
+  document.getElementById('edaddq').value=btn.textContent;
+  document.getElementById('edaddlist').innerHTML='';
+}
+function editorAddLine(){
+  if(!EDADD_ID){ alert(tf('ပစ္စည်းကို စာရင်းထဲက ရွေးပါ')); return; }
+  const p=PRODS.find(x=>x.id===+EDADD_ID); if(!p) return;
+  const tier=document.getElementById('edaddtier').value;
+  const ex=ED.lines.find(l=>l.product_id===p.id && l.tier===tier);
+  if(ex){ ex.qty++; } else { ED.lines.push({product_id:p.id, sku:p.sku, name:p.name, tier:tier, price: tier==='retail'? p.retail : p.wholesale, qty:1, discount:0}); }
+  drawEditor();
+}
+function closeEditor(){ ED=null; const box=document.getElementById('ordereditor'); if(box){ box.style.display='none'; box.innerHTML=''; } }
+function saveEditor(){
+  if(!ED) return;
+  const lines=ED.lines.filter(l=>l.qty>0).map(l=>({product_id:l.product_id, qty:l.qty, price:l.price, tier:l.tier,
+    discount:Math.min(Math.max(+l.discount||0,0), l.qty*l.price)}));
+  if(!lines.length){ alert(tf('ပစ္စည်း မကျန်တော့ပါ — အနည်းဆုံး ၁ မျိုး ကျန်ရမယ်')); return; }
+  if(ED.mode==='queue'){
+    const q=queue(); const p=q[ED.qidx]; if(!p){ closeEditor(); return; }
+    p.items=lines; setQueue(q);
+    alert(tf('ပြင်ပြီးပြီ — ဒီ ဘောက်ချာ တစ်စောင် အနေနဲ့ ပဲ တင်မယ်'));
+  } else {
+    let q=editsQ().filter(e=>e.order_id!==ED.order.id);   // newest edit for an order supersedes older queued ones
+    q.push({client_edit_uuid:(crypto.randomUUID? crypto.randomUUID(): 'e'+Date.now()+Math.random()), order_id:ED.order.id, items:lines});
+    setEditsQ(q);
+    alert(tf('ပြင်ချက် သိမ်းထားပြီ — လိုင်း ရရင် တင်မယ် (စည်းမျဉ်း စစ်ပြီးမှ အတည်ပြုမယ်)'));
+  }
+  closeEditor(); renderMyOrders();
+}
+async function syncEdits(){
+  const q=editsQ(); if(!q.length) return null;
+  let res;
+  try{ const r=await fetch('/api/order-edits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edits:q})});
+    if(!r.ok) return null; res=await r.json(); }catch(e){ return null; }
+  const byUuid={}; (res.results||[]).forEach(x=>{ byUuid[x.client_edit_uuid]=x; });
+  const left=[]; let okc=0, rejc=0;
+  for(const e of q){
+    const x=byUuid[e.client_edit_uuid];
+    if(!x){ left.push(e); continue; }
+    if(x.status==='ok'){ okc++; } else { rejc++;
+      const o=MYORDERS.find(m=>m.id===e.order_id);
+      const n=rejects(); n.unshift({code:o? o.code : ('#'+e.order_id), reason:x.reason||'', at:Date.now()}); setRejects(n.slice(0,20));
+    }
+  }
+  setEditsQ(left);
+  return {ok:okc, rej:rejc};
+}
+
+window.addEventListener('online', ()=>{ netStat(); syncQueue(); });
+window.addEventListener('offline', netStat);
+loadProds(); loadOutlets(); loadMyOrders(); render(); renderMyOrders(); refresh(); drawCart(); probe();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+</script>
+{% endblock %}

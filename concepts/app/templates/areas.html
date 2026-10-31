@@ -1,0 +1,19 @@
+{% extends 'base.html' %}{% from '_tabs.html' import adm_tabs %}{% block title %}{{ t('ရပ်ကွက်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ adm_tabs('areas') }}
+<h1>{{ t('ရပ်ကွက် / ဧရိယာ ({n} ခု)', n=rows|length) }}</h1>
+<p class="muted">{{ t('Order တင်ရင် ရွေးလို့ရတဲ့ ရပ်ကွက် စာရင်းပါ။ မှားတာတွေ ဒီကနေ ဖျက်လို့ရတယ် — ဖျက်လည်း အရင် Order တွေက မှတ်တမ်း မပျက်ဘူး။') }}</p>
+<form method="post" class="card">
+  <div class="row">
+    <label>{{ t('ရပ်ကွက် အသစ် ထည့်ရန်') }} <input name="name" required></label>
+  </div>
+  <button class="btn" type="submit">{{ t('ထည့်မယ်') }}</button>
+</form>
+<table>
+<tr><th>{{ t('ရပ်ကွက်') }}</th><th></th></tr>
+{% for a in rows %}
+<tr><td>{{ a.name }}</td>
+<td><form method="post" action="/areas/{{ a.id }}/delete" onsubmit="return confirm('{{ t('ဖျက်မှာ သေချာလား?') }}')"><button class="btn danger" type="submit">{{ t('ဖျက်') }}</button></form></td></tr>
+{% endfor %}
+</table>
+{% endblock %}

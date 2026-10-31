@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}GTM ERP{% endblock %}</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+<script>window.GTM_T = {{ tjs|tojson }}; function tf(k, o){ var s = window.GTM_T[k] || k; if (o) { for (var x in o) { s = s.split('{'+x+'}').join(o[x]); } } return s; }</script>
+</head>
+<body>
+{% if me %}
+<header class="topbar">
+  <a class="brand" href="/"><img class="logo-sm" src="/static/logo.png" alt="GTM"> GTM Distribution</a>
+  {% set pth = request.path %}
+  <nav>
+    <a href="/" class="{{ 'on' if pth == '/' or pth.startswith('/sales-report') }}">{{ t('ပင်မ') }}</a>
+    {% if can('catalog.view') %}<a href="/catalog" class="{{ 'on' if pth.startswith('/catalog') }}">Catalog</a>{% endif %}
+    <a href="/orders" class="{{ 'on' if pth.startswith('/orders') }}">{{ t('ဘောက်ချာ') }}</a>
+    {% if can('buy_list.view') %}<a href="/buy-list" class="{{ 'on' if pth.startswith('/buy-list') or pth.startswith('/requests') or pth.startswith('/purchases') or pth.startswith('/settlements') }}">{{ t('အဝယ်') }}</a>{% endif %}
+    {% if can('products.view') %}<a href="/products" class="{{ 'on' if pth.startswith('/products') or pth.startswith('/stock') or pth.startswith('/returns') }}">{{ t('ပစ္စည်း & Stock') }}</a>{% endif %}
+    {% if can('notifications.view') %}<a href="/notifications" class="{{ 'on' if pth.startswith('/notifications') }}">🔔{% if notif_count %} ({{ notif_count }}){% endif %}</a>{% endif %}
+    {% if can('users.manage') %}<a href="/users" class="{{ 'on' if pth.startswith('/users') or pth.startswith('/areas') }}">{{ t('စီမံ') }}</a>{% endif %}
+  </nav>
+  <div class="who">{{ me.name }} · {{ role_label }} | <select class="lang-select" onchange="location.href='/lang/'+this.value">{% for code, label in lang_list %}<option value="{{ code }}"{{ ' selected' if lang == code }}>{{ label }}</option>{% endfor %}</select> | <a href="/logout">{{ t('Logout') }}</a></div>
+</header>
+{% else %}
+<div style="text-align:right;padding:8px 14px 0"><select class="lang-select" onchange="location.href='/lang/'+this.value">{% for code, label in lang_list %}<option value="{{ code }}"{{ ' selected' if lang == code }}>{{ label }}</option>{% endfor %}</select></div>
+{% endif %}
+<main class="wrap">
+{% if me and back_href %}<div class="backbar"><a class="backbtn" href="{{ back_href }}">&#8592; {{ back_label }}</a></div>{% endif %}
+{% with msgs = get_flashed_messages() %}
+  {% for m in msgs %}<div class="flash">{{ m }}</div>{% endfor %}
+{% endwith %}
+{% block body %}{% endblock %}
+</main>
+<script>
+// Wrap every table in a sideways-scroll box so nothing is ever cut off on small screens
+document.querySelectorAll('main table').forEach(function (t) {
+  if (t.parentElement && t.parentElement.classList.contains('table-scroll')) return;
+  var d = document.createElement('div'); d.className = 'table-scroll';
+  t.parentNode.insertBefore(d, t); d.appendChild(t);
+});
+</script>
+</body>
+</html>

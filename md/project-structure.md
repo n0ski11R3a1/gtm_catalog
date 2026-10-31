@@ -37,8 +37,18 @@ Browser / installed PWA
 - **Order submission (`/order/submit`)**: public endpoint used by sales
   reps using the browser/PWA cart; server validates the rep and obtains
   current prices from SQLite.
+- **Offline field sales (`/api/mobile/*`)**: reps can sign in to the
+  catalog PWA, download a price snapshot, save encrypted orders and
+  standalone outlet visits while offline, and explicitly sync them when
+  connected.
+- **Outlets (`/admin/outlets`)**: admin-managed outlet profiles, areas,
+  shop type, aliases, linked order history, and field visit history.
+  Offline capture can match aliases and requires an explicit choice when
+  a name maps to multiple outlets.
+- **Sales report (`/admin/sales-report`)**: date- and rep-filtered order
+  totals, status counts, per-product quantities, and daily activity.
 - **Admin (`/admin/...`)**: login-protected catalog, image, order, sales
-  rep, export, audit, and bulk-import management.
+  rep, export, catalog-audit, and bulk-import management.
 - **Updates & Status**: public catalog modal showing the activity feed,
   service-worker version, last offline sync, push subscription toggle,
   and a force-refresh action.
@@ -65,22 +75,24 @@ Browser / installed PWA
 6. **Order prices are server-authoritative.** The browser cart may keep
    price/name snapshots for display, but only sends internal product PK
    and quantity. `db.create_order()` reads current prices from SQLite.
-7. **Order history is snapshot-based.** Orders store a rep label and
-   outlet string; order items store business ID, name, unit prices,
-   quantity, and line totals as submitted at order time.
+7. **Order history is snapshot-based.** Orders store a rep label, the
+   captured outlet name and, when resolved, an `outlet_id`. Order items
+   store business ID, name, unit prices, quantity, and line totals at
+   order time. Offline order prices use an immutable catalog snapshot.
 8. **Product images are files, not blobs.** The canonical image file is
    `static/product-images/<NORMALIZED-ID>.webp`; generated gallery
    thumbnails live under `static/product-images/thumbnails/`. The DB
    `has_image` field is metadata; routes also resolve the file on disk.
 9. **Rep authentication is separate from admin authentication.** Admin
    pages check `session["admin"] is True` through `require_admin()`. The
-   browser cart remains public and validates the selected active rep.
-   The server also retains authenticated `/api/mobile/*` endpoints, but
-   this repository no longer contains a Flutter/Android client for them.
-10. **The service worker must not cache authenticated HTML.** Product,
+   legacy online browser cart remains public and validates the selected
+   active rep. The offline-ready PWA requires the rep's configured mobile
+   username/password and uses the authenticated `/api/mobile/*` APIs.
+10. **The service worker must not cache authenticated data.** Product,
     gallery, and public catalog pages have offline support; login/admin
-    navigations are sent to the network. Static asset changes require
-    coordinating the service-worker cache version and its precache list.
+    navigations are sent to the network. Authenticated mobile API requests
+    bypass Cache Storage. Static asset changes require coordinating the
+    service-worker cache version and its precache list.
 
 ## 3. Repository map
 
@@ -129,6 +141,15 @@ All HTML views extend `templates/base.html` unless otherwise noted.
 | `rep_form.html` | Add/edit sales rep code/name, active toggle, and optional mobile username/password. |
 | `admin_orders.html` | Order list, date filter, summary statistics, per-rep totals, view/delete actions, and mobile price-review flags. |
 | `admin_order_detail.html` | One order's rep/outlet/time/status, line snapshots/totals, mobile price-review metadata, and status update form. |
+| `admin_outlets.html` | Outlet directory, order-derived sales/visit summary, and new outlet form. |
+| `admin_outlet_detail.html` | Outlet profile editing, alias management, linked visit history, and recent orders. |
+| `admin_sales_report.html` | Date/rep-filtered submitted/fulfilled totals, performance by rep, product activity, and daily order totals. |
+| `admin_inventory.html` | Current product balances, manual receipt/issue form, and filtered append-only movement ledger. |
+| `admin_stock_counts.html` | Draft/approved physical-count history and count creation. |
+| `admin_stock_count_detail.html` | Snapshot quantities, physical-count entry, variance review, and final approval/reconciliation controls. |
+| `admin_purchases.html` | Supplier purchase-order list, receipt progress, and estimated order values. |
+| `admin_purchase_order_form.html` | Supplier details and multi-product order creation. |
+| `admin_purchase_order_detail.html` | Ordered/received quantities, partial receipt entry, and unreceived-order cancellation. |
 
 ### Browser assets
 
@@ -138,12 +159,14 @@ All HTML views extend `templates/base.html` unless otherwise noted.
 | `static/js/catalog-filters.js` | Catalog search/category/status filtering, sorting (recent/price/name), copy-price action, catalog event binding, and safe no-op behavior on pages without the catalog grid. Exposes functions used by inline template handlers. |
 | `static/js/catalog-state.js` | Saves/restores catalog search, sort, category, status, and scroll position in `sessionStorage`. Gallery reuses the same key for search/status continuity. |
 | `static/js/price-badges.js` | Converts price-change timestamps/direction into readable age text, arrows, and age color classes. |
-| `static/js/order.js` | Persistent localStorage cart; quantity controls; cart modal and desktop summary; rep/outlet validation; idempotency key; POST to `/order/submit`; success/error UI. Used on catalog, product detail, and gallery pages, though Gallery itself has no add-to-order controls. |
+| `static/js/order.js` | Persistent localStorage draft cart; quantity controls; cart modal and desktop summary; rep/outlet validation; idempotency key; online POST to `/order/submit`; dispatches signed-in reps to the encrypted offline-capable flow. |
+| `static/js/offline-orders.js` | Authenticated rep sign-in; AES-GCM encrypted IndexedDB vault for bearer token, catalog snapshot, orders, standalone visits, delivery assignments/outcomes, and handovers; outlet matching and optional GPS; explicit retry-safe sync. HTTPS and Web Crypto are required. Encryption protects stored data at rest, not against same-origin script compromise or a compromised device. |
+| `static/js/language.js` | Persistent English/Myanmar/Chinese selector and local UI translation for common catalog and admin actions; leaves marked user-entered content unchanged and translates dynamic UI additions. |
 | `static/js/admin.js` | Excel upload box drag/drop, filename display/extension check, and submit spinner. It targets the upload-page form markup. |
 | `static/js/gallery.js` | Stored List/Gallery preference and root redirect; category filtering; category-page search/status filtering and shared catalog-state persistence; viewer slide building, navigation, history/back-button close, and swipe gesture. |
 | `static/js/precache.js` | After catalog load, fetches `/api/prices` and `/api/product-images`, then pre-caches missing product pages, image files, `/gallery`, and category pages into dedicated buckets with concurrency capped at five. Displays progress and records the last successful sync in localStorage. |
 | `static/js/status.js` | Service-worker version request over `MessageChannel`; unread bell dot and last-seen marker; activity list/summary rendering and cursor pagination; push subscribe/unsubscribe UI; last-sync display; cache-clearing force refresh. |
-| `static/sw.js` | PWA service worker, current static cache version `gtm-catalog-v36`, separate persistent product-page/image/gallery cache buckets, request routing/offline strategies, version messaging, and push notification display/deep links. |
+| `static/sw.js` | PWA service worker, current static cache version `gtm-catalog-v41`, separate persistent product-page/image/gallery cache buckets, request routing/offline strategies, authenticated mobile API cache bypass, version messaging, and push notification display/deep links. |
 | `static/manifest.json` | Installable PWA name, start URL/scope, display mode, theme/background, orientation, and icon references. |
 | `static/css/style.css` | Legacy/general styles for the earlier catalog design and shared components. |
 | `static/css/admin.css` | Legacy admin component/layout styles. |
@@ -179,11 +202,21 @@ startup. SQLite access is centralized in `db.py`.
 | `price_history` | Append-only retail/wholesale price changes keyed by business Product ID and generation, with old/new values, timestamp, and source (`manual` or import source). |
 | `activity_log` | Unified public notification/activity rows: product added/replaced, price changed, out of stock, back in stock. Has Product ID, generation, name, details, source, and timestamp. Current-feed queries join to the current product generation. |
 | `id_counter` | One-row, monotonically increasing `next_number` for auto-generated GTM IDs. |
-| `sales_reps` | Admin-managed rep `code`, `name`, and active flag. Mobile login adds nullable `mobile_username`, Werkzeug `mobile_password_hash`, and SHA-256 `mobile_token_hash`; API reads do not return password/token hashes. |
-| `orders` | Order header: rep label, outlet name, status, retail/wholesale totals, timestamp, browser `idempotency_key`, and mobile `rep_id`, `client_order_id`, `catalog_snapshot_id`, `price_mismatch`, and `sync_received_at`. The partial unique index on `(rep_id, client_order_id)` makes mobile retries idempotent. |
-| `order_items` | Order line snapshots: order ID, Product ID/name, unit retail/wholesale, quantity, and line totals. |
-| `catalog_snapshots` | Immutable JSON catalog payloads keyed by SHA-256 `snapshot_id`. Mobile orders resolve their prices against this saved payload rather than trusting client-supplied prices. Snapshots must be retained while offline devices may still have queued orders against them. |
+| `sales_reps` | Admin-managed rep `code`, `name`, and active flag. Mobile login adds nullable `mobile_username`, Werkzeug `mobile_password_hash`, and SHA-256 `mobile_token_hash`; API reads do not return password/token hashes. Active reps with mobile credentials can be assigned delivery work. |
+| `orders` | Order header: rep label, outlet name and optional `outlet_id`, status, retail/wholesale totals, timestamp, browser `idempotency_key`, mobile `rep_id`, `client_order_id`, `catalog_snapshot_id`, `price_mismatch`, `sync_received_at`, and optional `delivery_rep_id`. |
+| `order_items` | Order line snapshots: order ID, product identity/name, unit retail/wholesale, quantity, line totals, and the internal `product_pk`/generation snapshot used to post delivery stock safely. Legacy lines are linked only when a generation-1 product identity is unambiguous. |
+| `outlets` | Structured customer identity with name, area, note, shop type, optional credit limit/GPS fields, and timestamps. Historical free-text orders are linked on the first schema migration when identity is unambiguous. |
+| `outlet_aliases` | Alternate outlet spellings used for offline and online order matching. Collisions across outlets are allowed but never guessed automatically. |
+| `outlet_visits` | Order-linked and standalone field visits, with rep identity, visit type/time, optional note and consented GPS coordinates/accuracy. Standalone mobile retries are unique by `(rep_id, client_visit_id)`. |
+| `catalog_snapshots` | Immutable JSON product-and-outlet payloads keyed by SHA-256 `snapshot_id`. Mobile orders resolve prices against the saved product payload, not client-supplied prices. Snapshots must be retained while offline devices may still have queued orders against them. |
 | `push_subscriptions` | One row per browser push endpoint, with endpoint and public subscription keys. Endpoint is unique and the keys are refreshed on conflict. |
+| `stock_balances` | Current quantity per internal product row; updated in the same transaction as each inventory movement. |
+| `stock_movements` | Append-only manual receipts/issues, purchase receipts, and approved-count adjustments. Stores product identity/generation snapshots, signed quantity delta, balance after movement, reference, note, actor, and timestamp. |
+| `stock_counts` / `stock_count_lines` | Draft/approved physical counts with product identity and book-quantity snapshots. A count changes stock only when fully populated and approved; approval and ledger adjustments commit atomically. |
+| `purchase_orders` / `purchase_order_items` | Supplier order header and line snapshots, ordered/received quantities, unit costs, status, invoice/reference, and creator. Partial receipts add stock through the same inventory ledger; cancelled/received order history is preserved. |
+| `delivery_assignments` | Append-only assignment/reassignment history; only one assignment per order is active at a time. Orders are assigned to active reps with configured mobile credentials. |
+| `delivery_attempts` / `delivery_attempt_items` | Idempotent repeated delivered/failed field outcomes with rep, optional consented GPS, note, cash collected, and delivered product/quantity snapshots. Each successful attempt issues only its delivered quantities; the order stays assigned until complete, while a failed attempt cancels the undelivered balance without changing stock. |
+| `delivery_handovers` / `delivery_handover_items` | Rep-declared cash handovers linked to the exact delivered cash collections, then verified with actual cash received, verifier, timestamp, and discrepancy preserved. Each collection can be included in only one handover. |
 
 ### Schema and history notes
 
@@ -211,6 +244,22 @@ startup. SQLite access is centralized in `db.py`.
   unique.
 - Product import's `replace=True` behavior marks products absent from the
   workbook as Out Of Stock, rather than deleting them.
+- Inventory is separate from the catalog's editorial In Stock/Out Of Stock
+  status. Receipts and issues update the ledger transactionally; issues
+  cannot make a balance negative. Product rows with stock history cannot
+  be deleted, and a discontinued ID cannot be reused while it has stock.
+- A stock count snapshots all current products and book quantities. Every
+  product must have a finite, non-negative physical count before approval.
+  Approval reconciles against the latest balance, writes immutable
+  `count_adjustment` movements, and cannot be repeated or edited afterward.
+- Catalog orders do not yet alter inventory. Stock is not deducted until a
+  delivery/fulfilment workflow is integrated, avoiding a false assumption
+  that an order was physically dispatched.
+- Supplier purchase orders can be created with multiple products and
+  partial receipts. Each receipt updates the purchase line and stock ledger
+  atomically; over-receipt is rejected. Orders with any received stock
+  cannot be cancelled. Supplier returns, supplier settlements, and
+  finance approval are not yet implemented.
 - The configured Excel required headers include Base Price, B2C, and
   Supplier. `validate_pricing_rows()` contains additional cost/price
   validations, but the current `/upload` route does not call that helper.
@@ -304,10 +353,26 @@ are:
   50 orders and each UUID/snapshot/outlet/time, then delegates each order
   to snapshot-priced `db.create_mobile_order()` and returns per-order
   results.
+- `admin_outlets()` / `admin_outlet_detail()` /
+  `admin_outlet_edit()` / alias handlers: admin-only outlet directory,
+  profiles, alias management, linked orders, and order-derived visits.
+- `admin_sales_report()`: validates a date range and optional historical
+  rep label, then renders date-bounded performance summaries.
+- `admin_inventory()` / `admin_inventory_movement()`: display current
+  stock and the ledger, and record a validated manual receipt or issue.
+- `admin_stock_counts()` / `admin_stock_count_create()` /
+  `admin_stock_count_detail()` / `admin_stock_count_save()` /
+  `admin_stock_count_approve()` / `admin_stock_count_delete()`: create
+  and manage physical counts; only a complete draft can be approved to
+  reconcile stock.
+- `admin_purchases()` / `admin_purchase_order_new()` /
+  `admin_purchase_order_detail()` / `admin_purchase_order_receive()` /
+  `admin_purchase_order_cancel()`: create supplier orders, record partial
+  receipts, and cancel only unreceived orders.
 - `sw()`: serves `static/sw.js` at `/sw.js` with service-worker scope
   allowed at `/`.
 - `login()` / `logout()`: verify configured username/password hash,
-  establish the admin session, or clear it.
+  establish the admin session with the configured actor name, or clear it.
 - `admin()`: dashboard stats, today's order aggregate, recent orders,
   imported workbook timestamp/name.
 - `admin_upload_images()`: processes a ZIP of GTM-named images; skips
@@ -325,8 +390,8 @@ are:
   price history.
 - `admin_product_images()`: focused upload/replace/delete surface for a
   product image.
-- `admin_product_delete()`: deletes the database product row. It does
-  not itself call the image-file deletion helper.
+- `admin_product_delete()`: deletes a product only if it has no inventory
+  ledger history; it does not itself call the image-file deletion helper.
 - `admin_reps()` / `admin_rep_add()` / `admin_rep_edit()` /
   `admin_rep_delete()`: manage rep list and active status.
 - `admin_orders()`: loads order rows, aggregates, rep breakdown, date
@@ -426,7 +491,8 @@ the module owns schema access and transactions.
   for explicit reuse.
 - `reuse_product_id(product_id, data)`: verifies an existing OOS row,
   deletes its old image, increments generation, replaces product fields,
-  logs replacement, and returns the stable internal PK.
+  logs replacement, and returns the stable internal PK; refuses reuse
+  while the product has stock or an open purchase order.
 
 #### Sales reps and orders
 
@@ -437,17 +503,28 @@ the module owns schema access and transactions.
   `CODE (Name)`.
 - `add_rep(...)` / `update_rep(...)` / `delete_rep(...)`: CRUD for reps.
 - `create_mobile_catalog_snapshot()`: canonicalizes the full catalog,
-  hashes/persists its immutable JSON snapshot, and returns product data
-  without Supplier or generation.
+  hashes/persists its immutable product JSON snapshot, and returns public
+  product data without Supplier or generation plus the outlet/alias
+  directory for authenticated offline selection.
 - `get_mobile_rep_by_username(username)` /
   `get_mobile_rep_by_token_hash(token_hash)`: resolve mobile credentials
   or active token identity.
 - `set_mobile_token_hash(rep_id, token_hash)`: persist one active token
   hash for the rep.
+- `_normalise_outlet_text()` / `_resolve_outlet_id()`: normalize outlet
+  spellings, resolve one unique name/alias, create an outlet for a new
+  name, and leave ambiguous names unlinked rather than guessing.
+- `get_all_outlets()` / `get_outlet()` / `get_public_outlets()`: load
+  outlet summaries, profiles, order/visit history, or public-safe
+  outlet data for authenticated snapshots.
+- `create_outlet()` / `update_outlet()` / `add_outlet_alias()` /
+  `delete_outlet_alias()`: validate and persist outlet profile changes.
 - `create_mobile_order(...)`: transactionally resolves products against
   a saved catalog snapshot, aggregates quantities, saves snapshot prices,
   compares product generation/price/status to current catalog, stores
-  review metadata, and returns the existing order on a repeated rep/UUID.
+  review metadata, resolves the outlet, records an order-derived visit
+  and optional GPS fix, and returns the existing order on a repeated
+  rep/UUID.
 - `create_order(rep_name, cart_items, outlet_name="", idempotency_key=None)`:
   returns an existing order for a repeated key, otherwise validates each
   PK/quantity, loads current prices, inserts order and line snapshots,
@@ -459,6 +536,12 @@ the module owns schema access and transactions.
   wholesale totals for an optional date.
 - `get_orders_by_rep(date_filter=None)`: per-rep count/outlet/retail
   aggregation.
+- `get_sales_report(start_date, end_date, rep_name=None)`: returns
+  date-bounded overall/per-rep order counts and submitted/fulfilled
+  retail totals, daily activity, and product quantities excluding
+  cancelled orders.
+- `get_order_rep_names()`: distinct saved rep labels for historical
+  report filtering.
 - `get_order_dates()`: distinct order dates newest first.
 - `get_order(order_id)`: returns order header and ordered line items.
 - `update_order_status(...)`: changes header status.
@@ -471,7 +554,9 @@ the module owns schema access and transactions.
   and returns internal PK.
 - `update_product(product_pk, data)`: updates product values and logs
   price/status changes in the same transaction.
-- `delete_product(product_pk)`: deletes a product database row.
+- `delete_product(product_pk)`: refuses deletion if stock movement history
+  or an open/partial purchase order references the product; otherwise
+  removes the row and its zero balance.
 - `validate_pricing_rows(path)`: validates supplier/base-price/B2C and
   retail/wholesale relationship rules for in-stock rows; OOS rows are
   exempt. Present helper, not wired into current `/upload` handler.
@@ -483,6 +568,62 @@ the module owns schema access and transactions.
   price/status/add events, auto-assigns IDs for blank rows if called
   directly, warns on historical-ID reuse, and optionally marks missing
   products OOS. Returns row count and reuse warnings.
+
+#### Inventory and physical counts
+
+- `_validated_stock_number(...)`: rejects booleans, invalid/non-finite
+  numbers, and quantities outside the allowed non-negative/positive range.
+- `_stock_balance(conn, product_pk)`: returns the current persisted
+  balance, defaulting to zero.
+- `_record_stock_movement(...)`: appends a product-identity snapshot to
+  the ledger and updates its balance in the same caller-owned
+  transaction.
+- `record_stock_movement(...)`: serializes receipt/issue writes with
+  `BEGIN IMMEDIATE`, rejects negative resulting balances, and returns
+  the movement ID.
+- `get_inventory_products()` / `get_stock_movements(...)`: read current
+  balances and newest-first movement history.
+- `create_stock_count(...)`: snapshots every current product and its
+  book balance into a draft count.
+- `get_stock_counts()` / `get_stock_count(...)`: return count progress,
+  detail rows, and current book quantities.
+- `save_stock_count(...)`: validates and saves the full count-line
+  mapping while the count remains a draft.
+- `approve_stock_count(...)`: requires every line, checks product
+  generations, writes only the net differences as movements, and seals
+  the count atomically.
+- `delete_stock_count(...)`: removes draft counts only.
+- `create_purchase_order(...)`: validates supplier/order details and
+  product lines, snapshots current product identities/costs, and stores an
+  open order without changing stock.
+- `get_purchase_orders()` / `get_purchase_order(...)`: return order
+  summaries, line totals, and ordered/received quantities.
+- `receive_purchase_order(...)`: validates partial/full receipt amounts,
+  rejects over-receipts or product-generation changes, and writes purchase
+  receipts plus line/status changes atomically.
+- `cancel_purchase_order(...)`: cancels only open/partial orders with no
+  received quantities.
+
+#### Delivery assignment and cash handovers
+
+- `get_delivery_board()`: returns open orders, configured mobile reps, and
+  handovers for the admin delivery workspace.
+- `assign_delivery_order(...)`: verifies the order and active mobile rep,
+  records assignment history, and atomically updates the order's assignee.
+- `get_mobile_deliveries(...)`: returns only a rep's active assignments,
+  with remaining quantities, cash collectible against delivered goods, and
+  unhanded cash collections.
+- `record_mobile_delivery_attempt(...)`: validates assignment, idempotency,
+  remaining quantities, product generations, cash limits, and stock. Each
+  attempt's stock movements and order status update commit atomically.
+- `create_mobile_delivery_handover(...)`: validates ownership and exact
+  unhanded delivery attempts, then records an idempotent cash-handover
+  batch.
+- `get_delivery_handovers(...)` / `verify_delivery_handover(...)`: provide
+  admin review, one-time verification, received cash, and discrepancy
+  history.
+- `delete_rep(...)`: refuses to remove reps referenced by delivery
+  assignments, attempts, or handovers; deactivate those accounts instead.
 
 ### `services.py`
 
@@ -543,11 +684,16 @@ the endpoint has per-rep identity or access control.
 | POST | `/api/push/unsubscribe` | Public | Removes endpoint if supplied. |
 | POST | `/order/submit` | Public | Validates rep/outlet/cart then creates or returns idempotent order. |
 | POST | `/api/mobile/login` | Public credentials | Rep username/password → bearer token and rep identity; a new login replaces the rep's previous token. |
-| GET | `/api/mobile/catalog` | Mobile bearer | Creates/reuses and returns public-safe catalog data plus immutable SHA-256 snapshot ID. |
-| POST | `/api/mobile/sync` | Mobile bearer | Accepts 1–50 orders; each order gets an independent result. Order prices are looked up from the referenced saved snapshot. |
+| GET | `/api/mobile/catalog` | Mobile bearer | Creates/reuses and returns public-safe catalog and outlet/alias data plus immutable SHA-256 product snapshot ID. |
+| POST | `/api/mobile/sync` | Mobile bearer | Accepts 1–50 orders; each order gets an independent result. Prices use the referenced saved snapshot; selected outlet IDs are verified and ambiguous free-text matches are not guessed. |
+| POST | `/api/mobile/visits/sync` | Mobile bearer | Sync standalone outlet visits in retry-safe batches, with optional validated GPS. |
+| GET | `/api/mobile/deliveries` | Mobile bearer | Returns only the caller's assigned open deliveries (no supplier or cost fields) and cash collections not yet included in a handover. |
+| POST | `/api/mobile/deliveries/sync` | Mobile bearer | Accepts up to 50 retry-safe delivery-quantity or failed-delivery outcomes. Each successful attempt posts only its delivered quantities atomically; the order stays open until complete, while failure cancels the remaining balance. |
+| POST | `/api/mobile/handovers/sync` | Mobile bearer | Records rep-declared cash handovers linked to exact, unhanded delivery cash records. |
 | GET | `/sw.js` | Public | Serves worker with root scope header. |
 | GET/POST | `/login` | Public | Admin username/password-hash login. |
 | GET | `/logout` | Session | Clears session. |
+| GET | `/language/<code>` | Public | Saves `en`, `my`, or `zh` in a first-party cookie and safely returns to a local page. |
 | GET | `/admin` | Admin | Dashboard. |
 | GET | `/admin/products` | Admin | Product management table. |
 | GET/POST | `/admin/products/add` | Admin | Add product or reuse OOS Product ID. |
@@ -562,6 +708,28 @@ the endpoint has per-rep identity or access control.
 | GET/POST | `/admin/reps/<int:rep_id>/edit` | Admin | Edit rep and active flag. |
 | POST | `/admin/reps/<int:rep_id>/delete` | Admin | Delete rep. |
 | GET | `/admin/orders` | Admin | Order list and optional `?date=YYYY-MM-DD` filter. |
+| GET | `/admin/deliveries` | Admin | Assign open orders to mobile-enabled reps and review same-day cash handovers. |
+| POST | `/admin/deliveries/<int:order_id>/assign` | Admin | Assign or reassign a new order to an active rep with mobile credentials. |
+| POST | `/admin/deliveries/handovers/<int:handover_id>/verify` | Admin | Record actual cash received and verify a pending rep handover; discrepancy remains recorded. |
+| GET/POST | `/admin/outlets` | Admin | Outlet directory and profile creation. |
+| GET | `/admin/outlets/<int:outlet_id>` | Admin | Outlet profile, aliases, linked visits, and recent orders. |
+| POST | `/admin/outlets/<int:outlet_id>/edit` | Admin | Update outlet name, area, type, note, and optional credit limit. |
+| POST | `/admin/outlets/<int:outlet_id>/aliases` | Admin | Add an alternate outlet spelling. |
+| POST | `/admin/outlets/<int:outlet_id>/aliases/<int:alias_id>/delete` | Admin | Remove an outlet alias. |
+| GET | `/admin/sales-report` | Admin | Sales totals and performance by rep/product; accepts `from`, `to`, and `rep` query parameters. |
+| GET | `/admin/inventory` | Admin | Current balances and movement ledger; optional `?product_id=` filters the ledger. |
+| POST | `/admin/inventory/movement` | Admin | Record a positive receipt or issue; rejects invalid quantities and insufficient stock. |
+| GET | `/admin/stock-counts` | Admin | List draft and approved stock counts. |
+| POST | `/admin/stock-counts/create` | Admin | Snapshot current products/balances into a new draft count. |
+| GET | `/admin/stock-counts/<int:count_id>` | Admin | View/edit a draft count or review an approved count. |
+| POST | `/admin/stock-counts/<int:count_id>/save` | Admin | Save non-negative physical quantities for the draft. |
+| POST | `/admin/stock-counts/<int:count_id>/approve` | Admin | Require every line, atomically reconcile balances, and seal the count. |
+| POST | `/admin/stock-counts/<int:count_id>/delete` | Admin | Delete a draft count only. |
+| GET | `/admin/purchases` | Admin | Supplier order list with order totals and receiving progress. |
+| GET/POST | `/admin/purchases/new` | Admin | Create a supplier order with one or more products; no stock is added until received. |
+| GET | `/admin/purchases/<int:purchase_order_id>` | Admin | Purchase-order detail and partial receiving form. |
+| POST | `/admin/purchases/<int:purchase_order_id>/receive` | Admin | Post partial/full received quantities into purchase lines and stock ledger atomically. |
+| POST | `/admin/purchases/<int:purchase_order_id>/cancel` | Admin | Cancel only an open order with no received quantities. |
 | GET | `/admin/orders/<int:order_id>` | Admin | Order detail. |
 | POST | `/admin/orders/<int:order_id>/status` | Admin | Change order status. |
 | POST | `/admin/orders/<int:order_id>/delete` | Admin | Delete order and line items. |
@@ -572,14 +740,25 @@ the endpoint has per-rep identity or access control.
 
 ## 7. Mobile order API status
 
-The server-side `/api/mobile/login`, `/api/mobile/catalog`, and
-`/api/mobile/sync` endpoints and their database support remain in
-`app.py`/`db.py`. They authenticate rep credentials, issue bearer tokens,
-return immutable catalog snapshots, and accept idempotent snapshot-priced
-orders. The Flutter/Android client, its tests, and its APK setup/build
-tooling have been removed; this repository cannot currently build or
-deliver an Android APK. The endpoints are retained server functionality,
-not an actively supported mobile application.
+The server-side `/api/mobile/login`, `/api/mobile/catalog`,
+`/api/mobile/sync`, `/api/mobile/visits/sync`,
+`/api/mobile/deliveries`, `/api/mobile/deliveries/sync`, and
+`/api/mobile/handovers/sync` endpoints and their database support remain
+in `app.py`/`db.py`. They authenticate rep credentials, issue bearer
+tokens, return immutable catalog snapshots, accept snapshot-priced
+orders and retry-safe standalone visits, list only the caller's assigned
+deliveries with undelivered quantities, and sync quantity-based delivery
+attempts and cash handovers. A partial delivery keeps the order assigned;
+the server rejects quantities beyond the remaining balance and posts
+stock movements atomically. The catalog
+PWA uses these endpoints for authenticated offline field operations.
+Pending order, visit, delivery, handover data, cached assignments, and
+the bearer token are AES-GCM encrypted in IndexedDB using a
+non-extractable device key; the service worker bypasses cache for
+`/api/mobile/*`. HTTPS/Web Crypto are required, and browser-side
+encryption is not protection from a compromised device or same-origin
+script. The Flutter/Android client and its APK build tooling remain
+removed.
 
 ## 8. Browser behavior and offline strategy
 
@@ -587,14 +766,59 @@ not an actively supported mobile application.
 
 - Cart and its idempotency token use localStorage, so drafts survive
   reloads. The submitted JSON excludes browser price values.
+- For reps signed in to Offline field sales, the catalog snapshot,
+  bearer token, queued orders, and standalone visits are encrypted in
+  IndexedDB. Orders are durably queued before the working cart is
+  cleared. Sync is explicit, batches at most 50, keeps failed records
+  queued with visible errors, and safely retries a lost response using
+  the same client UUID.
+- The signed-in PWA must refresh the catalog while connected before a
+  field visit. Offline prices reflect that immutable snapshot; the server
+  reports a price mismatch if the current catalog changed before sync.
+- Known outlet names and aliases are cached in the encrypted catalog
+  snapshot. A spelling matching multiple outlets requires an explicit
+  selection; unknown names are created as outlets on successful sync.
+- Reps may explicitly opt in to attaching device GPS to an offline order.
+  Coordinates are validated by the server, retained in the encrypted
+  queued order until sync, then stored on the linked visit. Without the
+  checkbox, the browser does not request location. The first valid visit
+  coordinate fills an outlet's location only if it was previously unset.
+- Reps may also record an encrypted standalone visit without creating an
+  order. Visit type, optional note, outlet matching, and optional GPS are
+  preserved offline; ambiguous outlet names are rejected unless the rep
+  selects a matching outlet, and sync is idempotent.
+- Admins assign new orders to reps with active mobile credentials. A
+  signed-in rep downloads only their own open assignments, with previously
+  delivered quantities removed. Delivery quantities are sealed into the
+  encrypted queue before sync; each successful attempt atomically issues
+  only those quantities from stock. The order stays assigned until all
+  quantities are delivered, at which point it becomes fulfilled. A failed
+  delivery requires a reason and cancels any remaining quantity without
+  changing stock. Partial delivery is supported, including repeated
+  attempts and idempotent retries.
+- Cash collections are attached to a delivered attempt and cannot exceed
+  the unpaid value of delivered items or the total order value. Reps queue
+  a cash handover linked to the exact
+  unhanded collections; an admin records actual cash received. Any
+  declared/received difference remains visible. This is delivery cash
+  custody tracking, not general customer payments, bank, or cashbox.
+- Reps with delivery assignments or history cannot be deleted; deactivate
+  their account instead so historical delivery and handover records remain
+  attributable.
 - Catalog search/sort/category/status/scroll use sessionStorage.
 - Gallery preference and push subscription are local/browser state.
+- English, Myanmar, and Chinese can be selected from public or admin
+  navigation. `/language/<code>` stores the browser preference in a
+  first-party cookie for one year and returns only to a validated local
+  path. Local translation covers common catalog/admin interface strings;
+  unmatched strings remain English. User-entered product and outlet values
+  marked `translate="no"` remain unchanged.
 - Last-seen activity ID and last offline sync timestamp are stored
   client-side; there is no user-account-specific notification state.
 
 ### Service-worker cache buckets
 
-- `gtm-catalog-v36`: versioned static assets and public catalog root.
+- `gtm-catalog-v41`: versioned static assets and public catalog root.
   This bucket is refreshed/removed on cache-version changes.
 - `gtm-product-pages-v1`: stable product detail page cache.
 - `gtm-product-images-v1`: stable product image cache.
@@ -617,11 +841,30 @@ Offline support remains subject to browser storage eviction and platform
 behavior. iOS Home Screen installation and real-device testing are
 particularly important; older handoff notes discuss known iOS limitations.
 
+### ERP feature migration status
+
+The `concepts/` prototype is a larger Flask ERP and is still being
+migrated incrementally; it is not the live application. Implemented in
+the current app are authenticated encrypted offline order and standalone
+visit capture, structured outlet profiles/aliases and visit history with
+explicit optional GPS capture, date-filtered sales reporting, an
+auditable stock ledger, manual stock receipts/issues, approval-based
+physical stock counts, supplier purchase orders with partial receiving,
+quantity-based partial-delivery stock issue with delivery assignment and
+cash handover verification, and an English/Myanmar/Chinese interface
+language selector with local translations for common UI labels. Still not
+implemented from the prototype
+are supplier returns/settlements and finance approval, general customer
+payment collection, cashbox/expenses/profit,
+configurable role/permission administration, a general audit workflow,
+backup/restore management, and broader analysis/tax/advisory pages.
+
 ## 9. Configuration and operation
 
 `config.py` derives data paths from the repository directory. Relevant
 environment names include:
 
+- `GTM_ENV` (`production` requires the deployment settings below)
 - `GTM_SECRET_KEY`
 - `GTM_ADMIN_USERNAME`
 - `GTM_ADMIN_PASSWORD_HASH`
@@ -631,10 +874,13 @@ environment names include:
 
 The config module also sets image upload limits, accepted file formats,
 WebP dimensions/quality, gallery page size, required Excel headers, and
-local SQLite/Excel paths. Do not include actual credentials or private
-keys in prompts, handoff docs, screenshots, or commits. Production should
-use deployment-managed secret values and HTTPS (required for service
-workers and browser push).
+local SQLite/Excel paths. In development, legacy fallback credentials
+remain for local compatibility. Set `GTM_ENV=production` in deployment:
+the app then refuses to start unless all six credential/VAPID settings
+above are supplied. Use deployment-managed values and HTTPS (required
+for service workers and encrypted offline orders). Never include actual
+credentials or private keys in prompts, handoff docs, screenshots, or
+commits.
 
 The documented development/test command is:
 
@@ -652,6 +898,26 @@ file mapping while `/sw.js` remains a Flask route.
 `tests/test_mobile_sync.py` covers mobile login/auth, Supplier exclusion,
 snapshot-price preservation, price-mismatch flags, idempotent retry, and
 token revocation when a rep is disabled or changes credentials.
+
+`tests/test_outlets.py` covers order/visit linkage, standalone visit
+sync/idempotence, alias resolution, explicit same-name outlet selection,
+no-guess behavior for ambiguous names, opt-in GPS persistence, invalid
+GPS rejection, and authenticated outlet admin pages.
+`tests/test_sales_report.py` covers status totals, cancelled-line
+exclusion, date filters, and report rendering.
+
+`tests/test_inventory.py` covers receipt/issue ledger safety, complete
+stock-count approval and idempotence, admin access checks, product-history
+deletion/reuse guards, and purchase-order partial receiving/cancellation.
+`tests/test_delivery.py` covers assignment/auth boundaries, atomic stock
+issue and retry behavior, quantity-based partial deliveries and completion,
+failed delivery, overcollection rejection, cash-handover
+idempotence/verification, and delivery-rep deletion guards.
+`tests/test_language.py` covers language preference persistence, safe
+return redirects, supported-language fallback, and public/admin selector
+rendering.
+`tests/test_config_security.py` covers required production configuration
+and development-only fallback behavior.
 
 `tests/test_image_upload_helpers.py` covers:
 
@@ -678,7 +944,7 @@ These are observations about the checked-out code, not instructions to
 silently change behavior:
 
 - `md/PROJECT_HANDOFF.md` says the worker is v21, but the current
-  `static/sw.js` declares `gtm-catalog-v36` and has persistent gallery and
+  `static/sw.js` declares `gtm-catalog-v41` and has persistent gallery and
   product-image caches.
 - The old `md/gtm_catalog_project_path.md` contains unresolved conflict
   markers. Do not use it as a canonical current-state description.
@@ -728,10 +994,12 @@ silently change behavior:
   `order.js` localStorage payload → `/order/submit` →
   active-rep validation → `db.create_order()` → `orders` and
   `order_items`; admin views use `db.get_all_orders()`/`get_order()`.
-- **Mobile order ingestion (server-side only):** `/api/mobile/login`,
-  `/api/mobile/catalog`, and `/api/mobile/sync` → mobile helpers in
-  `app.py`/`db.py` → `catalog_snapshots`, `orders`, and `order_items` →
-  admin order review screens. No Android client is included.
+- **Mobile field sales:** `/api/mobile/login` and `/api/mobile/catalog`
+  issue authenticated credentials/snapshots; `/api/mobile/sync` writes
+  snapshot-priced orders; `/api/mobile/visits/sync` writes standalone
+  visits → mobile helpers in `app.py`/`db.py` → `catalog_snapshots`,
+  `orders`, `order_items`, and `outlet_visits`. The PWA is the field
+  client; no Android client is included.
 - **Activity bell:** product writes in `db.py` →
   `activity_log` → `/api/activity` or `/api/activity/summary` →
   `status.js`; optional OS notification flows through `push.py` and

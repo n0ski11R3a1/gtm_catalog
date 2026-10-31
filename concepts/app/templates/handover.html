@@ -1,0 +1,30 @@
+{% extends 'base.html' %}{% from '_tabs.html' import ord_tabs %}{% block title %}{{ t('💵 ငွေ လွှဲအပ် စစ်ရန်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ ord_tabs('hand', perms) }}
+<h1>{{ t('💵 ငွေ လွှဲအပ် စစ်ရန်') }}</h1>
+<form method="get" class="row">
+  <label>{{ t('ရက်') }} <input type="date" name="day" value="{{ day }}"></label>
+  <button class="btn" type="submit">{{ t('ကြည့်မယ်') }}</button>
+</form>
+<p class="hint">{{ t('ပို့သူ မှတ်ထားတာ — ရုံး က စစ်ပြီး အတည်ပြုမှ "ရပြီး" ဖြစ်မယ်') }}</p>
+{% if rows %}
+{% for r in rows %}
+<div class="card">
+  <h3 style="margin-top:0">{{ r.u.name }}</h3>
+  <p>{{ t('မျှော်လင့် ငွေ (ပို့ပြီး ဘောက်ချာ)') }}: <b>{{ fmt_money(r.expected) }}</b> · {{ t('မှတ်ထားတဲ့ ကောက်ငွေ') }}: <b>{{ fmt_money(r.recorded) }}</b> · {{ t('အတည်ပြုပြီး ငွေ') }}: <b>{{ fmt_money(r.verified) }}</b>{% if r.pend_v %} · ⏳ {{ t('စစ်ရန် ကျန် ငွေ') }}: <b>{{ fmt_money(r.pend_v) }}</b>{% endif %}</p>
+  {% if r.pend %}
+  <div class="table-scroll"><table>
+  <tr><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('ရက်') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th>{{ t('ငွေ ပေးတဲ့ နည်း') }}</th><th>{{ t('မှတ်ချက်') }}</th></tr>
+  {% for p in r.pend %}<tr><td><a href="/orders/{{ p.order_id }}">{{ p.code }}</a></td><td>{{ p.rdate or '' }}</td><td class="num">{{ fmt_money(p.amount) }}</td><td>{{ t(dict(PAY_METHODS).get(p.method or 'cash', p.method or '')) }}</td><td>{{ p.note or '' }}{% if p.denom_fmt %}<br><span class="denom-line">🧮 {{ p.denom_fmt }}</span>{% if p.denom_diff and p.denom_diff|abs > 0.5 %}<br><b style="color:#b45309">{{ t('အမျိုးအစား ပေါင်းလဒ် က ကောက်ငွေ နဲ့ {v} Ks ကွာ တယ်', v=fmt_money(p.denom_diff)) }}</b>{% endif %}{% endif %}</td></tr>{% endfor %}
+  </table></div>
+  <form method="post" action="/handover/verify" class="row">
+    <input type="hidden" name="deliverer_id" value="{{ r.u.id }}"><input type="hidden" name="day" value="{{ day }}">
+    <label>{{ t('လွှဲအပ်တဲ့ ငွေ (Ks)') }} <input name="handed" type="number" step="any" min="0" value="{{ '%.0f'|format(r.pend_v) }}" required></label>
+    <label>{{ t('မှတ်ချက်') }} <input name="note" type="text"></label>
+    <button class="btn" type="submit">{{ t('အတည်ပြုမယ်') }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}<p class="hint">{{ t('ဒီနေ့ လွှဲအပ် စစ်ရန် မရှိဘူး') }}</p>{% endif %}
+{% endblock %}

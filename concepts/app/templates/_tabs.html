@@ -1,0 +1,134 @@
+{% macro _buy_tail(active, perms, fc) %}
+{# The shared tail closes each group's row: records (+ the ⏳ စစ်ရန် pill
+   for owner/finance) then settlements, with the same live badges. #}
+    <span class="stepwrap"><a href="/purchases" class="reclink {{ 'on' if active in ('pur', 'check') }}">{{ t('📒 အဝယ် မှတ်တမ်း') }}</a>{% if 'purchases.check' in perms and fc and fc.chk %}<a href="/purchases?st=pending_check" class="chkpill">{{ t('⏳ စစ်ရန်') }} {{ fc.chk }}</a>{% endif %}</span><span class="arr">→</span>
+    <a href="/settlements" class="step {{ 'on' if active == 'stl' }}">{{ t('၂ · ရှင်းရန်') }}{% if fc and fc.stl %} <span class="bdg">{{ fc.stl }}</span>{% endif %}</a>
+{% endmacro %}
+{% macro _buy_row(group, active, perms, fc, hid=false) %}
+{% if group == 'demand' %}
+  <div class="steps buyrow" data-buyrow="demand"{{ ' hidden' if hid }}>
+    <span class="grouplbl">{{ t('Demand Driven') }}<span class="muted"> · {{ t('ဘောက်ချာ လိုအပ် ချက် က စ တဲ့ အဝယ်') }}</span></span>
+    <a href="/buy-list" class="step {{ 'on' if active == 'buy' }}">{{ t('၁ · ဝယ်ရန်') }}</a><span class="arr">→</span>
+    <a href="/requests?kind=demand" class="step {{ 'on' if active == 'req' }}">{{ t('📋 အမှာ') }}{% if fc and fc.req %} <span class="bdg">{{ fc.req }}</span>{% endif %}</a><span class="arr">→</span>
+    <a href="/requests?open=1" class="step {{ 'on' if active == 'recv' }}">{{ t('🚚 ကုန်ရောက် သွင်း') }}</a><span class="arr">→</span>
+    {{ _buy_tail(active, perms, fc) }}
+  </div>
+{% else %}
+  <div class="steps buyrow" data-buyrow="direct"{{ ' hidden' if hid }}>
+    <span class="grouplbl">{{ t('Direct Driven') }}<span class="muted"> · {{ t('ကိုယ်တိုင် သွား ဝယ် တဲ့ အဝယ်') }}</span></span>
+    <a href="/requests?kind=direct" class="step {{ 'on' if active == 'req' }}">{{ t('ကြို အမှာ (ခရီး အတွက်)') }}{% if fc and fc.req %} <span class="bdg">{{ fc.req }}</span>{% endif %}</a><span class="arr">→</span>
+    <a href="/purchases/new" class="step {{ 'on' if active == 'new' }}">{{ t('အဝယ် တိုက်ရိုက် သွင်း') }}</a><span class="arr">→</span>
+    {{ _buy_tail(active, perms, fc) }}
+  </div>
+{% endif %}
+{% endmacro %}
+{% macro _buy_tabbar(grp) %}
+{# v58: the two buy groups as proper TABS (Ko chose the tab style by
+   option tap, 2026-10-22). Each tab is a link to that group's first stop
+   — the no-JS fallback — and the inline script below intercepts the tap
+   to switch the visible path IN PLACE instead of navigating. #}
+  <div class="buytabs" role="tablist">
+    <a href="/buy-list" class="buytab {{ 'on' if grp != 'direct' }}" data-buytab="demand" role="tab">{{ t('Demand Driven') }}</a>
+    <a href="/requests?kind=direct" class="buytab {{ 'on' if grp == 'direct' }}" data-buytab="direct" role="tab">{{ t('Direct Driven') }}</a>
+  </div>
+{% endmacro %}
+{% macro _buy_tabs_script() %}
+<script>
+(function(){
+  var tabs = document.querySelectorAll('.buytab[data-buytab]');
+  if (!tabs.length) { return; }
+  function show(g){
+    Array.prototype.forEach.call(tabs, function(tb){
+      if (tb.getAttribute('data-buytab') === g) { tb.classList.add('on'); } else { tb.classList.remove('on'); }
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.buyrow[data-buyrow]'), function(r){
+      if (r.getAttribute('data-buyrow') === g) { r.removeAttribute('hidden'); } else { r.setAttribute('hidden', ''); }
+    });
+  }
+  Array.prototype.forEach.call(tabs, function(tb){
+    tb.addEventListener('click', function(e){
+      e.preventDefault();
+      var g = tb.getAttribute('data-buytab');
+      show(g);
+      try {
+        fetch('/buy-group', {method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: 'group=' + encodeURIComponent(g)}).catch(function(){});
+      } catch (err) {}
+    });
+  });
+})();
+</script>
+{% endmacro %}
+{% macro pur_tabs(active, perms, fc=none, grp=none, hub=false) %}
+{# v56 (Ko, 2026-10-22): ONE heading '🛒 အဝယ်', under it the TWO ways a
+   purchase actually starts, each with its own path:
+     Demand Driven — ဝယ်ရန်('buy') → 📋 အမှာ('req') → ကုန်ရောက် သွင်း('recv')
+     Direct Driven — ကြို အမှာ('req') → အဝယ် တိုက်ရိုက် သွင်း('new')
+   The tail (📒 မှတ်တမ်း with the ⏳ စစ်ရန် badge → ၂ · ရှင်းရန်) is shared,
+   so it closes each group's row with the same live badges.
+   v57: buy pages expand ONE group — grp, tracked per session in
+   session['buy_group'] (group pages own their group; the shared tail
+   follows the traveller, default Demand).
+   v58 (Ko chose TAB style, 2026-10-22): the v57 collapsed chip read as a
+   stray leftover button ('ဘယ်လိုမျိုးကြီးလည်း?'), so the groups are now
+   two proper tabs above one panel; only the active group's path shows,
+   and tapping a tab switches the visible path in place (the choice is
+   posted to /buy-group so it persists). hub=true (the Dashboard
+   overview) still shows BOTH groups in full, no tabs.
+   The '🚚 ကုန်ရောက် သွင်း' stop links to /requests?open=1 — the
+   open-only receive landing — so the stop lands on its action.
+   v59 (Ko, 2026-10-22): requests carry a kind, so the two အမှာ stops
+   land on their own KIND views — Demand's '📋 အမှာ' on
+   /requests?kind=demand, Direct's 'ကြို အမှာ' on /requests?kind=direct
+   (also the Direct tab's no-JS fallback) — never on the mixed list. #}
+{% set grp = grp if grp in ('demand', 'direct') else 'demand' %}
+<div class="flowcard">
+  <div class="flowhead">{{ t('🛒 အဝယ်') }}</div>
+  {% if hub %}
+  {{ _buy_row('demand', active, perms, fc) }}
+  {{ _buy_row('direct', active, perms, fc) }}
+  {% else %}
+  {{ _buy_tabbar(grp) }}
+  <div class="buypanel">
+    {{ _buy_row('demand', active, perms, fc, grp != 'demand') }}
+    {{ _buy_row('direct', active, perms, fc, grp != 'direct') }}
+  </div>
+  {{ _buy_tabs_script() }}
+  {% endif %}
+</div>
+{% endmacro %}
+{% macro ord_tabs(active, perms) %}
+{# v54 (Ko, 2026-10-21): the sale → delivery → collection chain, same
+   strip pattern as the buy journey. Only the stops the role may open
+   are rendered; under 2 stops (sales / delivery worlds) = no strip. #}
+{% set stops = [] %}
+{% if 'products.view' in perms %}{% set _ = stops.append(('/orders', 'ord', 'ဘောက်ချာ စာရင်း')) %}{% endif %}
+{% if 'delivery.assign' in perms %}{% set _ = stops.append(('/delivery-board', 'board', '🚚 ပို့ဆောင်')) %}{% endif %}
+{% if 'handover.view' in perms %}{% set _ = stops.append(('/handover', 'hand', '💵 ငွေ လွှဲအပ် စစ်ရန်')) %}{% endif %}
+{% if stops|length >= 2 %}
+<div class="flowcard">
+  <div class="flowhead">{{ t('📦 ရောင်း · ပို့ · ငွေ') }}</div>
+  <div class="steps">
+    {% for href, key, label in stops %}<a href="{{ href }}" class="step {{ 'on' if active == key }}">{{ t(label) }}</a>{% if not loop.last %}<span class="arr">→</span>{% endif %}{% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+{% macro inv_tabs(active, perms) %}
+<div class="tabs">
+  <a href="/products" class="{{ 'on' if active == 'prod' }}">{{ t('ပစ္စည်းများ') }}</a>
+  {% if 'stock.view' in perms %}<a href="/stock" class="{{ 'on' if active == 'stock' }}">{{ t('Stock မှတ်တမ်း') }}</a>{% endif %}
+  <a href="/returns" class="{{ 'on' if active == 'ret' }}">{{ t('ပြန်အပ် / ပျက်စီး') }}</a>
+  {% if 'stock_count.view' in perms %}<a href="/stock-count" class="{{ 'on' if active == 'count' }}">{{ t('🔢 Stock စစ်ဆေး') }}</a>{% endif %}
+  {% if 'expiry.view' in perms %}<a href="/expiry" class="{{ 'on' if active == 'exp' }}">{{ t('⏳ သက်တမ်း နီးနေတာ') }}</a>{% endif %}
+</div>
+{% endmacro %}
+{% macro adm_tabs(active) %}
+<div class="tabs">
+  <a href="/users" class="{{ 'on' if active == 'users' }}">{{ t('အသုံးပြုသူများ') }}</a>
+  <a href="/areas" class="{{ 'on' if active == 'areas' }}">{{ t('ရပ်ကွက်') }}</a>
+  <a href="/roles" class="{{ 'on' if active == 'roles' }}">{{ t('Roles') }}</a>
+  <a href="/departments" class="{{ 'on' if active == 'departments' }}">{{ t('ဌာနများ') }}</a>
+</div>
+{% endmacro %}

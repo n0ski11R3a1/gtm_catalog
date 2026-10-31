@@ -1,0 +1,18 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}{{ t('အဝယ်') }} — GTM ERP{% endblock %}
+{% block body %}
+{{ pur_tabs('check' if request.args.get('st') else 'pur', perms, flowcounts|default(none), buy_group|default('demand')) }}
+{% if stf == 'pending_check' %}
+<h1>{{ t('အဝယ် စစ်ရန် (စစ်ရန်ကျန် {n} ခု)', n=rows|length) }}</h1>
+<p class="muted">{{ t('စစ်ရန်ကျန် အဝယ်တွေပဲ ပြထားတယ်။') }} <a href="/purchases">{{ t('အဝယ် အားလုံး ကြည့်ရန်') }}</a></p>
+{% else %}
+<h1>{{ t('အဝယ် စာရင်း') }}</h1>
+{% endif %}
+{% if can('purchases.create_direct') %}<a class="btn" href="/purchases/new">{{ t('+ အဝယ် အသစ် သွင်းမယ်') }}</a>{% endif %}
+<table>
+<tr><th>{{ t('အဝယ်') }}</th><th>Supplier</th><th>Invoice</th><th>{{ t('ရက်') }}</th><th>{{ t('စုစုပေါင်း') }}</th><th>{{ t('သွင်းသူ') }}</th><th>{{ t('အခြေအနေ') }}</th>{% if can('purchases.check') %}<th></th>{% endif %}</tr>
+{% for r in rows %}
+<tr><td><a href="/purchases/{{ r.id }}">{{ r.code }}</a></td><td>{{ r.supplier or '' }}</td><td>{{ r.invoice_no or t('(ဘောက်ချာ နံပါတ် မပါ)') }}</td><td>{{ r.pdate }}</td>
+<td>{{ fmt_money(r.total) }}</td><td>{{ r.byname or '' }}</td><td>{{ t('စစ်ရန်ကျန် ⏳') if r.status=='pending_check' else (t('စစ်ပြီး ✅') if r.status=='checked' else t('ပယ်ဖျက် ❌')) }}</td>{% if can('purchases.check') %}<td>{% if r.status=='pending_check' %}<form method="post" action="/purchases/{{ r.id }}/check" class="inline"><input type="hidden" name="back" value="check"><button type="submit" class="btn">{{ t('✓ စစ်ပြီး') }}</button></form>{% endif %}</td>{% endif %}</tr>
+{% endfor %}
+</table>
+{% endblock %}

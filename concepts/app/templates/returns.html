@@ -1,0 +1,61 @@
+{% extends 'base.html' %}{% from '_tabs.html' import inv_tabs %}{% from '_picker.html' import picker_field, picker_assets %}{% block title %}Returns — GTM ERP{% endblock %}
+{% block body %}
+{{ inv_tabs('ret', perms) }}
+<h1>{{ t('Returns / Damage (ပြန်အပ် / ပျက်စီး)') }}</h1>
+{% if can('returns.record') %}
+<form method="post" class="card">
+  <div class="row">
+    <label>{{ t('ပစ္စည်း') }} {{ picker_field('product_id', 1) }}</label>
+    <label>{{ t('အရေအတွက်') }} <input name="qty" type="number" step="any" min="0" required></label>
+    <label>{{ t('အမျိုးအစား') }} <select name="kind"><option value="good">{{ t('အကောင်း (stock ပြန်ဝင်)') }}</option><option value="damaged">{{ t('ပျက်စီး/သက်တမ်းကုန် (ဖျက်သိမ်း)') }}</option></select></label>
+  </div>
+  <div class="row">
+    <label>{{ t('Order (ရှိရင်)') }} <select name="order_id" id="ret-order"><option value="">—</option>{% for o in ords %}<option value="{{ o.id }}" data-outlet="{{ o.outlet }}">{{ o.code }} — {{ o.outlet }}</option>{% endfor %}</select></label>
+    <label>{{ t('နှုတ်ပေးရမယ့် တန်ဖိုး (Ks)') }} <input name="amount" value="0"></label>
+  </div>
+  <div class="row">
+    <label>{{ t('ပြန် ရှင်းပုံ') }} <select name="settle" id="ret-settle"><option value="">{{ t('ပုံမှန် မှတ်ရုံ') }}</option><option value="exchange">{{ t('ကုန် လဲ ပေး (ဆိုင် ကို အမျိုး တူ ပြန် ပေး)') }}</option></select></label>
+    <label>{{ t('ဆိုင် (ကုန် လဲ ရင်)') }} <input name="shop" id="ret-shop" list="retshops" autocomplete="off" placeholder="{{ t('Order မရွေးရင် ဆိုင် နာမည် ရိုက်') }}"><datalist id="retshops">{% for o in ords %}<option value="{{ o.outlet }}">{% endfor %}</datalist></label>
+  </div>
+  <div id="ret-warn" class="flags" style="display:none"><div>⚠️ <span id="ret-warn-txt"></span></div></div>
+  <label>{{ t('အကြောင်းအရင်း *') }} <input name="reason" required placeholder="{{ t('ဥပမာ — ဗူးပိန်, သက်တမ်းကုန်, ဆိုင်က ပြန်အပ်') }}"></label>
+  <button class="btn" type="submit">{{ t('မှတ်မယ်') }}</button>
+</form>
+{% if used_shops %}
+<div class="card">
+  <h3 style="margin-top:0">🔁 {{ t('ကုန် လဲ ပြီး သား ဆိုင်များ (ဆိုင် ၁ ဆိုင် = ၁ ကြိမ် ပဲ)') }}</h3>
+  <p>{% for x in used_shops %}<span class="pill green">{{ x.outlet_name }} — {{ x.edate }} · {{ x.sku }} {{ x.pname }} × {{ '%g'|format(x.qty) }}</span> {% endfor %}</p>
+  <p class="hint">{{ t('ဒီ ဆိုင်တွေ က ကုန် လဲ ခွင့် ၁ ကြိမ် သုံးပြီးပြီ — နောက်ထပ် တောင်းလာရင် ဒီ မှတ်တမ်း ကို ပြပြီး ပြောလို့ ရတယ်။') }}</p>
+</div>
+{% endif %}
+<script>
+var RET_USED = { {% for x in used_shops %}{{ x.outlet_name|tojson }}: {{ (x.edate ~ ' · ' ~ x.sku ~ ' ' ~ x.pname)|tojson }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var RET_WARN_TXT = {{ t('ဒီ ဆိုင် က ကုန် လဲ ခွင့် ၁ ကြိမ် သုံး ပြီးပြီ — {info}။ နောက်ထပ် လဲ ပေးဖို့ Owner ကို အရင် မေးပါ။')|tojson }};
+function retCheck(){
+  var w = document.getElementById('ret-warn'); if(!w) return;
+  var sel = document.getElementById('ret-settle');
+  var shop = (document.getElementById('ret-shop').value || '').trim();
+  if(!shop){
+    var os = document.getElementById('ret-order');
+    var opt = os.options[os.selectedIndex];
+    if(opt) shop = (opt.getAttribute('data-outlet') || '').trim();
+  }
+  if(sel && sel.value === 'exchange' && shop && RET_USED[shop]){
+    document.getElementById('ret-warn-txt').textContent = RET_WARN_TXT.split('{info}').join(RET_USED[shop]);
+    w.style.display = 'block';
+  } else { w.style.display = 'none'; }
+}
+['ret-settle','ret-shop','ret-order'].forEach(function(id){ var el = document.getElementById(id); if(el){ el.addEventListener('change', retCheck); el.addEventListener('input', retCheck); } });
+</script>
+{% endif %}
+<table>
+<tr><th>{{ t('ရက်') }}</th><th>{{ t('ပစ္စည်း') }}</th><th>{{ t('အရေအတွက်') }}</th><th>{{ t('အမျိုးအစား') }}</th><th>{{ t('အကြောင်းအရင်း') }}</th><th>{{ t('တန်ဖိုး') }}</th><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('မှတ်သူ') }}</th><th>{{ t('အခြေအနေ') }}</th><th></th></tr>
+{% for r in rows %}
+<tr><td>{{ r.created_at[:10] }}</td><td>{{ r.sku }} {{ r.name }}</td><td>{{ r.qty }}</td>
+<td>{{ t('အကောင်း') if r.kind=='good' else t('ပျက်စီး') }}{% if r.id in ex_return_ids %} <span class="pill green">{{ t('🔁 ကုန် လဲ') }}</span>{% endif %}</td><td>{{ r.reason or '' }}</td><td>{{ fmt_money(r.amount) }}</td>
+<td>{{ r.ocode or '' }}</td><td>{{ r.byname or '' }}</td><td>{{ t('စစ်ရန်ကျန် ⏳') if r.status=='recorded' else t('စစ်ပြီး ✅') }}</td>
+<td>{% if r.status=='recorded' and can_finance %}<form method="post" action="/returns/{{ r.id }}/check"><button type="submit">{{ t('စစ်ပြီး') }}</button></form>{% endif %}</td></tr>
+{% endfor %}
+</table>
+{{ picker_assets(prods) }}
+{% endblock %}

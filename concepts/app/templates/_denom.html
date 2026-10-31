@@ -1,0 +1,72 @@
+{# v60: the denomination counter (Ko, 2026-10-22) — ONE reusable
+   cash-notes counter shared by the four cash points (deliver collection,
+   cash-count close, expense form, settlement pay form). A count input per
+   Ks note value, a live total as you type, and — where the form has its
+   own amount — a plain live warning when the notes total differs (never
+   a block: the form always saves). Filling it in is optional.
+   Parameters:
+     prefix      input-name prefix ('dl_', 'cc_', …) — fields are named
+                 <prefix>denom_<value> and parsed by parse_denom().
+     amount_name name of the amount input in the SAME form to compare the
+                 notes total against ('' = no comparison, no warning).
+     gate        name of the money-method <select> in the SAME form; the
+                 counter only shows while that select is 'cash'.
+     values      {note_value_str: count} to prefill (edit forms).
+     show        initial visibility (server-rendered); the script keeps
+                 it in sync with the gate select from then on. #}
+{% macro denom_counter(prefix, amount_name='', gate='', values=None, show=True) %}
+<div class="denom" data-denom data-amount="{{ amount_name }}" data-gate="{{ gate }}"{% if not show %} hidden{% endif %}>
+  <div class="denom-head">🧮 {{ t('ငွေသား အမျိုးအစား အလိုက် (ဖြည့်ချင်မှ ဖြည့်)') }}</div>
+  <div class="denom-grid">
+  {% for v in DENOMS %}
+    <label class="denom-row"><span>{{ '{:,}'.format(v) }} {{ t('တန်') }}</span><input type="number" min="0" step="1" inputmode="numeric" class="denom-in" data-dval="{{ v }}" name="{{ prefix }}denom_{{ v }}"{% if values and values.get(v|string) %} value="{{ values.get(v|string) }}"{% endif %}></label>
+  {% endfor %}
+  </div>
+  <div class="denom-total">{{ t('အမျိုးအစား ပေါင်းလဒ်') }}: <b class="denom-sum">0</b> Ks</div>
+  {% if amount_name %}<div class="denom-warn" hidden>{{ t('သတိ — အမျိုးအစား ပေါင်းလဒ် {total} Ks က ပမာဏ {amount} Ks နဲ့ မကိုက်ဘူး (မှတ်လို့တော့ ရတယ်)') }}</div>{% endif %}
+</div>
+<script>
+(function(){
+  function init(box){
+    if (box.__di) return; box.__di = 1;
+    var inputs = box.querySelectorAll('.denom-in'),
+        sumEl = box.querySelector('.denom-sum'),
+        warnEl = box.querySelector('.denom-warn'),
+        warnTxt = warnEl ? warnEl.textContent : '',
+        form = box.closest('form'),
+        amtName = box.getAttribute('data-amount'),
+        gateName = box.getAttribute('data-gate'),
+        amtEl = (form && amtName) ? form.querySelector('[name="' + amtName + '"]') : null,
+        gateEl = (form && gateName) ? form.querySelector('select[name="' + gateName + '"]') : null;
+    function fmt(n){ return Math.round(n).toLocaleString('en-US'); }
+    function recalc(){
+      var total = 0;
+      inputs.forEach(function(inp){
+        var c = parseInt(inp.value, 10);
+        if (isNaN(c) || c < 0) c = 0;
+        total += c * (parseInt(inp.getAttribute('data-dval'), 10) || 0);
+      });
+      if (sumEl) sumEl.textContent = fmt(total);
+      if (warnEl){
+        var amt = amtEl ? parseFloat((amtEl.value || '').replace(/,/g, '')) : NaN;
+        var show = total > 0 && !isNaN(amt) && Math.abs(total - amt) > 0.5;
+        warnEl.hidden = !show;
+        if (show) warnEl.textContent = warnTxt.replace('{total}', fmt(total)).replace('{amount}', fmt(amt));
+      }
+    }
+    function gate(){
+      if (gateEl) box.hidden = (gateEl.value !== 'cash');
+      recalc();
+    }
+    // 'input' bubbles: any keystroke in the form (note counts, the amount
+    // box, and on the deliver form the quantities that drive the amount)
+    // refreshes the total + warning.
+    if (form) form.addEventListener('input', recalc);
+    else inputs.forEach(function(inp){ inp.addEventListener('input', recalc); });
+    if (gateEl) gateEl.addEventListener('change', gate);
+    gate();
+  }
+  document.querySelectorAll('[data-denom]').forEach(init);
+})();
+</script>
+{% endmacro %}

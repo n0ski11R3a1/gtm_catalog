@@ -1,0 +1,112 @@
+{% extends 'base.html' %}{% from '_tabs.html' import pur_tabs %}{% block title %}Dashboard — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('ပင်မ · Dashboard') }}</h1>
+<div class="dash-grid">
+  <div class="dstat"><div class="dic">📦</div><div><span>{{ stats.products }}</span><label>{{ t('ပစ္စည်း အမျိုးအစား') }}</label></div></div>
+  <div class="dstat"><div class="dic">✅</div><div><span>{{ stats.in_stock }}</span><label>{{ t('Stock ရှိတာ') }}</label></div></div>
+  <div class="dstat"><div class="dic">⚠️</div><div><span>{{ stats.low_stock }}</span><label>{{ t('Stock နည်းနေတာ ≤၅') }}</label></div></div>
+  <div class="dstat"><div class="dic">🧾</div><div><span>{{ stats.orders_today }}</span><label>{{ t('ဒီနေ့ Order') }}</label></div></div>
+  <div class="dstat"><div class="dic">💵</div><div><span>{{ '{:,.0f}'.format(stats.sales_today) }} Ks</span><label>{{ t('ဒီနေ့ အရောင်း') }}</label></div></div>
+  <div class="dstat"><div class="dic">💸</div><div><span>{{ stats.unpaid }}</span><label>{{ t('ငွေ မရသေးတဲ့ Order') }}</label></div></div>
+  {% if can('profit.view') %}
+  <div class="dstat warn"><div class="dic">🔍</div><div><span>{{ stats.pending_purchases }}</span><label>{{ t('အဝယ် စစ်ရန် ကျန်') }}</label></div></div>
+  <div class="dstat warn"><div class="dic">↩️</div><div><span>{{ stats.pending_returns }}</span><label>{{ t('Returns စစ်ရန် ကျန်') }}</label></div></div>
+  {% endif %}
+</div>
+{# v56: the buy area lives on the home page too — same two path groups as
+   the buy pages' strip, same live counts (flowcounts, no extra queries). #}
+{{ pur_tabs(none, perms, flowcounts|default(none), hub=true) }}
+{% if stats.expiry_soon and can('products.create') %}<p><a class="pill amber" href="/expiry" style="text-decoration:none">⏳ {{ t('သက်တမ်း နီးနေတဲ့ ပစ္စည်း {n} မျိုး ရှိတယ်', n=stats.expiry_soon) }}</a></p>{% endif %}
+{% if stats.price_review and can('at_risk.view') %}<p><a class="pill amber" href="/at-risk#price-review" style="text-decoration:none">🔍 {{ t('ဈေး ပြန် စစ် ရန် ကျန် ပစ္စည်း {n} မျိုး ရှိတယ်', n=stats.price_review) }}</a></p>{% endif %}
+{% if stats.gps_open and can('gps_check.view') %}<p><a class="pill amber" href="/gps-check" style="text-decoration:none">📍 {{ t('နေရာ စစ် ရန် ကျန် {n} ခု ရှိတယ်', n=stats.gps_open) }}</a></p>{% endif %}
+{% if stats.backup_due %}<div class="card"><b>💾 {{ t('Backup အကြောင်း') }}</b><p style="margin:.3rem 0">{{ t('Backup မိတ္တူ ကို ကိုယ့် ဖုန်း/ကွန်ပျူတာ ထဲ download ဆွဲ မထား တာ ကြာပြီ (သို့) မဆွဲ ရသေးဘူး။ မိတ္တူ တွေ က server ပေါ်မှာ ပဲ ရှိတာ မို့ ၁၅ ရက် ၁ ကြိမ် လောက် download ဆွဲ ထား ပါ။') }}</p><a class="btn alt" href="/backups">{{ t('💾 Backup မိတ္တူများ') }}</a></div>{% endif %}
+{% if stats.position %}<div class="card"><h3 style="margin-top:0">💼 {{ t('လုပ်ငန်း အခြေအနေ (ခု လက်ရှိ)') }}</h3>
+<p style="margin:.2rem 0">{{ t('ငွေသား') }}: <b>{{ '{:,.0f}'.format(stats.position.balances.cash) }} Ks</b> · {{ t('Digital Pay') }}: <b>{{ '{:,.0f}'.format(stats.position.balances.digital) }} Ks</b> · {{ t('ဘဏ်') }}: <b>{{ '{:,.0f}'.format(stats.position.balances.bank) }} Ks</b><br>
+{{ t('Stock တန်ဖိုး (အရင်း နဲ့)') }}: <b>{{ '{:,.0f}'.format(stats.position.stock_value) }} Ks</b> · {{ t('ဆိုင်တွေ က ရရန်') }}: <b>{{ '{:,.0f}'.format(stats.position.receivables) }} Ks</b> · {{ t('Supplier တွေ ကို ပေးရန်') }}: <b>{{ '{:,.0f}'.format(stats.position.payables) }} Ks</b><br>
+<b>{{ t('စုစုပေါင်း အခြေအနေ') }}: {{ '{:,.0f}'.format(stats.position.total) }} Ks</b></p>
+<a class="btn alt" href="/money">{{ t('💰 ငွေ စာရင်း') }}</a></div>{% endif %}
+{# v81 (Ko, 2026-10-25): the dashboard button cluster, grouped under small
+   headings instead of one flowing paragraph (which wrapped raggedly 8+5+2
+   with no grouping and two orphaned buttons). PRESENTATION ONLY: every
+   href, label, and permission gate is identical to v80; only the wrapping
+   structure and CSS changed, and the arbitrary primary emphasis on the
+   first button is dropped (all buttons uniform 'btn alt').
+   Group headings are hardcoded Burmese on purpose — no new TRANS keys
+   for a presentation-only change. Gating rule: a group renders only if
+   at least one button inside it is visible, so Finance sees no စီမံ
+   group (no audit.view) and Warehouse sees စစ်ဆေး with daily-file only
+   plus ပို့ဆောင် with delivery-board only. #}
+<div class="dashgroups">
+  {% if can('profit.view') %}
+  <section class="dashgroup">
+    <h3>{{ t('ရောင်း နှင့် ဆိုင်') }}</h3>
+    <div class="dashbtns">
+      <a class="btn alt" href="/sales-report">{{ t('📊 Sales စစ်ဆေး (Performance)') }}</a>
+      <a class="btn alt" href="/outlets">{{ t('🏪 ဆိုင်များ (Credit)') }}</a>
+      <a class="btn alt" href="/visits">{{ t('🚶 Location History') }}</a>
+    </div>
+  </section>
+  <section class="dashgroup">
+    <h3>{{ t('ငွေ') }}</h3>
+    <div class="dashbtns">
+      <a class="btn alt" href="/money">{{ t('💰 ငွေ စာရင်း') }}</a>
+      <a class="btn alt" href="/cashbox">{{ t('🧰 Cashbox') }}</a>
+      <a class="btn alt" href="/expenses">{{ t('💸 အသုံးစရိတ်') }}</a>
+      <a class="btn alt" href="/profit">{{ t('📈 လချုပ် အမြတ်') }}</a>
+    </div>
+  </section>
+  {% endif %}
+  {% if can('profit.view') or can('snapshot.daily') %}
+  <section class="dashgroup">
+    <h3>{{ t('စစ်ဆေး') }}</h3>
+    <div class="dashbtns">
+      {% if can('profit.view') %}<a class="btn alt" href="/at-risk">{{ t('⚠️ အန္တရာယ် စာရင်း') }}</a>
+      <a class="btn alt" href="/ask">{{ t('🤖 Ai မေးကြည့်') }}</a>
+      <a class="btn alt" href="/tax">{{ t('🧾 အခွန် အစီရင်ခံ') }}</a>{% endif %}{% if can('snapshot.daily') %}<a class="btn alt" href="/daily-file">{{ t('📄 နေ့စဉ် ဖိုင်') }}</a>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+  {% if can('analysis.view') %}
+  <section class="dashgroup">
+    <h3>{{ t('အရောင်း ခွဲခြမ်းစိတ်ဖြာ') }}</h3>
+    <div class="dashbtns">
+      <a class="btn alt" href="/analysis?s=shops">{{ t('ဆိုင်များ — အမျိုးအစား အလိုက် ဝယ်ယူမှု') }}</a>
+      <a class="btn alt" href="/analysis?s=visits">{{ t('Outlet များ — ဝင်ခဲ့တဲ့ အကြိမ်ရေ') }}</a>
+      <a class="btn alt" href="/analysis?s=products">{{ t('ကုန်ပစ္စည်း — ရောင်းအား (စုစုပေါင်း)') }}</a>
+      <a class="btn alt" href="/analysis?s=month">{{ t('ကုန်ပစ္စည်း — အချိန်ကာလ အလိုက် (ဒီလ)') }}</a>
+      <a class="btn alt" href="/analysis?s=profit">{{ t('အမြတ် — ပစ္စည်း အလိုက် (ဒီလ)') }}</a>
+      <a class="btn alt" href="/analysis?s=expenses">{{ t('အသုံးစရိတ် — အမျိုးအစား အလိုက် (ဒီလ)') }}</a>
+    </div>
+  </section>
+  {% endif %}
+  {% if can('profit.view') and can('audit.view') %}
+  <section class="dashgroup">
+    <h3>{{ t('စီမံ') }}</h3>
+    <div class="dashbtns">
+      <a class="btn alt" href="/leader-prices">{{ t('⭐ Leader ဈေးနှုန်း') }}</a>
+      <a class="btn alt" href="/backups">{{ t('💾 Backup မိတ္တူများ') }}</a>
+      <a class="btn alt" href="/audit">{{ t('📋 မှတ်တမ်း စစ်') }}</a>
+      {% if can('settings.business') %}<a class="btn alt" href="/settings/business">🏢 {{ t('လုပ်ငန်း အချက်အလက်') }}</a>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+  {% if can('delivery.view_board') %}
+  <section class="dashgroup">
+    <h3>{{ t('ပို့ဆောင်') }}</h3>
+    <div class="dashbtns">
+      <a class="btn alt" href="/delivery-board">{{ t('🚚 ပို့ဆောင်') }}</a>{% if can('handover.view') %} <a class="btn alt" href="/handover">{{ t('💵 ငွေ လွှဲအပ် စစ်ရန်') }}</a>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+</div>
+<h2>{{ t('နောက်ဆုံး Orders') }}</h2>
+<div class="table-scroll"><table>
+<tr><th>{{ t('ဘောက်ချာ') }}</th><th>{{ t('Outlet') }}</th><th>{{ t('Rep') }}</th><th>{{ t('ရက်') }}</th><th>{{ t('အခြေအနေ') }}</th><th style="text-align:right">{{ t('ပမာဏ') }}</th><th>{{ t('ငွေ') }}</th></tr>
+{% for o in recent %}
+<tr><td><a href="/orders/{{ o.id }}">{{ o.code }}</a></td><td>{{ o.outlet }}</td><td>{{ o.rep or '' }}{% if o.team %} · {{ o.team }}{% endif %}</td><td>{{ o.odate }}</td>
+<td>{% if o.status == 'new' %}<span class="pill blue">{{ t('အသစ်') }}</span>{% elif o.status == 'delivered' %}<span class="pill green">{{ t('ပို့ပြီး') }}</span>{% elif o.status == 'cancelled' %}<span class="pill gray">{{ t('ပယ်ဖျက်') }}</span>{% else %}{{ o.status }}{% endif %}{% if o.overstock %} ⚠️{% endif %}</td>
+<td class="num">{{ '{:,.0f}'.format(o.total) }} Ks</td>
+<td>{% if o.paid %}<span class="pill green">{{ t('ရပြီး') }}</span>{% elif o.received and o.received > 0 %}<span class="pill blue">{{ t('တစ်ပိုင်း') }}</span>{% else %}<span class="pill amber">{{ t('မရသေး') }}</span>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

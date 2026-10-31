@@ -89,7 +89,7 @@
 
             <div class="tag-band" style="--tag-color:{{ palette[cat_idx % 4] }}; --tag-text:{{ palette_text[cat_idx % 4] }};">
                 <span class="tag-hole"></span>
-                <span class="tag-band-label">{{ p['Category'] }}</span>
+                <span class="tag-band-label" translate="no">{{ p['Category'] }}</span>
                 <a href="{{ url_for('product_detail', product_id_slug=p['Product ID']|replace(' ', '')) }}" class="tag-detail-btn" aria-label="See product details">
                     <i class="bi bi-eye"></i>
                 </a>
@@ -97,15 +97,15 @@
 
             <div class="tag-body">
             <div class="card-top">
-                <span class="sku">
+                <span class="sku" translate="no">
                     {{ p['Product ID'] }}
                 </span>
                 <span class="badge {% if p['Status']|lower == 'out of stock' %}badge-oos{% else %}badge-instock{% endif %}">
                     {{ p['Status'] }}
                 </span>
             </div>
-                <div class="item-title">{{ p['Product Name'] }}</div>
-                <div class="cat-tag">{{ p['Unit'] }} {% if p['UPC'] > 0 %}(Pack: {{ p['UPC'] }}){% endif %}</div>
+                <div class="item-title" translate="no">{{ p['Product Name'] }}</div>
+                <div class="cat-tag" translate="no">{{ p['Unit'] }} {% if p['UPC'] > 0 %}(Pack: {{ p['UPC'] }}){% endif %}</div>
 
                                 {% if p['last_price_change'] %}
                                 <span class="price-change-badge"

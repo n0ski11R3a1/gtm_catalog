@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Outlets{% endblock %}
+{% block content %}
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">Outlet directory</h2>
+        <p class="text-muted mb-0">Recognize repeat customers, resolve duplicate names, and review their order history.</p>
+    </div>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-secondary"><i class="bi bi-speedometer2"></i> Dashboard</a>
+</div>
+
+<section class="dashboard-card mb-4">
+    <h3 class="h5 fw-bold">Add an outlet</h3>
+    <form method="post" class="row g-3">
+        <div class="col-md-4"><label class="form-label" for="outletName">Outlet name *</label><input id="outletName" class="form-control" name="name" maxlength="200" required></div>
+        <div class="col-md-3"><label class="form-label" for="outletArea">Area / township</label><input id="outletArea" class="form-control" name="area" maxlength="200"></div>
+        <div class="col-md-3"><label class="form-label" for="outletType">Outlet type</label><select id="outletType" class="form-select" name="shop_type"><option value="">Not set</option>{% for key, label in shop_type_options %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="col-md-2"><label class="form-label" for="outletCreditLimit">Credit limit (Ks)</label><input id="outletCreditLimit" class="form-control" name="credit_limit" type="number" min="0" step="any"></div>
+        <div class="col-md-9"><label class="form-label" for="outletNote">Distinguishing note</label><input id="outletNote" class="form-control" name="note" maxlength="500" placeholder="Optional detail, e.g. near the market"></div>
+        <div class="col-md-3 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit"><i class="bi bi-plus-lg"></i> Add outlet</button></div>
+    </form>
+</section>
+
+<section class="dashboard-card">
+    <div class="card-header-custom mb-3"><i class="bi bi-shop"></i> Outlets <span class="text-muted">({{ outlets|length }})</span></div>
+    <div class="table-responsive">
+        <table class="table align-middle product-table mb-0">
+            <thead><tr><th>Outlet</th><th>Area</th><th>Type</th><th class="text-end">Orders</th><th class="text-end">Recorded sales</th><th>Last order</th></tr></thead>
+            <tbody>
+            {% for outlet in outlets %}
+                <tr>
+                    <td><a class="fw-semibold outlet-name" translate="no" href="{{ url_for('admin_outlet_detail', outlet_id=outlet.id) }}">{{ outlet.name }}</a>{% if outlet.note %}<small class="d-block text-muted" translate="no">{{ outlet.note }}</small>{% endif %}{% if outlet.aliases %}<small class="d-block text-muted" translate="no">Also: {{ outlet.aliases|join(', ') }}</small>{% endif %}</td>
+                    <td translate="no">{{ outlet.area or '—' }}</td>
+                    <td translate="no">{{ outlet.shop_type or '—' }}</td>
+                    <td class="text-end">{{ outlet.order_count }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(outlet.total_sales) }} Ks</td>
+                    <td>{{ outlet.last_order_at|sqlitedatetime if outlet.last_order_at else '—' }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="6" class="text-center text-muted py-4">Outlets will appear here as orders arrive or are added above.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

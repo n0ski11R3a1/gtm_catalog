@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}New purchase order{% endblock %}
+{% block content %}
+<div class="admin-page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="fw-bold mb-1">New purchase order</h2>
+        <p class="text-muted mb-0">Record what you intend to buy. Stock changes only when received quantities are posted.</p>
+    </div>
+    <a href="{{ url_for('admin_purchases') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Purchasing</a>
+</div>
+
+<form method="post" class="dashboard-card">
+    <div class="row g-3 mb-4">
+        <div class="col-md-5">
+            <label class="form-label" for="purchaseSupplier">Supplier *</label>
+            <input class="form-control" id="purchaseSupplier" name="supplier" list="supplierOptions" maxlength="200" value="{{ form_data.supplier }}" required>
+            <datalist id="supplierOptions">{% for supplier in suppliers %}<option value="{{ supplier }}">{% endfor %}</datalist>
+        </div>
+        <div class="col-md-3"><label class="form-label" for="purchaseInvoice">Supplier invoice / reference</label><input class="form-control" id="purchaseInvoice" name="invoice_number" maxlength="120" value="{{ form_data.invoice_number }}"></div>
+        <div class="col-md-4"><label class="form-label" for="purchaseDate">Order date</label><input class="form-control" id="purchaseDate" name="order_date" type="date" value="{{ form_data.order_date }}" required></div>
+        <div class="col-12"><label class="form-label" for="purchaseNote">Note</label><textarea class="form-control" id="purchaseNote" name="note" rows="2" maxlength="500">{{ form_data.note }}</textarea></div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <h3 class="h5 fw-bold mb-0">Products</h3>
+        <button class="btn btn-sm btn-outline-primary" type="button" id="addPurchaseLine"><i class="bi bi-plus-lg"></i> Add line</button>
+    </div>
+    <div id="purchaseLines" class="vstack gap-2">
+        {% for line in form_data.lines %}
+        <div class="purchase-line row g-2 align-items-end">
+            <div class="col-lg-6"><label class="form-label">Product</label><select class="form-select" name="product_pk" required><option value="">Choose product</option>{% for product in products %}<option value="{{ product.id }}" {% if line.product_pk|string == product.id|string %}selected{% endif %}>{{ product.product_id }} — {{ product.product_name }} ({{ product.unit }})</option>{% endfor %}</select></div>
+            <div class="col-sm-5 col-lg-2"><label class="form-label">Order quantity</label><input class="form-control" name="quantity" type="number" min="0.000001" step="any" value="{{ line.quantity or '' }}" required></div>
+            <div class="col-sm-5 col-lg-2"><label class="form-label">Unit cost (Ks)</label><input class="form-control" name="unit_cost" type="number" min="0" step="any" value="{{ line.unit_cost or '' }}"></div>
+            <div class="col-sm-2 col-lg-2"><button class="btn btn-outline-danger w-100 remove-purchase-line" type="button" aria-label="Remove product line"><i class="bi bi-trash"></i> Remove</button></div>
+        </div>
+        {% endfor %}
+    </div>
+    <p class="text-muted small mt-3">Unit cost is stored on the purchase record. It does not change catalog prices. Duplicate product lines are rejected.</p>
+    <div class="d-flex justify-content-end gap-2 mt-4"><a href="{{ url_for('admin_purchases') }}" class="btn btn-outline-secondary">Cancel</a><button class="btn btn-primary" type="submit"><i class="bi bi-check2"></i> Create purchase order</button></div>
+</form>
+
+<script>
+(() => {
+    const lines = document.getElementById('purchaseLines');
+    const addButton = document.getElementById('addPurchaseLine');
+    addButton.addEventListener('click', () => {
+        const row = lines.querySelector('.purchase-line').cloneNode(true);
+        row.querySelectorAll('input, select').forEach((field) => { field.value = ''; });
+        lines.appendChild(row);
+    });
+    lines.addEventListener('click', (event) => {
+        const button = event.target.closest('.remove-purchase-line');
+        if (button && lines.querySelectorAll('.purchase-line').length > 1) {
+            button.closest('.purchase-line').remove();
+        }
+    });
+})();
+</script>
+{% endblock %}

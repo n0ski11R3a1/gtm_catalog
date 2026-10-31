@@ -1,0 +1,12 @@
+{% extends 'base.html' %}{% block title %}Daily file — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('📄 နေ့စဉ် ဖိုင်') }}</h1>
+<p class="hint">{{ t('ညနေ print ထုတ်ပြီးတိုင်း download ဆွဲ ထားပါ — ဖုန်းရဲ့ Files ထဲက offline ဖွင့်လို့ ရတယ်၊ download ဆွဲတဲ့ အချိန်က ပုံရိပ် ပဲ။') }}</p>
+{% if error %}<p class="card">{{ error }}</p>{% endif %}
+<form method="get" action="/daily-file">
+  <input type="hidden" name="download" value="1">
+  <label>{{ t('ရက် ရွေး') }} <input type="date" name="date" value="{{ date_str }}"></label>
+  <button class="btn" type="submit">{{ t('ဖိုင် Download ဆွဲမယ်') }}</button>
+</form>
+<p class="hint">GTM-{{ date_str }}.xlsx</p>
+{% endblock %}

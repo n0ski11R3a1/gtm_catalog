@@ -1,0 +1,82 @@
+{% extends 'base.html' %}{% from '_denom.html' import denom_counter %}{% block title %}{{ o.code }} — GTM ERP{% endblock %}
+{% block body %}
+<h1>{{ t('🚚 ပို့မယ်') }} — {{ o.outlet }}</h1>
+<p><span class="doccode">{{ o.code }}</span> · {{ t('နေရာ') }}: {{ o.area or '' }} · {{ t('ရက်') }}: {{ o.odate }} · {{ t('စုစုပေါင်း') }}: <b>{{ fmt_money(total) }} Ks</b></p>
+<form method="post" class="card" id="dform">
+  <h3 style="margin-top:0">{{ t('တကယ် ပို့တဲ့ အရေအတွက်') }}</h3>
+  <div class="table-scroll"><table class="tbl-deliver">
+  <tr><th>SKU</th><th>{{ t('နာမည်') }}</th><th style="text-align:right">{{ t('ဈေး') }}</th><th>{{ t('မှာတဲ့ အရေအတွက်') }}</th><th>{{ t('တကယ် ပို့တဲ့ အရေအတွက်') }}</th></tr>
+  {% for i in items %}
+  <tr><td>{{ i.sku }}</td><td>{{ i.name }}</td><td class="num">{{ fmt_money(i.price) }}</td><td>{{ '%g'|format(i.qty) }}</td>
+  <td><input name="dq_{{ i.id }}" class="dq" type="number" step="any" min="0" max="{{ i.qty }}" data-price="{{ i.price }}" data-qty="{{ i.qty }}" data-disc="{{ i.discount or 0 }}" value="{{ '%g'|format(i.dqv) if i.dqv is not none else '%g'|format(i.qty) }}" style="width:100px"></td></tr>
+  {% endfor %}
+  </table></div>
+  <p class="hint">{{ t('ကုန်မရ') }} — {{ t('မရ တဲ့ အပိုင်းကို ၀ / ရတဲ့ အရေအတွက် ပြင်ထည့်ပါ — ကျန်တာက ပယ် ဖြစ်သွားပြီး ထပ် မပို့တော့ဘူး။') }}</p>
+  <span id="dcalc" hidden data-oldsub="{{ old_sub }}" data-oldld="{{ old_ld }}" data-olddisc="{{ o.discount or 0 }}"></span>
+  <div class="row">
+    <label>{{ t('ကောက်ရတဲ့ ငွေ (Ks)') }} <input name="collected" type="number" step="any" min="0" data-auto="{{ '0' if vals.preserve else '1' }}" value="{{ vals.collected if vals.collected is not none else '%.0f'|format(total) }}"></label>
+    <label>{{ t('ငွေ ပေးတဲ့ နည်း') }} <select name="method">{% for k, lbl in PAY_METHODS %}<option value="{{ k }}" {% if vals.method == k %}selected{% endif %}>{{ t(lbl) }}</option>{% endfor %}</select></label>
+    <label>{{ t('မှတ်ချက်') }} <input name="money_note" type="text" value="{{ vals.money_note or '' }}"></label>
+  </div>
+  {{ denom_counter('dl_', 'collected', gate='method', values=vals.denom, show=(vals.method or 'cash') == 'cash') }}
+  <input type="hidden" name="lat" class="glat"><input type="hidden" name="lng" class="glng"><input type="hidden" name="acc" class="gacc">
+  <p class="hint">📍 {{ t('နေရာ အမှတ်ကို ပို့ပြီး မှတ်တဲ့ အချိန် တစ်ခါပဲ မှတ်တယ် — နောက်က လိုက် ကြည့်တာ မဟုတ်ပါ') }}</p>
+  <button class="btn" type="submit" name="action" value="deliver">{{ t('ပို့ပြီး မှတ်မယ်') }}</button>
+</form>
+<form method="post" class="card" onsubmit="return confirm('{{ t('မပို့ဖြစ် — ဘောက်ချာ ပယ်ဖျက်') }}?')">
+  <h3 style="margin-top:0">{{ t('မပို့ဖြစ် — ဘောက်ချာ ပယ်ဖျက်') }}</h3>
+  <div class="row">
+    <label>{{ t('မပို့နိုင်တဲ့ အကြောင်း') }} <select name="reason">{% for r in reasons %}<option value="{{ r }}">{{ t(r) }}</option>{% endfor %}</select></label>
+    <label>{{ t('မှတ်ချက်') }} <input name="note" type="text"></label>
+  </div>
+  <input type="hidden" name="lat" class="glat"><input type="hidden" name="lng" class="glng"><input type="hidden" name="acc" class="gacc">
+  <button class="btn danger" type="submit" name="action" value="fail">{{ t('မပို့ဖြစ် — ဘောက်ချာ ပယ်ဖျက်') }}</button>
+</form>
+<script>
+// v48: the collected-money box follows the delivered quantities by itself.
+// While the person has not typed in the money box, every quantity change
+// recomputes the payable the same way the server does (line discounts scale
+// with the delivered share; a legacy whole-invoice discount scales with the
+// subtotal share) and puts it in the box. Once they type in the box, it is
+// theirs and quantities no longer touch it.
+(function(){
+  var form = document.getElementById('dform');
+  var calc = document.getElementById('dcalc');
+  if (!form || !calc) return;
+  var oldSub = parseFloat(calc.dataset.oldsub) || 0,
+      oldLd  = parseFloat(calc.dataset.oldld) || 0,
+      oDisc  = parseFloat(calc.dataset.olddisc) || 0;
+  var cEl = form.querySelector('input[name=collected]');
+  if (!cEl) return;
+  var touched = cEl.dataset.auto === '0';
+  cEl.addEventListener('input', function(){ touched = true; });
+  function recalc(){
+    var sub = 0, disc = 0;
+    form.querySelectorAll('input.dq').forEach(function(inp){
+      var dq = parseFloat(inp.value) || 0,
+          price = parseFloat(inp.dataset.price) || 0,
+          qty = parseFloat(inp.dataset.qty) || 0,
+          ld = parseFloat(inp.dataset.disc) || 0;
+      sub += price * dq;
+      disc += qty ? ld * dq / qty : 0;
+    });
+    var pay;
+    if (oldLd > 0) pay = sub - disc;
+    else if (oDisc > 0) pay = sub - (oldSub ? oDisc * sub / oldSub : 0);
+    else pay = sub;
+    if (!touched) cEl.value = Math.round(pay);
+  }
+  form.querySelectorAll('input.dq').forEach(function(inp){ inp.addEventListener('input', recalc); });
+})();
+if (navigator.geolocation) {
+  var done = false;
+  var to = setTimeout(function(){ done = true; }, 8000);
+  navigator.geolocation.getCurrentPosition(function(p){
+    if (done) return; done = true; clearTimeout(to);
+    document.querySelectorAll('.glat').forEach(function(i){ i.value = p.coords.latitude; });
+    document.querySelectorAll('.glng').forEach(function(i){ i.value = p.coords.longitude; });
+    document.querySelectorAll('.gacc').forEach(function(i){ i.value = p.coords.accuracy; });
+  }, function(){}, {timeout: 8000, maximumAge: 60000});
+}
+</script>
+{% endblock %}
