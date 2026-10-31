@@ -22,13 +22,6 @@ Browser / installed PWA
              ├── SQLite database (db.py -> gtm_catalog.db)
              ├── Product image files (static/product-images/)
              └── Web Push provider (push.py -> pywebpush)
-
-Flutter Android client (`mobile/`)
-  ├── explicit offline order capture from an encrypted local SQLCipher DB
-  ├── device-credential unlock and Android secure storage
-  └── authenticated HTTPS login/catalog/manual-sync APIs
-             │
-             └── Flask mobile API -> SQLite orders/catalog snapshots
 ```
 
 ### Main user-facing areas
@@ -44,9 +37,6 @@ Flutter Android client (`mobile/`)
 - **Order submission (`/order/submit`)**: public endpoint used by sales
   reps using the browser/PWA cart; server validates the rep and obtains
   current prices from SQLite.
-- **Field Orders (`mobile/`)**: separate Flutter Android-first client for
-  individual rep accounts, encrypted offline order capture, and explicit
-  manual sync after connectivity returns.
 - **Admin (`/admin/...`)**: login-protected catalog, image, order, sales
   rep, export, audit, and bulk-import management.
 - **Updates & Status**: public catalog modal showing the activity feed,
@@ -75,9 +65,6 @@ Flutter Android client (`mobile/`)
 6. **Order prices are server-authoritative.** The browser cart may keep
    price/name snapshots for display, but only sends internal product PK
    and quantity. `db.create_order()` reads current prices from SQLite.
-   The mobile client sends a catalog snapshot ID and product PK/quantity;
-   the server loads immutable saved snapshot data, never client prices,
-   for order-time totals.
 7. **Order history is snapshot-based.** Orders store a rep label and
    outlet string; order items store business ID, name, unit prices,
    quantity, and line totals as submitted at order time.
@@ -85,11 +72,11 @@ Flutter Android client (`mobile/`)
    `static/product-images/<NORMALIZED-ID>.webp`; generated gallery
    thumbnails live under `static/product-images/thumbnails/`. The DB
    `has_image` field is metadata; routes also resolve the file on disk.
-9. **Web and mobile rep identity differ.** Admin pages check
-   `session["admin"] is True` through `require_admin()`. The browser
-   cart remains public and validates the selected active rep. The
-   separate mobile API authenticates admin-provisioned rep credentials
-   and a revocable bearer token.
+9. **Rep authentication is separate from admin authentication.** Admin
+   pages check `session["admin"] is True` through `require_admin()`. The
+   browser cart remains public and validates the selected active rep.
+   The server also retains authenticated `/api/mobile/*` endpoints, but
+   this repository no longer contains a Flutter/Android client for them.
 10. **The service worker must not cache authenticated HTML.** Product,
     gallery, and public catalog pages have offline support; login/admin
     navigations are sent to the network. Static asset changes require
@@ -162,18 +149,6 @@ All HTML views extend `templates/base.html` unless otherwise noted.
 | `static/css/admin.css` | Legacy admin component/layout styles. |
 | `static/css/ui-reboot.css` | Current final design-system layer: shared tokens/base, public catalog, gallery/product details, dialogs/status panels, admin workspace, responsive breakpoints, and reduced-motion handling. Loaded after legacy styles to override them. |
 | `static/icon-192.png`, `static/icon-512.png` | PWA/app and push-notification icons. |
-
-### Flutter mobile client
-
-| File | Responsibility |
-|---|---|
-| `mobile/pubspec.yaml` | Flutter package manifest; `local_auth` handles device unlock, `flutter_secure_storage` stores secrets, `sqflite_sqlcipher` provides encrypted SQLite, and `http`, `path_provider`, `path`, and `uuid` support API/persistence. |
-| `mobile/lib/main.dart` | App UI and state flow: HTTPS rep enrollment, screen-lock gate on launch/resume, local catalog search, cart/order persistence, manual queued-order sync, response validation, and receipt/review status display. |
-| `mobile/lib/api.dart` | `MobileApi` sends JSON login/catalog/sync requests, applies bearer auth where required, enforces request timeout, and converts non-2xx responses into `MobileApiException`. |
-| `mobile/lib/local_store.dart` | `LocalStore` creates the encrypted local database; securely provisions its random key; binds the DB to one rep; saves catalog snapshots and order-time item snapshots transactionally; searches products; returns queued batches; and applies per-order sync outcomes. |
-| `mobile/README.md` | Android host generation, device/build setup, admin credential provisioning, endpoint overview, and pre-rollout validation requirements. |
-| `mobile/tool/prepare_android.py` | Idempotently configures a generated Android host for local auth and disables Android app backups. |
-| `mobile/tool/setup_kali_android.sh` | Resumable/retry-oriented Kali setup for Flutter, Android command-line SDK, Android host preparation, app checks, and optional debug APK build. |
 
 ### Runtime and local data
 
@@ -595,44 +570,16 @@ the endpoint has per-rep identity or access control.
 | GET/POST | `/admin/catalog-audit` | Admin | DB/Excel duplicate audit and cleaned workbook download. |
 | GET/POST | `/upload` | Admin | Excel catalog upload/import. |
 
-## 7. Flutter offline field-order flow
+## 7. Mobile order API status
 
-The app is a separate Android-first Flutter client under `mobile/`; it
-does not copy the server SQLite database and does not rely on the browser
-service worker. It requires a working HTTPS URL for initial enrollment
-and later manual sync; catalog browsing and saved-order entry are local
-after enrollment/catalog download.
-
-1. An admin creates an active sales rep and optionally assigns a unique
-   mobile username/password in the web rep form.
-2. The rep signs in online in Flutter. The server issues a random bearer
-   token (only its SHA-256 hash is stored server-side); the app stores the
-   token and server URL in Android secure storage.
-3. Before enrollment completes, the app verifies the phone screen lock.
-   The same device credential is required on app launch/resume. The
-   encrypted local database key is held in Android secure storage.
-4. Catalog response data is saved locally in a SQLCipher database.
-   Local identity binds this database to a single rep, preventing another
-   rep enrolled on the same app data from seeing the stored orders. Clear
-   Android app data before assigning the app data to another rep.
-5. Orders are saved transactionally with a UUID, outlet, collection time,
-   catalog snapshot ID, quantities, and local order-time names/prices.
-   They remain queued and available as receipts without a network.
-6. The rep explicitly presses Sync. The app uploads queued batches
-   (maximum 50), validates that each server result corresponds to exactly
-   one queued order, marks successful orders synced/review, then refreshes
-   catalog. Failed orders remain queued and retain an error for retry.
-7. The server calculates totals using immutable snapshot prices, not
-   prices in the request. A mismatch against the current product price,
-   status, generation, or existence is recorded as `price_mismatch` for
-   admin review. A repeated UUID for the same rep returns the already
-   created order rather than duplicating it.
-
-`mobile/README.md` documents the Android project generation steps. The
-repository currently has Flutter Dart sources but no generated Android
-Gradle host, and no Flutter/Dart analysis, APK build, or physical-device
-test has been run. This must not be described as field-ready until those
-checks and a staging-server sync test pass.
+The server-side `/api/mobile/login`, `/api/mobile/catalog`, and
+`/api/mobile/sync` endpoints and their database support remain in
+`app.py`/`db.py`. They authenticate rep credentials, issue bearer tokens,
+return immutable catalog snapshots, and accept idempotent snapshot-priced
+orders. The Flutter/Android client, its tests, and its APK setup/build
+tooling have been removed; this repository cannot currently build or
+deliver an Android APK. The endpoints are retained server functionality,
+not an actively supported mobile application.
 
 ## 8. Browser behavior and offline strategy
 
@@ -781,11 +728,10 @@ silently change behavior:
   `order.js` localStorage payload → `/order/submit` →
   active-rep validation → `db.create_order()` → `orders` and
   `order_items`; admin views use `db.get_all_orders()`/`get_order()`.
-- **Offline mobile orders:** `mobile/lib/main.dart` → `LocalStore` in
-  `mobile/lib/local_store.dart` → `MobileApi` in `mobile/lib/api.dart` →
-  `/api/mobile/login`, `/api/mobile/catalog`, `/api/mobile/sync` →
-  mobile helpers in `app.py`/`db.py` → `catalog_snapshots`,
-  `orders`, and `order_items` → admin order review screens.
+- **Mobile order ingestion (server-side only):** `/api/mobile/login`,
+  `/api/mobile/catalog`, and `/api/mobile/sync` → mobile helpers in
+  `app.py`/`db.py` → `catalog_snapshots`, `orders`, and `order_items` →
+  admin order review screens. No Android client is included.
 - **Activity bell:** product writes in `db.py` →
   `activity_log` → `/api/activity` or `/api/activity/summary` →
   `status.js`; optional OS notification flows through `push.py` and
